@@ -1,7 +1,7 @@
 # Requirements: GHL Customizer (admin-theme)
 
 **Defined:** 2026-09-24
-**Core Value:** When a staff member is inside a location, the correct client logo is showing and nothing stale from a previous location remains.
+**Core Value:** From an open contact record, a staff member can press one button and reliably trigger the right HighLevel workflow for that exact contact and location, with no stale context and no duplicate sends.
 
 ## v1 Requirements
 
@@ -50,7 +50,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **BTN-07**: Buttons support ready, submitting, queued, unavailable, and failed states with visible feedback; repeat clicks are disabled while submitting
 - [ ] **BTN-08**: Buttons are keyboard accessible (real `<button>`/`<a>`, focus ring, Enter/Space) and match surrounding HighLevel styling
 - [ ] **BTN-09**: Action types are limited to `link`, `webhook`, and `handler` (in-script allowlisted registry); any other type or unknown handler renders as unavailable, and no JavaScript is ever executed from config
-- [ ] **BTN-10**: A `webhook` action POSTs JSON to the configured HighLevel Inbound Webhook URL (HTTPS only) with `contactId`, `locationId`, `buttonId`, `requestId` (UUID per click), and `sentAt`; optional `extraFields` from config are merged in
+- [ ] **BTN-10**: A `webhook` action POSTs JSON to the configured HighLevel Inbound Webhook URL (HTTPS only) with `contactId`, `locationId`, `buttonId`, `requestId` (UUID per click), `sentAt`, and the contact's `email` and/or `phone` read from the open record via adapter selectors (HighLevel's Inbound Webhook requires email or phone to match the contact); if neither can be read the button renders unavailable with "contact email/phone not found"; optional `extraFields` from config are merged in
 - [ ] **BTN-11**: Webhook buttons move ready → submitting → queued on a 2xx response and → failed otherwise, showing "Workflow triggered" (never "Email delivered") and an actionable failure message that excludes the URL and payload
 - [ ] **BTN-12**: A webhook button cannot be re-fired while submitting; after queued it stays disabled for a configurable cooldown (default 10 s) so double-clicks and accidental resends are blocked client-side
 - [ ] **BTN-13**: Sample config ships one contact-record webhook button ("Send Invite") pointed at a placeholder Inbound Webhook URL, plus one header link button
@@ -98,11 +98,48 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| FND-01 | Phase 1 | Pending |
+| FND-02 | Phase 1 | Pending |
+| FND-03 | Phase 1 | Pending |
+| FND-04 | Phase 1 | Pending |
+| FND-05 | Phase 1 | Pending |
+| FND-06 | Phase 1 | Pending |
+| LOC-01 | Phase 1 | Pending |
+| LOC-02 | Phase 1 | Pending |
+| LOC-03 | Phase 1 | Pending |
+| LOC-04 | Phase 1 | Pending |
+| LOC-05 | Phase 1 | Pending |
+| BRD-01 | Phase 2 | Pending |
+| BRD-02 | Phase 2 | Pending |
+| BRD-03 | Phase 2 | Pending |
+| BRD-04 | Phase 2 | Pending |
+| BRD-05 | Phase 2 | Pending |
+| CLR-01 | Phase 3 | Pending |
+| CLR-02 | Phase 3 | Pending |
+| CLR-03 | Phase 3 | Pending |
+| CLR-04 | Phase 3 | Pending |
+| BTN-01 | Phase 1 | Pending |
+| BTN-02 | Phase 1 | Pending |
+| BTN-03 | Phase 1 | Pending |
+| BTN-04 | Phase 1 | Pending |
+| BTN-05 | Phase 1 | Pending |
+| BTN-06 | Phase 1 | Pending |
+| BTN-07 | Phase 1 | Pending |
+| BTN-08 | Phase 1 | Pending |
+| BTN-09 | Phase 1 | Pending |
+| BTN-10 | Phase 1 | Pending |
+| BTN-11 | Phase 1 | Pending |
+| BTN-12 | Phase 1 | Pending |
+| BTN-13 | Phase 1 | Pending |
+| DLV-01 | Phase 3 | Pending |
+| DLV-02 | Phase 3 | Pending |
+| DLV-03 | Phase 1 | Pending |
+| DLV-04 | Phase 1 | Pending |
 
 **Coverage:**
 - v1 requirements: 37 total
-- Mapped to phases: 0
-- Unmapped: 37 ⚠️
+- Mapped to phases: 37
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-09-24*
