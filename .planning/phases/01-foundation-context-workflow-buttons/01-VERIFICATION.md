@@ -1,6 +1,6 @@
 ---
 phase: 01-foundation-context-workflow-buttons
-verified: 2026-09-24T20:08:39Z
+verified: 2026-09-24T20:12:49Z
 status: passed
 score: 29/29 must-haves verified
 covered_files:
@@ -13,7 +13,10 @@ covered_files:
   - .planning/phases/01-foundation-context-workflow-buttons/01-03-PLAN.md
   - .planning/phases/01-foundation-context-workflow-buttons/01-03-SUMMARY.md
   - .planning/phases/01-foundation-context-workflow-buttons/01-CONTEXT.md
+  - .planning/phases/01-foundation-context-workflow-buttons/01-HARNESS-WALKTHROUGH.md
+  - .planning/phases/01-foundation-context-workflow-buttons/01-REVIEW.md
   - .planning/phases/01-foundation-context-workflow-buttons/01-SKELETON.md
+  - .planning/phases/01-foundation-context-workflow-buttons/01-UAT.md
   - NOTICE.md
   - config/agency-config.json
   - package.json
@@ -23,97 +26,103 @@ covered_files:
   - test/fixtures/config.json
   - test/harness.html
   - test/run.mjs
-covered_digest: "v1:sha256:295242f314e4959f663ec1aa45f2315b598fb208bb8823ad932b09ad54a23082"
+covered_digest: "v1:sha256:9976d9739540ee5d9180b544062270fab9dee8d43ccc8fdb292aa376104c43f3"
 behavior_unverified: 0
 overrides_applied: 0
-decision_coverage:
-  honored: 12
-  total: 12
-  not_honored: []
+re_verification:
+  previous_status: human_needed
+  previous_score: 29/29
+  previous_verified: 2026-09-24T17:03:03Z
+  previous_head: d37ffa6
+  commits_since: [f34463b, 9e173b9, 1d43272, 8bdeee8, c2acb58, 8306309]
+  gaps_closed: []
+  gaps_remaining: []
+  regressions: []
+  human_items_resolved:
+    - "Browser harness walkthrough — 01-UAT.md test 1 pass; 01-HARNESS-WALKTHROUGH.md 13/13 steps plus post-review cooldown-restore check"
+    - "Live HighLevel selector verification — 01-UAT.md test 2 pass; GHLC.verify() report pasted into 01-03-SUMMARY.md (Dummy Clinic); three wrong contact candidates replaced (9e173b9), late-fill recovery added (1d43272, 8bdeee8)"
+    - "Live Inbound Webhook delivery and CORS — 01-UAT.md test 3 pass (listener): one OPTIONS preflight + one POST with the full payload from the real contact record; repeat click sent nothing"
 deferred:
   - truth: "LOC-03 clause 'restore agency branding' on agency-level routes"
     addressed_in: "Phase 2"
     evidence: "Phase 2 success criterion 3: 'returning to an agency-level view ... shows the agency logo, and if that is unavailable the native HighLevel logo' (BRD-03, BRD-04). Phase 1 delivers the null-location half of LOC-03; branding is not a Phase 1 requirement."
-human_verification:
-  - test: "Browser harness walkthrough. From the repo root run `npm run serve`, open http://localhost:5173/test/harness.html. Click 'Location A · Contact X'; click 'Send Invite'; switch the stub to 'error (500)', open Contact Y, click again; switch to 'cors', wait for the cooldown, click again; click 'Re-render header' and 'Re-render contact toolbar'; open 'Location B · Contact Z'; open 'Agency dashboard'; use Back / Forward and the sidebar location switcher; reload with `?ghlc-debug=1`; Tab through the header links and Send Invite and press Enter on Send Invite; finally set `enabled` to false in test/fixtures/config.json, reload, then restore it."
-    expected: "Contact X shows a styled 'Send Invite' plus header links 'Support' and 'Location Settings' (badTypeBtn greyed/unavailable). Send Invite reads 'Sending…' then 'Workflow triggered' with one log entry (cX / locA / sendInvite / a requestId), stays disabled ~3 s, then returns to 'Send Invite'. 500 gives 'Failed — retry' with no URL visible on the button or tooltip. cors gives 'Sent (unconfirmed)' with the confirm-receipt tooltip. Each re-render restores the buttons exactly once (no duplicates). Location B shows 'B Support', no 'Location Settings', no Send Invite. Agency dashboard shows no customizer buttons. Back/Forward/switcher rebind the button to the contact shown. The console under ?ghlc-debug=1 shows a `[ghlc] verify` object with mounts/route booleans and no email, phone, or URL. Tab shows a 2px blue focus ring; Enter fires Send Invite. With enabled:false nothing renders and the shell looks fully native."
-    why_human: "Visual styling, the focus-visible ring, real-browser MutationObserver and history timing, and 'matches surrounding styling' (BTN-08) cannot be judged from the Node shim. Planner deferred these to end-of-phase (human_verify_mode=end-of-phase; Plan 01 Task 2 and Plan 03 Task 2 <human-check> blocks)."
-  - test: "Live HighLevel selector verification. In a logged-in HighLevel account, install the snippet (script tag with data-config pointing at a reachable copy of config/agency-config.json), open a contact record with `?ghlc-debug=1`, read the `[ghlc] verify` console object, and run `GHLC.verify()` manually. Paste the report into 01-03-SUMMARY.md under 'Live-account verify output'."
-    expected: "mounts.sidebar, header, headerMount, contactMount, contactRegion, locationSwitcher, backToAgency are true; route.locationId and route.contactId match the URL; contactFields.email/phone are true on a record that has them; buttons lists sendInvite as ready; observers.contact is true. Any false mount names a candidate selector in adapter.selectors that must be corrected before Phase 2 (sidebarLogo/headerLogo are expected false until D-07)."
-    why_human: "Every HighLevel selector in the adapter is a community-sourced candidate (CONTEXT.md table, STATE.md blocker). Only a logged-in session can confirm the real DOM; verify mode exists exactly for this. Blocked on Rob's session per all three SUMMARYs."
-  - test: "Live Inbound Webhook delivery and CORS behavior. With a real workflow Inbound Webhook trigger URL in the config, press Send Invite once on a contact record and open the workflow's execution log in HighLevel."
-    expected: "Exactly one execution for that contact, with contactId, locationId, buttonId='sendInvite', a requestId, and sentAt in the inbound data. The button reads either 'Workflow triggered' (endpoint returns CORS headers) or 'Sent (unconfirmed)' (no CORS headers; the one no-cors retry delivered it). Either label is acceptable; record which one so D-11 can be documented in the Phase 3 README."
-    why_human: "External service integration. Whether services.leadconnectorhq.com returns CORS headers is unverified (CONTEXT D-11); the test suite exercises both outcomes against a stub but cannot exercise the real endpoint or confirm a workflow run."
+advisory: []
 ---
 
 # Phase 1: Foundation, Context & Workflow Buttons Verification Report
 
 **Phase Goal:** From an open contact record, a staff member presses one button and reliably triggers the right HighLevel workflow for that exact contact and location, with no stale context and no duplicate sends; header link buttons appear where configured.
-**Verified:** 2026-09-24T17:03:03Z
-**Status:** human_needed
-**Re-verification:** No — initial verification
+**Verified:** 2026-09-24T20:12:49Z (HEAD 8306309, branch main)
+**Status:** passed
+**Re-verification:** Yes — after post-verification fixes (f34463b, 9e173b9, 1d43272, 8bdeee8) and completion of all three human-verification items (01-UAT.md status: complete)
+
+## Re-verification Scope
+
+The previous report (2026-09-24T17:03:03Z, `human_needed`, 29/29) was produced against the pre-review source. Since then the source changed in two rounds:
+
+1. **f34463b — code review fixes.** `isSafeLinkHref` now resolves against `location.origin` and compares origins for path hrefs (WR-01); cooldown expiry is tracked in `state.cooldowns[ctx|buttonId]` and honored by `createButtonEl` on re-render (WR-02); `readHrefValue`/`readInputValue` refuse a region with more than one candidate and `verify()` reports `emailCandidates`/`phoneCandidates` (WR-03); duplicate-instance guard in boot (IN-01); `window.__GHLC_TEST__` replaces `globalThis` (IN-02); `url` dropped from the verify report (IN-03); duplicate CSS block removed (IN-04); redundant selector removed (IN-05); `cooldownMs` clamped to `MAX_COOLDOWN_MS` 300000 (IN-06).
+2. **9e173b9 / 1d43272 / 8bdeee8 — live HighLevel DOM.** Adapter gains `#record-details-lhs` as the first `contactRegion` candidate, `contactToolbarAnchorId: 'delete-contact-trigger'` (mount = parent of that element), and `contactEmailFieldId`/`contactPhoneFieldId` (`contact.email` / `contact.phone`, looked up by id because of the dot). `findContactMount`/`contactMountVia`/`readFieldValue` are all inside the adapter section. A bounded `waitForContactFields` poll (250 ms ticks, 15 s cap, cancelled on context change and when a reconcile recovers the button) handles HighLevel filling the email input after the name row mounts, which produces no MutationRecord.
+
+Every changed line was read, not inferred from the SUMMARYs. Full 3-level + behavioral verification was applied to the truths those changes touch (SC1, SC2, SC3, P1.5, P2.5, P2.7, P3.3, P3.7); all other truths received a regression check by re-running the suite and re-grepping the gates.
 
 ## MVP Mode Note
 
-ROADMAP.md marks this phase `Mode: mvp`. The ROADMAP `**Goal:**` line is prose and fails `gsd_run query user-story.validate` (no "As a / I want to / so that" slots). All three PLAN files carry a faithful transcription that validates:
-
-> As a staff member with a contact record open, I want to press one button that triggers the right HighLevel workflow for exactly that contact and location, so that the invite goes out once, to the right person, with no stale context and no duplicate sends.
-
-Verification proceeded against that user story (its outcome clause is the phase goal verbatim). **Warning (non-blocking):** normalize the ROADMAP goal to User Story form (`/gsd mvp-phase 1` or a direct edit) so future MVP-mode tooling does not trip on it.
+ROADMAP.md marks this phase `Mode: mvp`. The ROADMAP `**Goal:**` line still fails `gsd_run query user-story.validate` (`valid: false`). All three PLAN files carry the validating transcription ("As a staff member with a contact record open, I want to press one button that triggers the right HighLevel workflow for exactly that contact and location, so that the invite goes out once, to the right person, with no stale context and no duplicate sends."). Verification proceeded against that user story; its outcome clause is the phase goal verbatim. Non-blocking: normalize the ROADMAP goal line.
 
 ## User Flow Coverage
 
 | Step | Expected | Evidence | Status |
 |------|----------|----------|--------|
-| Open a contact record in a configured location | Script resolves locationId + contactId from the URL, fetches config from `data-config`, validates schemaVersion 1 | `src/ghl-customizer.js` adapter.parseRoute (routes.contactDetail), configUrl()/loadConfig()/validateConfig(); `tracer:` and `production mode:` scenarios; independent spot-check boot=true, ctx `locA\|c1` | ✓ |
-| See exactly one "Send Invite" button on the contact toolbar | One native `<button data-ghlc-button-id="sendInvite" data-state="ready">` inside `.ghlc-group[data-ghlc-placement="contact"]` in the contact region | createButtonEl/renderPlacement reconcile by id+ctx; `tracer:` asserts length 1, BUTTON, ready, inside region; spot-check tag=BUTTON | ✓ |
-| Press the button | ready -> submitting ("Sending…", disabled, aria-busy) -> queued ("Workflow triggered"); one POST carrying contactId, locationId, buttonId, requestId (UUID v4), sentAt, email, phone | runWebhook/buildPayload/sendWebhook; `tracer:` asserts every payload field; spot-check: fetchCount 1, payloadKeys exact, uuidV4 true | ✓ |
-| Invite goes out once (no duplicates) | Repeat clicks while submitting and during cooldown send nothing; a fresh click after failure sends a fresh requestId | `disabled` while submitting/queued, onButtonClick state guard, startCooldown; `webhook: triple click`, `webhook: click during cooldown`, `webhook: non-2xx ... new requestId`; spot-check: 2 raw click events dispatched during submitting (bypassing `disabled`) still 1 POST | ✓ |
-| To the right person (no stale context) | Element bound to `locationId\|contactId`; click-time revalidation refuses a changed URL; older-generation results discarded; navigation rebinds; agency pages have no buttons | data-ghlc-ctx/data-ghlc-generation, refuseStaleClick, generation compare in runWebhook; `stale:*`, `nav:*`, `ctx:*` scenarios; spot-check agencyButtons 0 | ✓ |
-| Header link buttons appear where configured | Native `<a>` per in-scope header button, once, restored after re-render; overrides per location | renderPlacement('header'), resolveButtons overrides, watchMount observers; `header:*`, `observers:*`; spot-check header anchors with href/target/rel, locB "B Support" | ✓ |
-| Outcome: "invite goes out once, to the right person, with no stale context and no duplicate sends" | All of the above hold together in one flow | `tracer:`, `stale:`, `webhook:` scenarios in one suite run (PASS 73/73) plus the independent spot-check | ✓ (code path); live delivery to a real Inbound Webhook is Human item 3 |
+| Open a contact record in a configured location | locationId + contactId parsed from `/v2/location/{id}/contacts/detail/{cid}`; config fetched from `data-config`, schemaVersion 1 validated | `adapter.parseRoute`, `configUrl()`, `loadConfig()`; `unit: parseRoute`, `tracer:`, `FND-05:*`; live report route `{iDPNGKoFsjvf9wUCrk3V, Q7c2Whf2KdoKSzPbNN7K}` | ✓ |
+| See exactly one "Send Invite" on the contact toolbar | One native `<button>` on the name row (parent of `#delete-contact-trigger`) | `findContactMount()` anchor path; `live DOM: HighLevel record-details structure ...` asserts `button.parentNode.parentNode === nameRow`; spot-check `groupParentIsNameRow: true`, `mountVia: toolbar-anchor`; live report `contactMountVia: "toolbar-anchor"` | ✓ |
+| Button is usable even when HighLevel fills the email field after mount | `unavailable` at mount, recovers to `ready` by bounded poll without a mutation | `markNoContactFields -> waitForContactFields`; `live DOM: email field that fills in after render ...`; spot-check `initialState: unavailable -> afterFillState: ready`, `pollCleared: true`; live walkthrough "recovered to ready ~200 ms later" | ✓ |
+| Press the button | ready -> submitting ("Sending…", disabled) -> queued ("Workflow triggered"); one POST with contactId, locationId, buttonId, requestId (UUID v4), sentAt, email/phone | `runWebhook`/`buildPayload`/`sendWebhook`; `tracer:`; spot-check payloadKeys exact, `uuidV4: true`, `queuedLabel: "Workflow triggered"`; UAT test 3: one OPTIONS + one POST from the real record | ✓ |
+| Invite goes out once | Raw click events during submitting, clicks during cooldown, and clicks on a button re-created by a native re-render inside the cooldown all send nothing | `onButtonClick` state guard; `state.cooldowns` restore in `createButtonEl`; `webhook: triple click`, `webhook: click during cooldown`, `review WR-02: cooldown survives a same-context region re-render`; spot-check `fetchCountAfterRawClicks: 1`, `restoredState: queued`, `fetchCountAfterRerenderClick: 1` | ✓ |
+| To the right person | Element bound to `locationId\|contactId`; stale URL refused at click; older-generation results discarded; ambiguous email/phone regions refused; live field read from `contact.email` inside `#record-details-lhs` only | `refuseStaleClick`, generation compare, `countMatches > 1 -> null`, `readFieldValue` region containment; `stale:*`, `review WR-03`; spot-check `staleFetchCount: 1` (no new POST), old element removed | ✓ |
+| Header link buttons where configured | Native `<a>` per in-scope button, once, restored after re-render, overrides per location, absent on agency pages | `renderPlacement('header')`, `resolveButtons`, `watchMount`; `header:*`, `observers:*`; live report `helpCenter` header ready; walkthrough "Help Center in header" | ✓ |
+| Outcome: once, right person, no stale context, no duplicate sends | All of the above in one flow | Suite `PASS 78/78` (single run), spot-check script, UAT 1–3 pass | ✓ |
 
 ## Goal Achievement
 
 ### Observable Truths
 
-Roadmap Success Criteria (the contract) first, then plan-level truths that add detail.
+Roadmap Success Criteria first (the contract), then plan-level truths.
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| SC1 | Contact record open in a configured location: pressing "Send Invite" goes ready -> submitting -> queued with "Workflow triggered"; the Inbound Webhook receives one event with contactId, locationId, buttonId, unique requestId | ✓ VERIFIED | `tracer: contact page renders Send Invite; click POSTs once and shows queued` (run.mjs:296) asserts states, label, single POST, all four IDs + UUID v4; independent spot-check reproduced it. Live endpoint delivery routed to Human item 3. |
-| SC2 | Repeat clicks while submitting or within cooldown produce no additional events; non-2xx shows failed with an actionable message that never reveals URL or payload | ✓ VERIFIED | `webhook: triple click sends exactly one request` (:730), `webhook: click during cooldown sends nothing` (:741), `webhook: queued stays disabled for cooldownMs` (:710), `webhook: non-2xx -> failed ...` (:756) asserts message contains "HTTP 500" and none of hooks/, TEST-HOOK, c1. Spot-check: raw click events during submitting still 1 POST (guard at onButtonClick, not only `disabled`). |
-| SC3 | After navigation by in-app links, back/forward, or location switcher the button is bound to the on-screen contact; refuses to fire if stale; absent without a contact; never on agency pages | ✓ VERIFIED | `nav: pushState` (:526), `nav: browser back and forward` (:542), `nav: routeChangeEvent` (:564), `nav: replaceState` (:573), `stale: click after an unobserved URL change` (:629), `stale: in-flight result ... discarded` (:647), `BTN-04:` (:422), `nav: agency route` (:612). Switcher in the harness calls pushState (hooked). |
-| SC4 | Header link buttons appear exactly once for in-scope locations (also after header re-render), open their href, keyboard operable with visible focus ring, absent out of scope; unknown action/handler unavailable; no config JS runs | ✓ VERIFIED | `header: link buttons render once` (:960), `header: location overrides on locB` (:993), `observers: wholesale header replacement` (:1211, two rounds + wrapper variant, observer count constant), `actions: unknown type and unknown handler never execute anything` (:1026), `a11y:` (:1158, native BUTTON/A, no role/tabindex). CSS `.ghlc-btn:focus-visible { outline: 2px solid ... }` present. `window.alert` trap in shim never fired; `alert(1)` absent from DOM text and attributes. Visual ring -> Human item 1. |
-| SC5 | `GHLC.verify()` / `?ghlc-debug=1` print which mounts and routes resolve, IDs and states only; enabled:false restores native UI; harness exercises switching, navigation, header re-render | ✓ VERIFIED | `verify: report shape and hygiene` (:1504) asserts full mount map and no jane@/5550100/hooks//config.test; `disable: enabled false is a complete no-op` (:1444) asserts zero buttons/groups/observers/listeners/stylesheet and untouched history methods; `harness:` check (:196); harness.html has nav buttons, Back/Forward, switcher, Re-render header/contact, routeChangeEvent, stub radios. Browser walkthrough -> Human item 1. |
-| P1.1 | Exactly one Send Invite `<button>` with data-ghlc-button-id=sendInvite and data-state=ready | ✓ VERIFIED | run.mjs:300-310; spot-check |
-| P1.2 | Click -> submitting -> queued; one HTTPS POST with contactId, locationId, buttonId, requestId (UUID v4), sentAt, email/phone | ✓ VERIFIED | run.mjs:322-347 (restates SC1) |
+| SC1 | Contact record open in a configured location: pressing "Send Invite" goes ready -> submitting -> queued with "Workflow triggered"; the Inbound Webhook receives one event with contactId, locationId, buttonId, unique requestId | ✓ VERIFIED | `tracer:` (run.mjs:296) and `live DOM:` (:1367) scenarios pass; spot-check reproduced the transition and payload on the live-DOM shape; UAT test 3 observed one real POST (plus CORS preflight) from app.gohighlevel.com. Only the production trigger URL (`REPLACE_ME`) remains Rob's Phase 3 configuration. |
+| SC2 | Repeat clicks while submitting or within cooldown produce no additional events; non-2xx shows failed with an actionable message that never reveals URL or payload | ✓ VERIFIED | `webhook: triple click` (:730), `webhook: click during cooldown` (:741), `webhook: queued stays disabled for cooldownMs` (:710), `webhook: non-2xx -> failed` (:756), `review WR-02` (:1320), `review IN-06` (:1358). Spot-check: 2 raw click events during submitting -> 1 POST; re-render inside cooldown -> new element `queued`, click -> still 1 POST; returns to `ready` after the remaining window. Walkthrough: stub 500 -> "Failed — retry / ... (HTTP 500)", no URL. |
+| SC3 | After navigation by in-app links, back/forward, or location switcher the button is bound to the on-screen contact; refuses to fire if stale; absent without a contact; never on agency pages | ✓ VERIFIED | `nav:*` (:526–612), `stale:*` (:629, :647), `BTN-04:` (:422). Spot-check: unobserved `setPath` to c9 then click -> no POST, old `locA\|c1` element removed; `/agency_dashboard/` -> 0 buttons, 0 groups, 0 observers, no waits. Live: next-contact arrow re-stamped the button (generation 2 -> 3). |
+| SC4 | Header link buttons appear exactly once for in-scope locations (also after re-render), open their href, keyboard operable with visible focus ring, absent out of scope; unknown action/handler unavailable; no config JS runs | ✓ VERIFIED | `header:*` (:960–1015), `observers: wholesale header replacement` (:1212), `actions:*` (:1026–1111 incl. the new backslash case), `a11y:` (:1159). Spot-check link guard: `/\evil.test/x` false, `//evil.test/x` false, `javascript:` false, same-origin path true, https true. UAT test 1: Tab focus ring and Enter activation observed in Chrome. |
+| SC5 | `GHLC.verify()` / `?ghlc-debug=1` print which mounts and routes resolve, IDs and states only; enabled:false restores native UI; harness exercises switching, navigation, header re-render | ✓ VERIFIED | `verify: report shape and hygiene` (:1615) now asserts `contactMountVia`, `contactEmailField`, `contactPhoneField`, `waiting.contactFields`; `disable:*` (:1555–1605); `harness:` check (:196) updated for the `#record-details-lhs` shell. Live report pasted in 01-03-SUMMARY.md contains only booleans, IDs, and states. Spot-check `leaks: []` over 22 console lines + the verify JSON. |
+| P1.1 | Exactly one Send Invite `<button>` with data-ghlc-button-id=sendInvite and data-state=ready | ✓ VERIFIED | run.mjs:300–310; spot-check |
+| P1.2 | Click -> submitting -> queued; one HTTPS POST with contactId, locationId, buttonId, requestId (UUID v4), sentAt, email/phone | ✓ VERIFIED | run.mjs:322–347; spot-check payload (restates SC1) |
 | P1.3 | Non-2xx -> failed with message containing neither URL nor payload | ✓ VERIFIED | `tracer: 500 response shows failed without leaking the URL` (:365) |
-| P1.4 | Config from data-config (fallback constant), schemaVersion 1 validated, no-op when disabled/fetch/parse fails | ✓ VERIFIED | configUrl() reads `data-config`, DEFAULT_CONFIG_URL fallback; `FND-05:` matrix (:449) covers enabled:false, schemaVersion 2, buttons null, 404, bad JSON; `FND-05: non-https, cross-origin config URL` (:472) |
-| P1.5 | Every HighLevel selector/route regex lives in the adapter; no selector literal outside it | ✓ VERIFIED | `static: FND-03` (:131) strips the adapter section and asserts none of 10 patterns; selectors/routes objects frozen in adapter; OWN constants used at every own-element query |
-| P1.6 | `node test/run.mjs` exercises config -> context -> render -> click -> POST -> queued with no dependencies and prints PASS n/n | ✓ VERIFIED | Ran it: exit 0, final line `PASS 73/73`; imports are `node:` builtins and `./dom-shim.mjs` only (grep gate 0 third-party) |
-| P1.7 | harness.html renders a fake shell, loads the real script/stylesheet, stubbed webhook with 200/500/CORS/offline | ✓ VERIFIED | harness.html: `<link href="../src/ghl-customizer.css">`, last `<script src="../src/ghl-customizer.js" data-config="./fixtures/config.json">` (line 254), fetch stub with ok/error/cors/offline radios, `no-cors` opaque path. Browser run -> Human item 1 |
-| P2.1 | pushState/replaceState/popstate/routeChangeEvent rebind the contact button; previous element gone | ✓ VERIFIED | installNavigationHooks wraps history methods and dispatches `ghlc:navigate`; `nav:*` scenarios assert `old.isConnected === false`, `old !== fresh`, ctx updated |
-| P2.2 | Every context change increments generation; late results discarded and never touch the DOM | ✓ VERIFIED | applyContext bumps only on real change; runWebhook compares `gen !== state.generation \|\| !el.isConnected`; `stale: in-flight result` asserts old element still `submitting`, new element `ready`, `webhook-discarded` logged; `ctx: unchanged URL does not bump generation` |
-| P2.3 | Click after unobserved URL change refuses, shows unavailable, sends nothing | ✓ VERIFIED | refuseStaleClick (src ~line 960); `stale: click after an unobserved URL change` asserts unavailable, "Context changed", fetchLog 0, then fresh element for c9 |
-| P2.4 | Agency routes -> null location, every button removed; dashboard without contact -> no contact button | ✓ VERIFIED | `nav: agency route` (0 buttons, 0 groups), `BTN-04:`; spot-check agencyButtons 0, agencyObservers 0 |
-| P2.5 | Repeat clicks while submitting and during cooldown (default 10 s, configurable) send nothing | ✓ VERIFIED | DEFAULT_COOLDOWN_MS 10000; fixture cooldownMs 3000 honored (`advanceTimers(2999)` still queued, `+1` ready) (restates SC2) |
-| P2.6 | CORS TypeError -> exactly one no-cors retry -> queued "Sent (unconfirmed)"; non-2xx -> failed excluding URL/payload | ✓ VERIFIED | sendWebhook: one `mode: 'cors'` site, one `mode: 'no-cors'` site (grep 1 each); `webhook: CORS TypeError falls back` asserts 2 calls, second no-cors with no content-type, same requestId, label; `webhook: offline` asserts failed after both |
-| P2.7 | Record with neither email nor phone -> unavailable "contact email/phone not found", sends nothing | ✓ VERIFIED | contactFieldsReadable/markNoContactFields at render and at click; `webhook: record without email or phone` (:818), `D-02: fields removed after render` (:407) |
-| P2.8 | With ?ghlc-debug=1, console across ok/500/cors/offline contains no URL, payload, email, phone | ✓ VERIFIED | safe() whitelist (booleans, numbers, <=64-char `[A-Za-z0-9_:.\|-]` strings); `static: DLV-04` (:152) forbids `console.` outside constants/verify; `logs: debug mode never prints` (:898) runs 4 flows, 6 fetches, 8 forbidden strings; spot-check consoleLeaks [] |
-| P3.1 | Header link buttons exactly once for in-scope locations, correct href, `rel=noopener noreferrer` on _blank, absent out of scope and on agency pages | ✓ VERIFIED | createButtonEl anchor branch; `header: link buttons render once` asserts 3 buttons, A tags, href/target/rel; spot-check headerButtons list matches |
-| P3.2 | Location override can disable/enable/override label/icon/action by ID; locB hides sendInvite and relabels supportLink | ✓ VERIFIED | resolveButtons + applyOverride with hasOwn; `header: location overrides on locB`; spot-check locB list has no sendInvite, label "B Support" |
-| P3.3 | Unknown action type or unregistered handler renders unavailable; badTypeBtn text never runs or reaches DOM; prototype keys ignored | ✓ VERIFIED | resolveAction allowlist reads only type/href/target/url/extraFields/cooldownMs/handler; `actions: unknown type ...`, `actions: prototype-named handlers ...`; assertNoCodeText walks every attribute; shim `alert` throws if ever called |
-| P3.4 | Every control is native `<button>`/`<a href>`, Tab/Enter/Space, visible focus ring | ✓ VERIFIED | `a11y:` asserts tagName in BUTTON/A, no role/tabindex, anchors have href; `tabindex` and `role="button"` grep 0 in src; CSS focus-visible rule. Visual -> Human item 1 |
-| P3.5 | Header/contact re-render (including wholesale region replacement) restores buttons exactly once; old observer set disconnected; one bounded set per active region | ✓ VERIFIED | watchMount/unwatchMount (2 `new MutationObserver`, 2 `.disconnect()`, `subtree: false` anchor); `observers: wholesale header replacement` (count stays 4 across 2 rounds + wrapper variant, one `rerender` per round), `observers: contact toolbar re-render`, `observers: framework wiping our group`, `observers: own writes do not cause render loops` |
-| P3.6 | Late mount picked up by bounded route-scoped wait (<=15 s, 250 ms), cleared on context change; missing mount leaves native UI untouched | ✓ VERIFIED | waitForMount/scheduleMountTick tick-bounded, `setInterval` grep 0; `observers: mount appearing after navigation`, `observers: bounded wait gives up after MOUNT_WAIT_MAX_MS` (mount-missing once, no polling after), `observers: context change cancels the wait`, `verify: missing mounts ... native DOM stays untouched` (body childNodes identical before/after 16 s) |
-| P3.7 | `GHLC.verify()` / ?ghlc-debug=1 report mounts and routes, IDs/booleans/states only | ✓ VERIFIED | verify() builds report from adapter.probe() and readers (`static: verify section contains no selector literals`); `verify: report shape and hygiene`; spot-check verifyLeaks [] |
-| P3.8 | enabled:false / unsupported schemaVersion / failed fetch: no hooks, DOM, stylesheet, observers; nothing persisted | ✓ VERIFIED | boot() gates ensureStyles/installNavigationHooks/applyContext behind `cfg.enabled === true`; `disable:*` (4 scenarios) via assertNoFootprint incl. untouched history.pushState/replaceState; storage/cookie grep 0; `boot: window.GHLC is the only global` |
-| P3.9 | NOTICE.md records reference URL, commit hash, no license, nothing copied; run.mjs checks it | ✓ VERIFIED | NOTICE.md contains all four strings; `notice:` check (:187) |
+| P1.4 | Config from data-config (fallback constant), schemaVersion 1 validated, no-op when disabled/fetch/parse fails | ✓ VERIFIED | `FND-05:` matrix (:449), `FND-05: non-https, cross-origin config URL` (:472); `static: schema documentation, data-config ...` (:164) |
+| P1.5 | Every HighLevel selector/route regex lives in the adapter; no selector literal outside it | ✓ VERIFIED | Re-checked after 9e173b9: every `querySelector`/`getElementById`/`closest` call site is either inside lines 122–335 (adapter) or uses an `OWN.*` constant for the script's own elements (lines 755, 757, 850, 911, 1209, 1390, 1404). New ids `delete-contact-trigger`, `contact.email`, `contact.phone` live in `selectors`. `static: FND-03` (:131) and `static: verify section contains no selector literals` (:173) pass. |
+| P1.6 | `node test/run.mjs` exercises config -> context -> render -> click -> POST -> queued with no dependencies and prints PASS n/n | ✓ VERIFIED | Ran once: exit 0, `PASS 78/78`, 78 `ok`, 0 `not ok`. Imports are `node:` builtins plus `./dom-shim.mjs` only. |
+| P1.7 | harness.html renders a fake shell, loads the real script/stylesheet, stubbed webhook with 200/500/CORS/offline | ✓ VERIFIED | Contact block now mirrors the live DOM (`#record-details-lhs`, `#delete-contact-trigger`, `contact.email`/`contact.phone` inputs) with a "Fill contact fields 1.5 s after render" toggle; `harness:` check asserts those ids plus `data-config`, `routeChangeEvent`, `no-cors`. UAT test 1 pass. |
+| P2.1 | pushState/replaceState/popstate/routeChangeEvent rebind the contact button; previous element gone | ✓ VERIFIED | `nav: pushState` (:526), `nav: browser back and forward` (:542), `nav: routeChangeEvent` (:564), `nav: replaceState` (:573) |
+| P2.2 | Every context change increments generation; late results discarded and never touch the DOM | ✓ VERIFIED | `stale: in-flight result from an older generation is discarded` (:647), `ctx: unchanged URL does not bump generation` (:670) |
+| P2.3 | Click after unobserved URL change refuses, shows unavailable, sends nothing | ✓ VERIFIED | `stale: click after an unobserved URL change` (:629); spot-check |
+| P2.4 | Agency routes -> null location, every button removed; dashboard without contact -> no contact button | ✓ VERIFIED | `nav: agency route` (:612), `BTN-04:` (:422); spot-check agency block |
+| P2.5 | Repeat clicks while submitting and during cooldown (default 10 s, configurable) send nothing | ✓ VERIFIED | Cooldown now persists in `state.cooldowns` (pruned on context change only when expired) so a native re-render cannot reset it; `DEFAULT_COOLDOWN_MS` 10000, clamp 300000; `webhook:*`, `review WR-02`, `review IN-06`; spot-check `cooldownClamp: 300000` |
+| P2.6 | CORS TypeError -> exactly one no-cors retry -> queued "Sent (unconfirmed)"; non-2xx -> failed excluding URL/payload | ✓ VERIFIED | `sendWebhook` unchanged: one `mode: 'cors'` site, one `mode: 'no-cors'` site in the TypeError branch; `webhook: CORS TypeError falls back` (:778), `webhook: offline` (:803); walkthrough steps "Stub CORS" and "Stub offline" |
+| P2.7 | Record with neither email nor phone -> unavailable "contact email/phone not found", sends nothing | ✓ VERIFIED | `contactFieldsReadable` at render and click; `webhook: record without email or phone` (:818), `D-02: fields removed after render` (:407). Ambiguity now also yields null (`review WR-03`, :1341). Live-shape fields: `readFieldValue` requires the field to be inside the region and, for email, to contain `@`. |
+| P2.8 | With ?ghlc-debug=1, console across ok/500/cors/offline contains no URL, payload, email, phone | ✓ VERIFIED | `safe()` whitelist unchanged; new log events `contact-fields-recovered`/`contact-fields-wait-ended` carry `{ticks, readable}` only; `logs: debug mode never prints ...` (:898); `static: DLV-04` (:152) — `console.` occurs only at lines 111, 115 (constants) and 1370 (verify); spot-check `leaks: []` |
+| P3.1 | Header link buttons exactly once for in-scope locations, correct href, `rel=noopener noreferrer` on _blank, absent out of scope and on agency pages | ✓ VERIFIED | `header: link buttons render once` (:960), `header: agency page renders no buttons` (:1015) |
+| P3.2 | Location override can disable/enable/override label/icon/action by ID; locB hides sendInvite and relabels supportLink | ✓ VERIFIED | `header: location overrides on locB` (:993); walkthrough Location B step |
+| P3.3 | Unknown action type or unregistered handler renders unavailable; badTypeBtn text never runs or reaches DOM; prototype keys ignored | ✓ VERIFIED | `actions: unknown type and unknown handler` (:1026), `actions: prototype-named handlers` (:1089), `actions: unsafe link hrefs` (:1111, backslash case added by f34463b) |
+| P3.4 | Every control is native `<button>`/`<a href>`, Tab/Enter/Space, visible focus ring | ✓ VERIFIED | `a11y:` (:1159); `.ghlc-btn:focus-visible` at css:44 (the duplicate `--link` block removed, 139 -> 114 lines, still 0 non-`.ghlc-` top-level selectors); UAT test 1 focus ring + Enter observed |
+| P3.5 | Header/contact re-render (incl. wholesale region replacement) restores buttons exactly once; old observer set disconnected; one bounded set per active region | ✓ VERIFIED | `observers: wholesale header replacement` (:1212), `observers: framework wiping our group` (:1266), `observers: contact toolbar re-render` (:1297), `observers: own writes do not cause render loops` (:1430); `new MutationObserver` x2, `setInterval` 0 |
+| P3.6 | Late mount picked up by bounded route-scoped wait (<=15 s, 250 ms), cleared on context change; missing mount leaves native UI untouched | ✓ VERIFIED | `observers: mount appearing after navigation` (:1454), `observers: bounded wait gives up` (:1476), `observers: context change cancels the wait` (:1497, now also asserts `waiting.contactFields: false`), `verify: missing mounts ... native DOM stays untouched` (:1653). The new field poll follows the same pattern: `wait.ticks * 250 > 15000` cap, `applyContext -> cancelContactFieldsWait()`, `recoverNoContactFields -> cancelContactFieldsWait()` (8bdeee8). |
+| P3.7 | `GHLC.verify()` / ?ghlc-debug=1 report mounts and routes, IDs/booleans/states only | ✓ VERIFIED | `verify: report shape and hygiene` (:1615); `url` removed from the report (IN-03); live report in 01-03-SUMMARY.md conforms |
+| P3.8 | enabled:false / unsupported schemaVersion / failed fetch: no hooks, DOM, stylesheet, observers; nothing persisted | ✓ VERIFIED | `disable:*` (:1555–1605), `boot: window.GHLC is the only global` (:1686); storage/cookie grep 0; new duplicate-instance guard returns before `window.GHLC` is overwritten |
+| P3.9 | NOTICE.md records reference URL, commit hash, no license, nothing copied; run.mjs checks it | ✓ VERIFIED | NOTICE.md unchanged; `notice:` check (:187) |
 
 **Score:** 29/29 truths verified (0 present, behavior-unverified)
 
-All behavior-dependent truths (state transitions, generation discard, cooldown, observer swap/disconnect, wait cancellation) are backed by named scenarios that passed in the single suite run recorded below, not by symbol presence alone.
+All behavior-dependent truths (state transitions, generation discard, cooldown persistence across re-render, observer swap/disconnect, wait/poll cancellation) are backed by named scenarios in the single suite run recorded below plus the independent spot-check, not by symbol presence.
 
 ### Deferred Items
 
@@ -121,51 +130,59 @@ All behavior-dependent truths (state transitions, generation discard, cooldown, 
 |---|------|-------------|----------|
 | 1 | LOC-03 clause "restore agency branding" on agency-level routes | Phase 2 | Phase 2 SC3: "returning to an agency-level view ... shows the agency logo, and if that is unavailable the native HighLevel logo" (BRD-03/04). Phase 1 delivers the null-location half; no logo work is in Phase 1 scope (CONTEXT D-07). |
 
+### Advisory (New Scope, Unevidenced)
+
+None. No new-scope blocker or warning was raised in this round; every finding below is Info or a carried-forward non-blocking Warning.
+
 ### Required Artifacts
 
-`gsd_run query verify.artifacts` reported 8/8 (Plan 01), 3/3 (Plan 02), 3/3 (Plan 03) passed. Levels 2-4 checked by reading the files.
+`gsd_run query verify.artifacts`: 8/8 (Plan 01), 3/3 (Plan 02), 3/3 (Plan 03) passed. Levels 2–4 re-checked by reading the changed files.
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `src/ghl-customizer.js` | Single IIFE, 8 sections, adapter, config, context, buttons, observers, verify, boot; `window.GHLC` | ✓ VERIFIED | 1350 lines; 8 markers exactly once in order at column 0; frozen adapter; all functions from the three plans' interface blocks present and called (renderAll -> renderPlacement('header'/'contact'); boot -> ensureStyles/installNavigationHooks/applyContext; onButtonClick -> runWebhook/runHandler). No stubs, no debt markers. |
-| `src/ghl-customizer.css` | Scoped `.ghlc-`, data-state variants, focus-visible ring | ✓ VERIFIED | 139 lines; 0 top-level selectors outside `.ghlc-`; `:focus-visible` on `.ghlc-btn` and `.ghlc-btn--link`; submitting/queued/failed/unavailable variants; tokens on `.ghlc-group`; injected by ensureStyles() (`styles:` scenario) |
-| `config/agency-config.json` | schemaVersion 1, sendInvite webhook with REPLACE_ME, one header link | ✓ VERIFIED | Exactly as specified; validates via GHLC.__test.validateConfig; no secret-like keys (`config:` check) |
-| `test/fixtures/config.json` | locA/locB, all action types incl. bad ones | ✓ VERIFIED | locB overrides, badTypeBtn (`type: script`, `code: alert(1)`), badHandlerBtn, copyIdBtn, extraFields with `contactId: SHOULD-NOT-WIN` |
-| `test/dom-shim.mjs` | Dependency-free window/document/history/fetch/MutationObserver/timers | ✓ VERIFIED | 1079 lines; `export function createShim`; click() honors disabled; fetch modes ok/error/cors/offline/hold; observers() lists active only; `alert` trap |
-| `test/run.mjs` | Static gates + scenarios, PASS n/n, non-zero exit on failure | ✓ VERIFIED | 1609 lines, 73 items (15 checks + 58 scenarios), 579 assert calls; no `.skip/.only/.todo`; exits 1 on any failure (:1608) |
-| `test/harness.html` | Offline shell, router, fetch stub, re-render controls | ✓ VERIFIED | 256 lines; `#sidebar-v2`, `#location-switcher-sidbar-v2`, `#backButtonv2`, `.hl_header .hl_header--controls`, `.hl_contact-details-header` with mailto/tel; customizer script is the last `<script>` |
-| `package.json` | type module, test/serve scripts, no dependencies | ✓ VERIFIED | Exactly that; `npm test` prints PASS 73/73 |
-| `NOTICE.md` | Reference URL, hash, no license, nothing copied | ✓ VERIFIED | Pre-existing; all four required strings present |
+| `src/ghl-customizer.js` | Single IIFE, 8 sections, adapter, config, context, buttons, observers, verify, boot; `window.GHLC` | ✓ VERIFIED | 1464 lines (was 1350); 8 markers once each, in order (lines 34, 122, 335, 504, 631, 1191, 1338, 1374); `node --check` exit 0; no debt markers; new code (`readFieldValue`, `contactMountVia`, `waitForContactFields`, `cancelContactFieldsWait`, `pruneCooldowns`, `countMatches`) is called from the live paths, not orphaned |
+| `src/ghl-customizer.css` | Scoped `.ghlc-`, data-state variants, focus-visible ring | ✓ VERIFIED | 114 lines; 0 top-level selectors outside `.ghlc-`; `:focus-visible` at line 44; duplicate `--link` block removed (IN-04) |
+| `config/agency-config.json` | schemaVersion 1, sendInvite webhook with REPLACE_ME, one header link | ✓ VERIFIED | Unchanged; `sendInvite` (contact, webhook, cooldownMs 10000, `hooks/REPLACE_ME`) + `helpCenter` (header, link) |
+| `test/fixtures/config.json` | locA/locB, all action types incl. bad ones | ✓ VERIFIED | Unchanged since previous verification |
+| `test/dom-shim.mjs` | Dependency-free window/document/history/fetch/MutationObserver/timers | ✓ VERIFIED | 1087 lines; `export function createShim`; `hold`/`releaseFetch`, `observers()`, timers with real `Date.now` progression so cooldown expiry math is observable |
+| `test/run.mjs` | Static gates + scenarios, PASS n/n, non-zero exit on failure | ✓ VERIFIED | 1723 lines, 78 items (16 checks + 62 scenarios incl. `review WR-02/WR-03/IN-06` and two `live DOM:` scenarios); no `.skip/.only/.todo` |
+| `test/harness.html` | Offline shell, router, fetch stub, re-render controls | ✓ VERIFIED | Contact block rebuilt to the verified live structure with the late-fill toggle; Re-render contact toolbar now targets `#record-details-lhs` |
+| `package.json` | type module, test/serve scripts, no dependencies | ✓ VERIFIED | Unchanged |
+| `NOTICE.md` | Reference URL, hash, no license, nothing copied | ✓ VERIFIED | Unchanged |
 
 ### Key Link Verification
 
-`gsd_run query verify.key-links` verified 4/5 for Plan 01 and could not evaluate the remaining 9 links (Plans 01/02/03) because their `from:` values name components rather than file paths ("Source file not found"). Those were verified manually by grep and by reading the wiring.
+`gsd_run query verify.key-links`: 4/5 for Plan 01 verified by tool; 9 links across the three plans use component names in `from:` and cannot be evaluated by the tool ("Source file not found"). Those were verified by reading the wiring.
 
 | From | To | Via | Status | Details |
 |------|----|-----|--------|---------|
-| ghl-customizer.js | agency-config.json | `data-config` -> fetch -> validateConfig | WIRED | tool: verified; configUrl() line ~325, loadConfig() validates schemaVersion === 1 |
-| ghl-customizer.js | adapter.parseRoute | applyContext reads location.pathname | WIRED | tool: verified; computeContext() -> adapter.parseRoute(location.pathname) |
-| buttons | Inbound Webhook | fetch POST JSON with the payload fields | WIRED | manual: `requestId` in buildPayload; sendWebhook fetch POST `mode: 'cors'`; proven by fetchLog assertions |
-| test/run.mjs | ghl-customizer.js | vm.Script in shim with `__GHLC_TEST__` | WIRED | tool: verified; shim.run sets flag, runs source, returns GHLC |
-| test/harness.html | ghl-customizer.js | script tag data-config after fetch patch | WIRED | tool: verified; harness.html:254 |
-| history.pushState/replaceState (patched) | `ghlc:navigate` | wrapper dispatches CustomEvent(adapter.events.navigate) | WIRED | manual: `adapter.events.navigate` x2 (dispatch + listener); `nav: patched pushState still updates location and history` |
-| popstate / routeChangeEvent / ghlc:navigate | applyContext | scheduleContextCheck coalesces | WIRED | manual: `scheduleContextCheck` x4; onNavigationSignal -> scheduleContextCheck -> applyContext |
-| runWebhook click | adapter.parseRoute(location.pathname) | stale-click revalidation | WIRED | manual: refuseStaleClick called first in runWebhook and runHandler; `stale-click` x3 |
-| sendWebhook | fetch no-cors | one retry on TypeError | WIRED | manual: exactly one `mode: 'no-cors'` site inside the TypeError branch |
-| config.locations[id].buttons | resolveButtons | hasOwn lookup | WIRED | manual: `hasOwnProperty` in hasOwn(); resolveButtons uses hasOwn for locations and overrides |
-| action.handler | handlers registry | own-property lookup | WIRED | manual: resolveAction `hasOwn(handlers, name)`; registry `Object.freeze` |
-| MutationObserver set | renderPlacement | anchor observer -> onMountMutation -> scheduleRender -> renderPlacement | WIRED | manual: `findRegionRoot` x3; watchMount called from renderPlacement before writes; deliver -> onMountMutation |
-| GHLC.verify | adapter.selectors.* | boolean presence per selector | WIRED | manual: verify() uses adapter.probe(); `mounts` key; no selector literal in verify section (static check) |
+| ghl-customizer.js | agency-config.json | `data-config` -> fetch -> validateConfig | WIRED | tool: verified |
+| ghl-customizer.js | adapter.parseRoute | applyContext reads location.pathname | WIRED | tool: verified |
+| buttons | Inbound Webhook | fetch POST JSON with payload fields | WIRED | manual: `buildPayload` -> `sendWebhook` `mode: 'cors'`; spot-check + UAT 3 |
+| test/run.mjs | ghl-customizer.js | vm.Script in shim with `__GHLC_TEST__` | WIRED | tool: verified |
+| test/harness.html | ghl-customizer.js | script tag data-config after fetch patch | WIRED | tool: verified |
+| history.pushState/replaceState (patched) | `ghlc:navigate` | wrapper dispatches CustomEvent(adapter.events.navigate) | WIRED | manual: `nav: patched pushState still updates location and history` |
+| popstate / routeChangeEvent / ghlc:navigate | applyContext | scheduleContextCheck coalesces | WIRED | manual: `onNavigationSignal -> scheduleContextCheck -> applyContext` |
+| runWebhook click | adapter.parseRoute(location.pathname) | stale-click revalidation | WIRED | manual: `refuseStaleClick` first in `runWebhook` and `runHandler`; spot-check |
+| sendWebhook | fetch no-cors | one retry on TypeError | WIRED | manual: single `mode: 'no-cors'` site in the TypeError branch (src ~1015) |
+| config.locations[id].buttons | resolveButtons | hasOwn lookup | WIRED | manual: `hasOwn` in `resolveButtons`/`applyOverride` |
+| action.handler | handlers registry | own-property lookup | WIRED | manual: `hasOwn(handlers, name)`; registry frozen |
+| MutationObserver set | renderPlacement | anchor observer -> onMountMutation -> scheduleRender | WIRED | manual: `watchMount` before writes; `observers:*` scenarios |
+| GHLC.verify | adapter.selectors.* | boolean presence per selector | WIRED | manual: `verify()` uses `adapter.probe()`; new `contactMountVia`/`contactEmailField`/`contactPhoneField` come from `probe()` |
+| **New:** `#delete-contact-trigger` parent | contact group mount | `findContactMount()` anchor path, class fallbacks after | WIRED | `live DOM:` scenario; spot-check `groupParentIsNameRow: true`; live report `contactMountVia: toolbar-anchor` |
+| **New:** `contact.email` / `contact.phone` inputs | buildPayload email/phone | `readFieldValue(region, id)` with region containment | WIRED | `live DOM:` scenario body.email; live report `contactFields.email: true` |
+| **New:** markNoContactFields | renderPlacement('contact') | `waitForContactFields` bounded poll -> reconcile | WIRED | `live DOM: email field that fills in after render ...`; spot-check |
+| **New:** startCooldown | createButtonEl on re-render | `state.cooldowns[ctx\|buttonId]` expiry -> `setState('queued')` + `startCooldown(remaining)` | WIRED | `review WR-02`; spot-check `restoredState: queued` |
 
 ### Data-Flow Trace (Level 4)
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 |----------|---------------|--------|--------------------|--------|
-| createButtonEl label/icon | `button.label`, `button.icon` | config JSON via loadConfig -> resolveButtons (+overrides) | Yes (fixture + sample validated; overrides observed) | ✓ FLOWING |
-| buildPayload | contactId/locationId | `state.ctx` from adapter.parseRoute(location.pathname) | Yes (spot-check payload `c1`/`locA`) | ✓ FLOWING |
-| buildPayload | email/phone | adapter.readContactEmail/Phone on the live contact region | Yes (mailto/tel anchors read; omitted when absent) | ✓ FLOWING |
-| verify() mounts | booleans | adapter.probe() querySelector per selector | Yes (false when shell lacks header, true otherwise) | ✓ FLOWING |
-| verify() config | enabled/schemaVersion | state.lastEnabled/lastSchemaVersion set in loadConfig | Yes (reports false/2/null in the disable scenarios) | ✓ FLOWING |
+| createButtonEl label/icon | `button.label`, `button.icon` | config JSON via loadConfig -> resolveButtons (+overrides) | Yes | ✓ FLOWING |
+| buildPayload | contactId/locationId | `state.ctx` from adapter.parseRoute(location.pathname) | Yes (spot-check `c1`/`locA`; live `Q7c2…`/`iDPN…`) | ✓ FLOWING |
+| buildPayload | email/phone | `readFieldValue` on `contact.email`/`contact.phone` inside `#record-details-lhs`, then mailto/tel/input fallbacks | Yes (spot-check email read after late fill; live email true) | ✓ FLOWING |
+| createButtonEl restored state | `state.cooldowns[ctx\|id]` | written by `startCooldown` on a queued outcome | Yes (spot-check restored `queued`, expired -> `ready`) | ✓ FLOWING |
+| verify() mounts / contactFields | booleans + candidate counts | `adapter.probe()`, `adapter.countMatches` | Yes (false on the shim shell, true live) | ✓ FLOWING |
 
 No value terminates in a hardcoded literal or static fallback.
 
@@ -173,15 +190,16 @@ No value terminates in a hardcoded literal or static fallback.
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| Full suite (run once) | `node test/run.mjs > /tmp/ghlc-test-out.txt; echo EXIT=$?` | EXIT=0; last line `PASS 73/73`; 73 `ok -`, 0 `not ok` | ✓ PASS |
-| Source syntax | `node --check src/ghl-customizer.js` | EXIT=0 | ✓ PASS |
-| npm script wiring | `npm run test --silent` | `PASS 73/73` | ✓ PASS |
-| Independent flow (not the suite): boot, click, 2 raw click events during submitting, release | custom script against test/dom-shim.mjs | bootResult true; ctx `locA\|c1`; submitting -> queued "Workflow triggered"; fetchCount 1; payload keys buttonId/contactId/email/locationId/phone/requestId/sentAt/source; uuidV4 true | ✓ PASS |
-| Independent: verify() and console hygiene | same script | verifyLeaks []; consoleLeaks []; `[ghlc]` lines present | ✓ PASS |
-| Independent: header anchors, agency route, locB overrides | same script | supportLink A/_blank/noopener noreferrer, locOnlyLink A/_self, badTypeBtn BUTTON/unavailable; agency 0 buttons 0 observers; locB no sendInvite, "B Support" | ✓ PASS |
-| Acceptance-criteria grep gates (all three plans) | grep -c loops | 9 forbidden tokens 0; setInterval/tabindex/role="button"/Email delivered/import/require(/??/?. all 0; markers 1 each; `mode: 'cors'` 1, `mode: 'no-cors'` 1; CSS non-.ghlc top-level 0; third-party test imports 0 | ✓ PASS |
-| Commits documented in SUMMARYs | `verify.commits 3ccfe3e a058350 a7bdacc d7138be 66438cc 5d4ffdd` | all_valid true (6/6) | ✓ PASS |
-| Phase files committed | `git status --short -- src config test package.json NOTICE.md` | clean; all 9 files tracked | ✓ PASS |
+| Full suite (run once) | `node test/run.mjs > /tmp/ghlc-reverify-out.txt; echo $?` | exit 0; `PASS 78/78`; 78 `ok`, 0 `not ok` (Node v25.9.0) | ✓ PASS |
+| Source syntax | `node --check src/ghl-customizer.js` | exit 0 | ✓ PASS |
+| Forbidden tokens | grep -c per token on src | innerHTML/outerHTML/insertAdjacentHTML/document.write/eval(/new Function/localStorage/sessionStorage/document.cookie/setInterval/globalThis/"Email delivered"/tabindex/role="button"/import /require(/debugger all 0 | ✓ PASS |
+| ES2019 gate | grep for `??` / `?.` (code only) | 0 hits; `static: no ES2020+ ...` passes | ✓ PASS |
+| Selector locality | list of `querySelector`/`getElementById`/`closest` call sites vs adapter range 122–335 | All literal-selector sites inside adapter; outside sites use `OWN.*` only | ✓ PASS |
+| Console locality | `grep -n 'console\.'` | Lines 111, 115 (constants `log`/`warn`), 1370 (verify) only | ✓ PASS |
+| Section markers | `grep -n '^// ==== '` | 8 markers, once each, in order | ✓ PASS |
+| Independent flow on the live-DOM shape (out of suite) | `node /tmp/ghlc-spotcheck.mjs` | boot true; unavailable (no-contact-fields) -> poll -> ready; 2 raw click events during submitting -> 1 POST; queued "Workflow triggered"; payload keys buttonId/contactId/email/locationId/requestId/sentAt/source; UUID v4; region re-render inside cooldown -> new element `queued`, click -> still 1 POST, `ready` after expiry; stale click -> no POST, old element removed; agency -> 0/0/0 and no waits; link guard backslash/proto-rel/js false, path/https true; cooldown clamp 300000; leaks []; uncaught errors 0 | ✓ PASS |
+| Commits documented | `verify.commits f34463b 9e173b9 1d43272 8bdeee8 c2acb58 d37ffa6` | all_valid true (6/6) | ✓ PASS |
+| Phase files committed | `git status --short -- src config test package.json NOTICE.md` | clean | ✓ PASS |
 
 ### Probe Execution
 
@@ -189,113 +207,87 @@ No `scripts/*/tests/probe-*.sh` exist and no PLAN/SUMMARY declares a probe; `tes
 
 ### Prohibitions (must-NOT, all `verification: test`)
 
-Each test-tier prohibition has wired enforcement evidence, so none is flagged.
+Each test-tier prohibition has wired enforcement evidence; none is flagged.
 
 | Requirement | Statement | Enforcement evidence | Status |
 |-------------|-----------|----------------------|--------|
-| BTN-09 | No JS executed from config; action types allowlisted | ACTION_TYPES allowlist + frozen handlers + hasOwn; `static: forbidden tokens` (eval/new Function); `actions:*` scenarios; shim `alert` trap never fired | ✓ VERIFIED |
-| BTN-08 | No DOM from config via HTML-string setters; no role=button on divs | innerHTML/outerHTML/insertAdjacentHTML/document.write grep 0; `a11y:` asserts native elements, no role/tabindex | ✓ VERIFIED |
-| LOC-04 | No Web Storage or cookies for context | localStorage/sessionStorage/document.cookie grep 0 and static gate | ✓ VERIFIED |
-| BTN-06 | No element or timer reused across context change | reconcile removes on ctx mismatch; applyContext clearTimers(); `nav: pushState` (old !== fresh), `nav: leaving the contact ... clears pending timers` | ✓ VERIFIED |
-| DLV-04 | No URL/payload/email/phone in logs or verify() | safe() whitelist; `static: DLV-04` console gate; `logs:`; `verify: report shape and hygiene` | ✓ VERIFIED |
-| BTN-11 | No URL/payload in user-visible failure messages | Fixed MSG_* strings with only status interpolated; `tracer: 500 ...`, `webhook: non-2xx ...` assert exclusion | ✓ VERIFIED |
-| FND-06 | No persisted state or hooks/observers/DOM when disabled/invalid/unreachable | boot() gating; `disable:*` assertNoFootprint | ✓ VERIFIED |
+| BTN-09 | No JS executed from config; action types allowlisted | `ACTION_TYPES` + frozen `handlers` + `hasOwn`; `static: forbidden tokens`; `actions:*`; shim `alert` trap never fired | ✓ VERIFIED |
+| BTN-08 | No DOM from config via HTML-string setters; no role=button on divs | HTML-setter grep 0; `a11y:` | ✓ VERIFIED |
+| LOC-04 | No Web Storage or cookies for context | storage/cookie grep 0 + static gate; `state.cooldowns` is an in-memory object | ✓ VERIFIED |
+| BTN-06 | No element or timer reused across context change | reconcile removes on ctx mismatch; `applyContext` -> `clearTimers()`, `cancelContactFieldsWait()`, `pruneCooldowns()`; `nav: leaving the contact ... clears pending timers` | ✓ VERIFIED |
+| DLV-04 | No URL/payload/email/phone in logs or verify() | `safe()` whitelist; `static: DLV-04`; `logs:`; `verify: report shape and hygiene`; spot-check leaks [] | ✓ VERIFIED |
+| BTN-11 | No URL/payload in user-visible failure messages | fixed `MSG_*` strings (incl. new `MSG_COOLDOWN_RESTORED`); `tracer: 500`, `webhook: non-2xx` | ✓ VERIFIED |
+| FND-06 | No persisted state or hooks/observers/DOM when disabled/invalid/unreachable | `boot()` gating; `disable:*` assertNoFootprint | ✓ VERIFIED |
 
 ### Requirements Coverage
 
-All 26 phase IDs appear in at least one PLAN `requirements:` field; no ORPHANED requirements (REQUIREMENTS.md maps exactly these 26 to Phase 1).
+All 26 phase IDs are claimed by at least one PLAN `requirements:` field; REQUIREMENTS.md maps exactly these 26 to Phase 1; no ORPHANED requirements.
 
 | Requirement | Source Plan | Description | Status | Evidence |
 |-------------|-------------|-------------|--------|----------|
-| FND-01 | 01 | js + css + config with documented schema | ✓ SATISFIED | Files exist; "Config schema (schemaVersion 1)" header block lists every key |
-| FND-02 | 03 | NOTICE.md records reference, hash, no license, nothing copied | ✓ SATISFIED | NOTICE.md + `notice:` check |
-| FND-03 | 01, 03 | All selectors/regexes in one adapter | ✓ SATISFIED | `static: FND-03`, `static: verify section` |
-| FND-04 | 03 | Verify mode via ?ghlc-debug=1 / GHLC.verify() | ✓ SATISFIED | verify() + `verify:*`; live confirmation is Human item 2 |
-| FND-05 | 01, 03 | HTTPS config, schemaVersion validated, no-op on disabled/fail | ✓ SATISFIED | isAllowedConfigUrl, loadConfig; `FND-05:*`, `disable:*` |
-| FND-06 | 03 | Removing/disabling restores native UI on reload; nothing persisted | ✓ SATISFIED | No storage APIs; `disable:*` no-footprint; real-HighLevel reload is Human item 1/2 |
-| LOC-01 | 01, 02 | Location ID from URL on load | ✓ SATISFIED | parseRoute; `unit: parseRoute`, `tracer:` |
-| LOC-02 | 02 | Detected on in-app nav, back/forward, switcher (popstate, routeChangeEvent, pushState/replaceState) | ✓ SATISFIED | installNavigationHooks; `nav:*` |
-| LOC-03 | 02 | Agency routes -> null location and restore agency branding | ✓ SATISFIED (Phase 1 share) | `nav: agency route`; branding clause deferred to Phase 2 (see Deferred) |
-| LOC-04 | 02 | Per-tab in-memory state only | ✓ SATISFIED | state object; storage grep 0 |
+| FND-01 | 01 | js + css + config with documented schema | ✓ SATISFIED | Files present; "Config schema (schemaVersion 1)" block |
+| FND-02 | 03 | NOTICE.md content | ✓ SATISFIED | `notice:` check |
+| FND-03 | 01, 03 | All selectors/regexes in one adapter | ✓ SATISFIED | Call-site audit after 9e173b9; `static: FND-03` |
+| FND-04 | 03 | Verify mode | ✓ SATISFIED | `verify:*`; live report captured (UAT 2) |
+| FND-05 | 01, 03 | HTTPS config, schemaVersion validated, no-op on disabled/fail | ✓ SATISFIED | `FND-05:*`, `disable:*` |
+| FND-06 | 03 | Removing/disabling restores native UI; nothing persisted | ✓ SATISFIED | `disable:*`; live walkthrough "Full page navigation: injected script is gone after reload" |
+| LOC-01 | 01, 02 | Location ID from URL on load | ✓ SATISFIED | `unit: parseRoute`; live route |
+| LOC-02 | 02 | Nav detection: popstate, routeChangeEvent, pushState/replaceState | ✓ SATISFIED | `nav:*`; walkthrough Back/Forward/switcher; live next-contact arrow |
+| LOC-03 | 02 | Agency routes -> null location (+ branding restore) | ✓ SATISFIED (Phase 1 share) | `nav: agency route`; branding clause deferred to Phase 2 |
+| LOC-04 | 02 | Per-tab in-memory state only | ✓ SATISFIED | storage grep 0 |
 | LOC-05 | 02 | Generation token; older async work discarded | ✓ SATISFIED | `stale: in-flight result ... discarded` |
-| BTN-01 | 01, 03 | Button schema id/label/icon/placement/scope/action | ✓ SATISFIED | validateButton; both configs validate |
-| BTN-02 | 03 | Location overrides by ID | ✓ SATISFIED | resolveButtons/applyOverride; `header: location overrides on locB` |
-| BTN-03 | 03 | Header buttons exactly once, survive re-render | ✓ SATISFIED | `observers: wholesale header replacement`, `observers: framework wiping` |
+| BTN-01 | 01, 03 | Button schema | ✓ SATISFIED | `validateConfig`; both configs validate |
+| BTN-02 | 03 | Location overrides by ID | ✓ SATISFIED | `header: location overrides on locB` |
+| BTN-03 | 03 | Header buttons exactly once, survive re-render | ✓ SATISFIED | `observers:*`; walkthrough re-render step |
 | BTN-04 | 01, 02 | Contact buttons only with location + contact | ✓ SATISFIED | `BTN-04:`, `nav: agency route` |
-| BTN-05 | 02 | Click-time revalidation | ✓ SATISFIED | refuseStaleClick; `stale: click after an unobserved URL change` |
-| BTN-06 | 02 | Leaving a contact removes buttons/pending state; no reuse | ✓ SATISFIED | `nav: leaving the contact`, `nav: pushState` |
-| BTN-07 | 01, 02 | Five states with feedback; repeat clicks disabled while submitting | ✓ SATISFIED | setState; `tracer:`, `webhook: triple click`; independent raw-event check |
-| BTN-08 | 01, 03 | Native elements, focus ring, Enter/Space; match styling | ✓ SATISFIED (visual -> Human item 1) | `a11y:`; CSS focus-visible |
-| BTN-09 | 03 | Allowlisted action types; unknown -> unavailable; no config JS | ✓ SATISFIED | resolveAction; `actions:*`; forbidden-token gate |
-| BTN-10 | 01, 02 | Webhook POST with required fields + email/phone; unavailable without them; extraFields merged | ✓ SATISFIED | buildPayload; `tracer:`, `webhook: record without email or phone`, `webhook: extraFields cannot override`, `webhook: email-only` |
-| BTN-11 | 01, 02 | ready -> submitting -> queued/failed; "Workflow triggered"; actionable message w/o URL/payload | ✓ SATISFIED | `Email delivered` grep 0; `tracer: 500`, `webhook: non-2xx` |
-| BTN-12 | 02 | No re-fire while submitting; cooldown default 10 s configurable | ✓ SATISFIED | DEFAULT_COOLDOWN_MS 10000, action.cooldownMs; `webhook: queued stays disabled ...`, `webhook: click during cooldown` |
-| BTN-13 | 01 | Sample config ships Send Invite (placeholder URL) + one header link | ✓ SATISFIED | config/agency-config.json; `config:` check asserts REPLACE_ME and header link |
-| DLV-03 | 01, 03 | Local harness mimics the shell for switching, fallbacks, re-render | ✓ SATISFIED (browser run -> Human item 1) | harness.html; `harness:` check |
-| DLV-04 | 01, 02, 03 | Diagnostics never log credentials/contact content/config beyond IDs and states | ✓ SATISFIED | safe(); `logs:`, `verify: report shape and hygiene`, DLV-04 static gate |
+| BTN-05 | 02 | Click-time revalidation | ✓ SATISFIED | `stale: click after an unobserved URL change`; spot-check |
+| BTN-06 | 02 | Leaving a contact removes buttons/pending state | ✓ SATISFIED | `nav: leaving the contact`; poll cancelled on context change |
+| BTN-07 | 01, 02 | Five states with feedback; repeat clicks disabled while submitting | ✓ SATISFIED | `setState`; `tracer:`, `webhook: triple click`; raw-event spot-check |
+| BTN-08 | 01, 03 | Native elements, focus ring, Enter/Space; match styling | ✓ SATISFIED | `a11y:`; CSS; UAT 1 (focus ring, Enter) |
+| BTN-09 | 03 | Allowlisted action types; no config JS | ✓ SATISFIED | `resolveAction`; `actions:*`; link guard hardened (WR-01) |
+| BTN-10 | 01, 02 | Webhook POST with required fields + email/phone; unavailable without them; extraFields merged | ✓ SATISFIED | `buildPayload`; `tracer:`, `live DOM:*`, `webhook: record without email or phone`, `webhook: extraFields cannot override`; UAT 3 payload observed live |
+| BTN-11 | 01, 02 | State transitions; "Workflow triggered"; actionable failure w/o URL/payload | ✓ SATISFIED | `Email delivered` grep 0; `tracer: 500`, `webhook: non-2xx` |
+| BTN-12 | 02 | No re-fire while submitting; cooldown default 10 s configurable | ✓ SATISFIED | `state.cooldowns` persistence (WR-02); `review WR-02`, `webhook: click during cooldown`; UAT 3 repeat click blocked live |
+| BTN-13 | 01 | Sample config ships Send Invite (placeholder URL) + one header link | ✓ SATISFIED | config/agency-config.json; `config:` check |
+| DLV-03 | 01, 03 | Local harness mimics the shell | ✓ SATISFIED | harness rebuilt to the verified live DOM; `harness:` check; UAT 1 |
+| DLV-04 | 01, 02, 03 | Diagnostics never log credentials/contact content/config beyond IDs and states | ✓ SATISFIED | `safe()`; `logs:`; `static: DLV-04`; spot-check leaks [] |
 
 ### Decision Coverage
 
-`gsd_run query check.decision-coverage-verify`: All trackable CONTEXT.md decisions are honored by shipped artifacts (12/12, none not honored). Spot-read: D-01 (browser POST, no companion service), D-02 (email/phone read + unavailable message), D-04 (`data-config` + constant), D-05 (single IIFE, ES2019 gate, adapter), D-06 (NOTICE), D-07 (sidebarLogo/headerLogo reserved), D-08 (no secret keys check), D-09 (in-memory), D-10 (generation), D-11 (cors then one no-cors, "Sent (unconfirmed)"), D-12 (harness) all present in code, not just in SUMMARY text.
+`gsd_run query check.decision-coverage-verify` could not locate CONTEXT.md under any invocation tried (phase number, padded number, directory name, path); it reported `skipped`. Decisions D-01..D-12 were spot-read against the code instead: D-01 browser POST (`sendWebhook`), D-02 email/phone read + `MSG_NO_CONTACT_FIELDS` + the new late-fill poll, D-03 one contact webhook button + header links (sample config), D-04 `data-config` + `DEFAULT_CONFIG_URL`, D-05 single IIFE / ES2019 gate / adapter, D-06 NOTICE, D-07 `sidebarLogo`/`headerLogo` reserved, D-08 no secret-like keys (`config:` check), D-09 in-memory `state`, D-10 generation compare, D-11 cors then one no-cors with "Sent (unconfirmed)", D-12 harness. 12/12 honored. The CONTEXT.md selector table was updated in c2acb58 to record the live-verified selectors and keep the original candidates as fallbacks, matching the adapter.
 
 ### Test Quality Audit
 
-- No disabled tests (`.skip/.only/.todo/xit` absent). Runner exits 1 on any failure.
-- Not circular: scenarios drive the real production source through `vm.Script` in the shim and assert on DOM attributes, `fetchLog` bodies, virtual-timer outcomes, observer registrations, and captured console lines — not on the script's own return values.
-- Shim `click()` short-circuits on `disabled` (like a browser), so `webhook: triple click` alone would not prove the `onButtonClick` state guard; the independent spot-check dispatched raw `click` events during `submitting` and still observed one POST, so the guard is real.
-- Scenarios assert `shim.errors.length === 0`, so exceptions inside listeners/timers/observer callbacks would fail rather than be swallowed.
+- No disabled tests; runner exits 1 on any failure.
+- Scenarios drive the real production source through `vm.Script` and assert on DOM attributes, `fetchLog` bodies, virtual timers, observer registrations, and captured console lines.
+- The two `live DOM:` scenarios build the exact structure observed on app.gohighlevel.com (`#record-details-lhs`, name row with `#delete-contact-trigger`, `div#contact.email > input`) rather than the shim's default class-based region, and the late-fill scenario changes `input.value` as a property only, so it genuinely proves the poll path rather than the observer path.
+- `review WR-02` and the spot-check both replace the whole region inside the cooldown window; the restored element is a different node (`restoredIsNewElement: true`), so the persistence really comes from `state.cooldowns`, not from a surviving element.
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| src/ghl-customizer.js | 641, 665, 667 | `'Action not available'` (matched the "not available" scan) | ℹ️ Info | Legitimate user-facing message for the BTN-09 unavailable state, not a stub |
-| src/ghl-customizer.js | ~40 | `DEFAULT_CONFIG_URL` provisional jsDelivr slug `robhparker/admin-theme@v0.1.0` | ℹ️ Info | Documented as provisional; `data-config` always wins; Phase 3 (DLV-01) pins the real tag. Repo currently has no GitHub remote. |
-| 01-01/02/03-PLAN.md | must_haves.key_links | 9 `from:` values are component names, not file paths | ℹ️ Info | `verify.key-links` cannot evaluate them; verified manually. Planner-format note for future plans. |
-| ROADMAP.md | Phase 1 Goal | `Mode: mvp` but goal not in User Story form | ⚠️ Warning | PLANs carry a valid transcription; normalize the ROADMAP goal so MVP tooling does not trip |
+| src/ghl-customizer.js | 705, 729, 731 | `'Action not available'` matched the "not available" scan | ℹ️ Info | Legitimate user-facing message for the BTN-09 unavailable state, not a stub |
+| src/ghl-customizer.js | ~40 | `DEFAULT_CONFIG_URL` provisional jsDelivr slug `robhparker/admin-theme@v0.1.0`; config ships `hooks/REPLACE_ME` | ℹ️ Info | `data-config` always wins; both fail closed. Phase 3 (DLV-01/DLV-02) pins the real tag and Rob supplies the real trigger URL (REVIEW IN-07) |
+| 01-01/02/03-PLAN.md | must_haves.key_links | 9 `from:` values are component names, not file paths | ℹ️ Info | `verify.key-links` cannot evaluate them; verified manually. Planner-format note for future plans |
+| 01-HARNESS-WALKTHROUGH.md | section 1 | Browser walkthrough of `test/harness.html` predates the 9e173b9 harness rebuild | ℹ️ Info | The rebuilt contact block is covered headlessly (`harness:` check, both `live DOM:` scenarios) and the real DOM was walked live after 1d43272; no separate re-walk of the offline harness in a browser is recorded. Not a gap; a one-minute re-click of "Re-render contact toolbar" with the late-fill toggle on would close the record |
+| ROADMAP.md | Phase 1 Goal | `Mode: mvp` but goal not in User Story form (`user-story.validate` false) | ⚠️ Warning (carried, non-blocking) | PLANs carry a valid transcription; normalize the ROADMAP goal so MVP tooling does not trip |
 
-No TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER markers in any phase file. No empty implementations, no console-log-only functions, no hardcoded empty data feeding the DOM.
+No TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER markers in any file modified by this phase. No empty implementations, no console-log-only functions, no hardcoded empty data feeding the DOM.
 
 ### Human Verification Required
 
-### 1. Browser harness walkthrough
+None outstanding. The three items from the initial verification were executed by the orchestrator and recorded as passed in `01-UAT.md` (status: complete, 3/3 passed, 0 issues), with evidence in `01-HARNESS-WALKTHROUGH.md` and the live `GHLC.verify()` report in `01-03-SUMMARY.md`. Per the re-verification instruction they are treated as complete and are not re-requested.
 
-**Test:** From the repo root run `npm run serve`, open http://localhost:5173/test/harness.html. Click "Location A · Contact X"; click "Send Invite". Switch the stub to "error (500)", open Contact Y, click again. Switch to "cors", wait for the cooldown, click again. Click "Re-render header" and "Re-render contact toolbar". Open "Location B · Contact Z", then "Agency dashboard". Use Back / Forward and the sidebar location switcher. Reload with `?ghlc-debug=1`. Tab through the header links and Send Invite and press Enter on Send Invite. Finally set `enabled` to false in test/fixtures/config.json, reload, then restore it.
-**Expected:** Contact X shows a styled "Send Invite" plus header links "Support" and "Location Settings" (badTypeBtn greyed/unavailable). Send Invite reads "Sending…" then "Workflow triggered" with one log entry (cX / locA / sendInvite / requestId), stays disabled ~3 s, then returns to "Send Invite". 500 gives "Failed — retry" with no URL on the button or tooltip. cors gives "Sent (unconfirmed)" with the confirm-receipt tooltip. Each re-render restores the buttons exactly once. Location B shows "B Support", no "Location Settings", no Send Invite. Agency dashboard shows no customizer buttons. Back/Forward/switcher rebind to the contact shown. The console under `?ghlc-debug=1` shows a `[ghlc] verify` object with mounts/route booleans and no email, phone, or URL. Tab shows a 2px blue focus ring; Enter fires Send Invite. With enabled:false nothing renders.
-**Why human:** Visual styling, the focus-visible ring, real-browser MutationObserver/history timing, and BTN-08's "matches surrounding styling" cannot be judged from the Node shim. Planner deferred these to end-of-phase (Plan 01 Task 2 and Plan 03 Task 2 `<human-check>` blocks; `workflow.human_verify_mode = end-of-phase`).
-
-### 2. Live HighLevel selector verification
-
-**Test:** In a logged-in HighLevel account, install the snippet (script tag with `data-config` pointing at a reachable copy of config/agency-config.json), open a contact record with `?ghlc-debug=1`, read the `[ghlc] verify` console object, and run `GHLC.verify()` manually. Paste the report into 01-03-SUMMARY.md under "Live-account verify output".
-**Expected:** mounts.sidebar/header/headerMount/contactMount/contactRegion/locationSwitcher/backToAgency true; route IDs match the URL; contactFields true on a record that has them; buttons lists sendInvite ready; observers.contact true. Any false mount names a candidate selector in `adapter.selectors` to correct before Phase 2 (sidebarLogo/headerLogo expected false until D-07).
-**Why human:** Every HighLevel selector is a community-sourced candidate (CONTEXT table; STATE.md blocker). Only a logged-in session can confirm the real DOM.
-
-### 3. Live Inbound Webhook delivery and CORS behavior
-
-**Test:** With a real workflow Inbound Webhook trigger URL in the config, press Send Invite once on a contact record and open the workflow's execution log.
-**Expected:** Exactly one execution for that contact with contactId, locationId, buttonId, requestId, sentAt in the inbound data. The button reads "Workflow triggered" (CORS headers returned) or "Sent (unconfirmed)" (no-cors fallback). Record which, for the Phase 3 README.
-**Why human:** External service integration; whether services.leadconnectorhq.com returns CORS headers is unverified (D-11). The suite proves both code paths against a stub only.
+The one remaining external dependency is not a verification item: UAT test 3 delivered to an HTTPS CORS listener from the real contact record, not yet to a production HighLevel Inbound Webhook trigger URL. That URL is Rob's Phase 3 delivery configuration (`REPLACE_ME`); if the real endpoint omits CORS headers the already-verified no-cors path shows "Sent (unconfirmed)".
 
 ### Gaps Summary
 
-No gaps. Every roadmap Success Criterion and every plan must-have is implemented in `src/ghl-customizer.js`, wired end to end, and backed by a passing named scenario in a single `node test/run.mjs` run (PASS 73/73, exit 0) plus an independent out-of-suite spot-check. All 26 requirement IDs are claimed by a plan and satisfied for their Phase 1 share; LOC-03's branding clause is explicitly Phase 2 work. All seven test-tier prohibitions have wired enforcement.
+No gaps. Every roadmap Success Criterion and every plan must-have is implemented in `src/ghl-customizer.js`, wired end to end, and backed by a passing named scenario in a single `node test/run.mjs` run (`PASS 78/78`, exit 0) plus an independent out-of-suite spot-check that exercises the post-verification changes on the live-DOM shape. The code-review fixes (link guard, persistent cooldown, ambiguous-field refusal, cooldown clamp, duplicate-instance guard, ES2019 cleanup) and the live-DOM adapter changes (name-row mount, stateful field readers, bounded late-fill poll) all hold the grep gates: no HTML-string setters, eval, storage, or cookies; no `??`/`?.`; no `setInterval`; selector literals only in the adapter; `console.` only in the constants and verify sections. All 26 requirement IDs are satisfied for their Phase 1 share; LOC-03's branding clause is explicitly Phase 2 work. All seven test-tier prohibitions have wired enforcement. All three human-verification items are complete per `01-UAT.md`.
 
-What remains is exactly the set of known limitations the orchestrator anticipated, and none of it is resolvable from the codebase: the in-browser harness walkthrough (visual/keyboard/timing), live confirmation of the candidate HighLevel selectors via verify mode, and real Inbound Webhook delivery including the endpoint's CORS behavior. Status is therefore `human_needed`, not `gaps_found`.
-
-Non-blocking follow-ups: normalize the ROADMAP Phase 1 goal to User Story form (mode is mvp), and use file paths in `key_links.from` in future plans so `verify.key-links` can evaluate them.
+Non-blocking follow-ups: normalize the ROADMAP Phase 1 goal to User Story form; use file paths in `key_links.from` in future plans; pin the real jsDelivr tag and replace `hooks/REPLACE_ME` in Phase 3.
 
 ---
 
-_Verified: 2026-09-24T17:03:03Z_
+_Verified: 2026-09-24T20:12:49Z_
 _Verifier: Claude (gsd-verifier)_
-
-
-## Human verification — complete (2026-09-24T20:08:39Z)
-
-All three human items passed; see `01-UAT.md` (status: complete) and `01-HARNESS-WALKTHROUGH.md`:
-
-1. Harness walkthrough — run in Chrome, 13/13 steps.
-2. Live HighLevel selectors — `GHLC.verify()` run in Rob's account (Dummy Clinic); three wrong contact-record candidates replaced (commit 9e173b9); email-field late-fill recovery added (commits 1d43272, 8bdeee8). Report pasted into 01-03-SUMMARY.md.
-3. Live webhook delivery — exactly one POST with the full payload reached an HTTPS CORS listener from the real contact record; repeat click blocked. A production Inbound Webhook trigger URL is still Rob's to configure (Phase 3 delivery).
-
-Post-verification commits (f34463b, 9e173b9, 1d43272, 8bdeee8) are covered by the suite at PASS 78/78 (`node test/run.mjs`).

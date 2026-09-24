@@ -13,7 +13,7 @@ Three phases, ordered by what Rob rated most important. Phase 1 ships the core v
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation, Context & Workflow Buttons** - Config-driven script with adapter, location/contact detection, header link buttons, and a contact-record webhook button that triggers the right workflow once
+- [x] **Phase 1: Foundation, Context & Workflow Buttons** - Config-driven script with adapter, location/contact detection, header link buttons, and a contact-record webhook button that triggers the right workflow once (completed 2026-09-24)
 - [ ] **Phase 2: Location Logo Switching** - Client logo per location with agency/native fallbacks and no stale branding across switches
 - [ ] **Phase 3: Accent Colors & Delivery** - Optional per-location accent colors on verified surfaces, README, and the full sample config
 
@@ -89,6 +89,6 @@ Phases execute in numeric order: 1 → 2 → 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation, Context & Workflow Buttons | 3/3 | In Progress|  |
+| 1. Foundation, Context & Workflow Buttons | 3/3 | Complete    | 2026-09-24 |
 | 2. Location Logo Switching | 0/TBD | Not started | - |
 | 3. Accent Colors & Delivery | 0/TBD | Not started | - |
