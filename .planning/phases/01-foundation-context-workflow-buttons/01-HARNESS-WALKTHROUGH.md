@@ -19,3 +19,22 @@ Run by the orchestrator in Chrome against `http://127.0.0.1:5173/test/harness.ht
 | Keyboard | Send Invite is a native `<button type="button">`, tabIndex 0, receives focus | ✓ |
 
 Not covered here (needs Rob's logged-in HighLevel session): live selector verification via `GHLC.verify()` on a real contact record, and real CORS behavior of the Inbound Webhook endpoint.
+
+
+# Live HighLevel walkthrough (2026-09-24, after commit 1d43272)
+
+Script, stylesheet, and config served from HTTPS webhook.site tokens (temporary, 7-day expiry) and injected into a logged-in app.gohighlevel.com tab via a `<script src data-config data-css>` element, which is exactly how HighLevel's Custom JS setting loads it.
+
+| Step | Observed | Verdict |
+|---|---|---|
+| Agency dashboard probe | `#sidebar-v2`, `.sidebar-v2-agency` (wrapper div), `#location-switcher-sidbar-v2`, `.hl_header.--agency`, two `.hl_header--controls`, `#sidebar-v2 img.agency-logo` all present; `#backButtonv2` absent | ✓ (adapter updated) |
+| Location view (Dummy Clinic) | wrapper class `.sidebar-v2-location iDPNGKoFsjvf9wUCrk3V`; switcher text shows the location name | ✓ |
+| Contact record probe | none of `.hl_contact-details-header` / `.contact-detail-header` / `[class*=contact-detail]` / `mailto:` exist; real structure is `#record-details-lhs` → name row with `#delete-contact-trigger`, `div#contact.email > input`, `div#contact.phone > input` | ✗ candidates → ✓ after commit 9e173b9 |
+| Inject on contact record | config loaded, styles injected, Help Center in header, Send Invite on the name row, both observers attached, `contactMountVia: toolbar-anchor`, email readable | ✓ |
+| Press Send Invite | ready → submitting → queued "Workflow triggered"; listener log: 1 × OPTIONS (preflight) + 1 × POST with contactId, locationId, buttonId, requestId (uuid v4), sentAt, email, source | ✓ |
+| Repeat click | no additional request; stays queued | ✓ |
+| Next-contact arrow (SPA) | generation 2 → 3, button re-stamped to the new contact ID, email readable | ✓ |
+| Open contact from list (SPA) | button first rendered `unavailable` (email field empty at mount), recovered to `ready` ~200 ms later via the new bounded field poll | ✗ → ✓ after commit 1d43272 |
+| Full page navigation | injected script is gone after a real reload (expected: HighLevel re-injects Custom JS on each load) | n/a |
+
+Visual note for Phase 3: the name row is narrow; Send Invite pushes the contact name to "(Ex…". A compact/icon-only variant for the contact placement, or mounting on the "Contact Details ‹ ›" row instead, is worth considering.

@@ -286,7 +286,24 @@ On a disabled boot `config` reads `{ loaded: false, enabled: false, schemaVersio
 
 ## Live-account verify output
 
-Not yet run — still blocked on a logged-in HighLevel session (end-of-phase human check). Paste the `[ghlc] verify` object from a contact record opened with `?ghlc-debug=1` here; `mounts.*` false values name the candidate selectors in `adapter.selectors` that need correcting before Phase 2 (`sidebarLogo` / `headerLogo` are expected false until D-07 is resolved).
+```json
+{
+  "config": { "loaded": true, "enabled": true, "schemaVersion": 1, "buttonIds": ["sendInvite", "helpCenter"] },
+  "route": { "locationId": "iDPNGKoFsjvf9wUCrk3V", "contactId": "Q7c2Whf2KdoKSzPbNN7K", "isAgency": false },
+  "generation": 1, "hooksInstalled": true,
+  "mounts": {
+    "sidebar": true, "header": true, "headerMount": true, "headerLogo": true, "sidebarLogo": true,
+    "locationSwitcher": true, "backToAgency": false,
+    "contactRegion": true, "contactMount": true, "contactMountVia": "toolbar-anchor",
+    "contactEmailField": true, "contactPhoneField": true
+  },
+  "contactFields": { "email": true, "phone": false, "emailCandidates": 0, "phoneCandidates": 1 },
+  "buttons": [ { "id": "helpCenter", "placement": "header", "state": "ready" }, { "id": "sendInvite", "placement": "contact", "state": "ready" } ],
+  "observers": { "header": true, "contact": true },
+  "waiting": { "header": false, "contact": false, "contactFields": false }
+}
+```
+Captured 2026-09-24 on app.gohighlevel.com, agency Park Health Systems, location Dummy Clinic, sample contact "(Example) Jordan Smith", script served from an HTTPS test host and injected with `data-config`/`data-css`. `backToAgency: false` is expected: `#backButtonv2` does not exist in the current UI. The class-based contact selectors from community guides did not resolve; the adapter now targets `#record-details-lhs`, the `#delete-contact-trigger` name row, and the `contact.email` / `contact.phone` stateful fields (commit 9e173b9).
 
 ## Decisions Made
 

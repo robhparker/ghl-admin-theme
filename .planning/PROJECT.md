@@ -54,7 +54,7 @@ From an open contact record, a staff member can press one button and reliably tr
   - Location URL pattern `/v2/location/{locationId}/...`; contact detail `/v2/location/{locationId}/contacts/detail/{contactId}`
   - Agency views under `/v2/agency/...` or `/agency_dashboard/...`
   - Window event `routeChangeEvent` fires on in-app navigation (unofficial)
-- **Live verification is blocked on a logged-in HighLevel session.** No HighLevel tab was open during planning. Phase 1 includes a verify mode in the adapter that logs which selectors resolve, so Rob can run it in his account and paste the output.
+- **Live verification done 2026-09-24** in Rob's account (agency Park Health Systems, location Dummy Clinic, sample contacts). Sidebar/header/switcher candidates were right; every class-based contact-record candidate was wrong. Real structure: `#record-details-lhs` panel, name row containing `#delete-contact-trigger` (button mount), stateful fields with element ids `contact.email` / `contact.phone`. `#backButtonv2` does not exist. Send Invite delivered one POST end to end to an HTTPS listener with CORS; a real Inbound Webhook trigger URL still has to be configured by Rob.
 - **Logo position** is undecided until live inspection; the adapter supports both sidebar and header mount points.
 - **Hosting:** GitHub repo under Rob's account, served via jsDelivr pinned to a version tag. Rollback = change the tag in the HighLevel snippet.
 - Different browser tabs must keep independent active-location state (no shared storage for location).
@@ -100,4 +100,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-24 after roadmap adjustment (buttons first, webhook trigger in v1)*
+*Last updated: 2026-09-24 after Phase 1 live verification in HighLevel*
