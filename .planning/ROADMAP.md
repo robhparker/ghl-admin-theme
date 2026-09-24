@@ -63,13 +63,13 @@ Plans:
   4. Rapidly switching A → B → A leaves A's logo showing even when B's image or config resolves late; a slow response from an earlier location never overwrites the current one.
   5. When HighLevel re-renders the logo element (route change, sidebar collapse/expand), the client logo is restored without duplicate images, and verify mode reports a single branding observer.
 
-**Plans**: 2 plans
+**Plans**: 1/2 plans executed
 **UI hint**: yes
 
 Plans:
 **Wave 1**
 
-- [ ] 02-01-PLAN.md — Tracer: config -> location context -> sidebar logo mount -> preload -> in-place src/alt swap -> native restore; then switching/fallback semantics (interim agency logo, location -> agency -> native error chain, stale-result discard, alt chain, scoped .ghlc-logo rule, log hygiene)
+- [x] 02-01-PLAN.md — Tracer: config -> location context -> sidebar logo mount -> preload -> in-place src/alt swap -> native restore; then switching/fallback semantics (interim agency logo, location -> agency -> native error chain, stale-result discard, alt chain, scoped .ghlc-logo rule, log hygiene)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -99,5 +99,5 @@ Phases execute in numeric order: 1 → 2 → 3
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation, Context & Workflow Buttons | 3/3 | Complete    | 2026-09-24 |
-| 2. Location Logo Switching | 0/TBD | Not started | - |
+| 2. Location Logo Switching | 1/2 | In Progress|  |
 | 3. Accent Colors & Delivery | 0/TBD | Not started | - |
