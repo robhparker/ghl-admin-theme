@@ -1,0 +1,11 @@
+{
+  "name": "ghl-customizer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Configuration-driven browser customization layer for a HighLevel agency workspace. Vanilla JS, no build step.",
+  "scripts": {
+    "test": "node test/run.mjs",
+    "serve": "python3 -m http.server 5173"
+  }
+}

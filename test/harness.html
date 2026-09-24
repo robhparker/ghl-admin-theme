@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GHL Customizer — offline harness</title>
+  <link rel="stylesheet" href="../src/ghl-customizer.css" data-ghlc-styles="1">
+  <style>
+    /* Fake HighLevel shell. Prefixed hx- so nothing collides with ghlc- or HighLevel names. */
+    .hx-body { margin: 0; font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #101828; background: #f2f4f7; }
+    .hx-banner { background: #fffaeb; border-bottom: 1px solid #fec84b; padding: 10px 16px; font-size: 13px; }
+    .hx-banner code { background: #fef0c7; padding: 1px 4px; border-radius: 3px; }
+    .hx-layout { display: grid; grid-template-columns: 220px 1fr; min-height: calc(100vh - 42px); }
+    .hx-sidebar { background: #101828; color: #d0d5dd; padding: 16px; }
+    .hx-sidebar select, .hx-sidebar button { display: block; width: 100%; margin-top: 8px; padding: 6px; }
+    .hx-sidebar .hx-mode { margin-top: 12px; font-size: 12px; color: #98a2b3; }
+    .hx-content { display: flex; flex-direction: column; }
+    .hl_header { display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 16px; background: #ffffff; border-bottom: 1px solid #eaecf0; }
+    .hl_header--controls { display: inline-flex; align-items: center; gap: 8px; }
+    .hx-main { padding: 16px; }
+    .hl_contact-details-header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #ffffff; border: 1px solid #eaecf0; border-radius: 8px; }
+    .hl_contact-details-header h2 { margin: 0; font-size: 16px; }
+    .hx-placeholder { padding: 24px; background: #ffffff; border: 1px dashed #d0d5dd; border-radius: 8px; color: #667085; }
+    .hx-panel { margin-top: 24px; padding: 16px; background: #ffffff; border: 1px solid #eaecf0; border-radius: 8px; }
+    .hx-panel h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: #667085; }
+    .hx-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; align-items: center; }
+    .hx-row button { padding: 6px 10px; border: 1px solid #d0d5dd; border-radius: 6px; background: #f9fafb; cursor: pointer; font: inherit; font-size: 13px; }
+    .hx-row label { font-size: 13px; margin-right: 8px; }
+    .hx-log { margin: 0; max-height: 260px; overflow: auto; padding: 12px; background: #101828; color: #d0d5dd; font-size: 12px; border-radius: 6px; white-space: pre-wrap; }
+  </style>
+</head>
+<body class="hx-body">
+
+  <div class="hx-banner">
+    Offline HighLevel shell. From the repo root run <code>npm run serve</code> and open
+    <code>http://localhost:5173/test/harness.html</code>. Navigation uses pushState, so if you reload
+    on a fake route, reopen the harness URL. The webhook stub below never calls a real workflow.
+  </div>
+
+  <div class="hx-layout">
+    <aside id="sidebar-v2" class="sidebar-v2-location hx-sidebar">
+      <strong>Fake sidebar</strong>
+      <select id="location-switcher-sidbar-v2" aria-label="Location switcher">
+        <option value="locA">Location A</option>
+        <option value="locB">Location B</option>
+      </select>
+      <button id="backButtonv2" type="button">Back to agency</button>
+      <div class="hx-mode" id="hx-mode">mode: location</div>
+    </aside>
+
+    <div class="hx-content">
+      <header class="hl_header">
+        <span>Fake header</span>
+        <div class="hl_header--controls"></div>
+      </header>
+
+      <div class="hx-main">
+        <main id="hx-main"></main>
+
+        <section class="hx-panel" aria-label="Harness controls">
+          <h3>Navigate</h3>
+          <div class="hx-row">
+            <button type="button" data-hx-go="/v2/location/locA/contacts/detail/cX">Location A · Contact X</button>
+            <button type="button" data-hx-go="/v2/location/locA/contacts/detail/cY">Location A · Contact Y</button>
+            <button type="button" data-hx-go="/v2/location/locA/dashboard">Location A · Dashboard</button>
+            <button type="button" data-hx-go="/v2/location/locB/contacts/detail/cZ">Location B · Contact Z</button>
+            <button type="button" data-hx-go="/v2/agency/dashboard">Agency dashboard</button>
+            <button type="button" id="hx-back">Back</button>
+            <button type="button" id="hx-forward">Forward</button>
+            <label><input type="checkbox" id="hx-replace"> Navigate with replaceState</label>
+          </div>
+
+          <h3>Re-render</h3>
+          <div class="hx-row">
+            <button type="button" id="hx-rerender-header">Re-render header</button>
+            <button type="button" id="hx-rerender-contact">Re-render contact toolbar</button>
+            <button type="button" id="hx-route-event">Dispatch routeChangeEvent</button>
+          </div>
+
+          <h3>Webhook stub</h3>
+          <div class="hx-row" role="radiogroup" aria-label="Webhook stub">
+            <label><input type="radio" name="hx-stub" value="ok" checked> ok (200)</label>
+            <label><input type="radio" name="hx-stub" value="error"> error (500)</label>
+            <label><input type="radio" name="hx-stub" value="cors"> cors (TypeError, then opaque on no-cors)</label>
+            <label><input type="radio" name="hx-stub" value="offline"> offline (always TypeError)</label>
+          </div>
+
+          <h3>Log</h3>
+          <pre id="hx-log" class="hx-log"></pre>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Harness tooling only. This script runs BEFORE the customizer: it stubs fetch for
+    // webhook URLs and provides a fake history-based router that rebuilds the shell.
+    (function () {
+      'use strict';
+
+      var logEl = document.getElementById('hx-log');
+      function hxLog(entry) {
+        // The harness may show payload IDs because it is test tooling; the customizer itself logs nothing.
+        logEl.textContent += JSON.stringify(entry) + '\n';
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      // ---- fetch stub -------------------------------------------------------
+      var realFetch = window.fetch.bind(window);
+      function stubMode() {
+        var checked = document.querySelector('input[name="hx-stub"]:checked');
+        return checked ? checked.value : 'ok';
+      }
+      window.fetch = function (input, init) {
+        var url = typeof input === 'string' ? input : (input && input.url) || String(input);
+        init = init || {};
+        if (url.indexOf('/hooks/') === -1) return realFetch(input, init);
+
+        var mode = stubMode();
+        var payload = {};
+        try { payload = JSON.parse(init.body || '{}'); } catch (e) { payload = {}; }
+        var entry = {
+          time: new Date().toISOString(),
+          stub: mode,
+          mode: init.mode || 'cors',
+          contactId: payload.contactId,
+          locationId: payload.locationId,
+          buttonId: payload.buttonId,
+          requestId: payload.requestId
+        };
+        return new Promise(function (resolve, reject) {
+          setTimeout(function () {
+            if (mode === 'offline' || (mode === 'cors' && init.mode !== 'no-cors')) {
+              entry.status = 'TypeError';
+              hxLog(entry);
+              reject(new TypeError('Failed to fetch'));
+              return;
+            }
+            if (mode === 'cors') {
+              // Opaque response: the browser would report status 0 / type "opaque".
+              var opaque = new Response(null, { status: 200 });
+              try { Object.defineProperty(opaque, 'type', { value: 'opaque' }); } catch (e) {}
+              entry.status = 'opaque';
+              hxLog(entry);
+              resolve(opaque);
+              return;
+            }
+            var status = mode === 'error' ? 500 : 200;
+            entry.status = status;
+            hxLog(entry);
+            resolve(new Response(JSON.stringify({ status: status === 200 ? 'ok' : 'error' }), {
+              status: status,
+              headers: { 'Content-Type': 'application/json' }
+            }));
+          }, 400);
+        });
+      };
+
+      // ---- fake router --------------------------------------------------------
+      var CONTACT_RE = /^\/v2\/location\/([^/]+)\/contacts\/detail\/([^/]+)/;
+      var LOCATION_RE = /^\/v2\/location\/([^/]+)/;
+      var CONTACTS = {
+        cX: { name: 'Contact X', email: 'x@example.test', phone: '+15555550001' },
+        cY: { name: 'Contact Y', email: 'y@example.test', phone: '+15555550002' },
+        cZ: { name: 'Contact Z', email: 'z@example.test', phone: '+15555550003' }
+      };
+
+      var main = document.getElementById('hx-main');
+      var sidebar = document.getElementById('sidebar-v2');
+      var modeEl = document.getElementById('hx-mode');
+      var switcher = document.getElementById('location-switcher-sidbar-v2');
+
+      function el(tag, attrs, children) {
+        var node = document.createElement(tag);
+        Object.keys(attrs || {}).forEach(function (k) { node.setAttribute(k, attrs[k]); });
+        (children || []).forEach(function (c) {
+          node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+        });
+        return node;
+      }
+
+      function buildContactBlock(contactId) {
+        var c = CONTACTS[contactId] || { name: 'Unknown contact (' + contactId + ')', email: '', phone: '' };
+        var block = el('div', { 'class': 'hl_contact-details-header' }, [el('h2', {}, [c.name])]);
+        if (c.email) block.appendChild(el('a', { href: 'mailto:' + c.email }, ['email']));
+        if (c.phone) block.appendChild(el('a', { href: 'tel:' + c.phone }, ['phone']));
+        return block;
+      }
+
+      function setSidebarMode(mode) {
+        sidebar.className = 'sidebar-v2-' + mode + ' hx-sidebar';
+        modeEl.textContent = 'mode: ' + mode;
+      }
+
+      function render() {
+        var path = location.pathname;
+        while (main.firstChild) main.removeChild(main.firstChild);
+        var m = CONTACT_RE.exec(path);
+        if (m) {
+          setSidebarMode('location');
+          switcher.value = m[1];
+          main.appendChild(buildContactBlock(m[2]));
+          return;
+        }
+        m = LOCATION_RE.exec(path);
+        if (m) {
+          setSidebarMode('location');
+          switcher.value = m[1];
+          main.appendChild(el('div', { 'class': 'hx-placeholder' }, ['Location dashboard: ' + m[1]]));
+          return;
+        }
+        setSidebarMode('agency');
+        main.appendChild(el('div', { 'class': 'hx-placeholder' }, ['Agency view: ' + path]));
+      }
+
+      function go(path) {
+        var useReplace = document.getElementById('hx-replace').checked;
+        if (useReplace) history.replaceState({}, '', path);
+        else history.pushState({}, '', path);
+        render();
+      }
+
+      // ---- controls -----------------------------------------------------------
+      Array.prototype.forEach.call(document.querySelectorAll('[data-hx-go]'), function (btn) {
+        btn.addEventListener('click', function () { go(btn.getAttribute('data-hx-go')); });
+      });
+      switcher.addEventListener('change', function () { go('/v2/location/' + switcher.value + '/dashboard'); });
+      document.getElementById('backButtonv2').addEventListener('click', function () { go('/v2/agency/dashboard'); });
+      document.getElementById('hx-back').addEventListener('click', function () { history.back(); });
+      document.getElementById('hx-forward').addEventListener('click', function () { history.forward(); });
+      document.getElementById('hx-rerender-header').addEventListener('click', function () {
+        var old = document.querySelector('.hl_header');
+        var fresh = el('header', { 'class': 'hl_header' }, [el('span', {}, ['Fake header (re-rendered)']), el('div', { 'class': 'hl_header--controls' })]);
+        old.replaceWith(fresh);
+        hxLog({ time: new Date().toISOString(), harness: 're-rendered header' });
+      });
+      document.getElementById('hx-rerender-contact').addEventListener('click', function () {
+        var old = document.querySelector('.hl_contact-details-header');
+        var m = CONTACT_RE.exec(location.pathname);
+        if (!old || !m) { hxLog({ time: new Date().toISOString(), harness: 'no contact toolbar to re-render' }); return; }
+        old.replaceWith(buildContactBlock(m[2]));
+        hxLog({ time: new Date().toISOString(), harness: 're-rendered contact toolbar' });
+      });
+      document.getElementById('hx-route-event').addEventListener('click', function () {
+        window.dispatchEvent(new CustomEvent('routeChangeEvent'));
+        hxLog({ time: new Date().toISOString(), harness: 'dispatched routeChangeEvent' });
+      });
+      window.addEventListener('popstate', render);
+
+      render();
+    })();
+  </script>
+
+  <script src="../src/ghl-customizer.js" data-config="./fixtures/config.json"></script>
+</body>
+</html>
