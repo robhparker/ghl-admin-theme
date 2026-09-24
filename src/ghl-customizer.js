@@ -41,6 +41,30 @@
   var DEFAULT_COOLDOWN_MS = 10000;
   var ACTION_TYPES = Object.freeze(['link', 'webhook', 'handler']);
   var STATES = Object.freeze(['ready', 'submitting', 'queued', 'unavailable', 'failed']);
+  // Link buttons may only navigate to these schemes or to a same-origin path (BTN-09).
+  var SAFE_LINK_SCHEMES = Object.freeze(['https:', 'mailto:', 'tel:']);
+  var SAFE_TARGETS = Object.freeze(['_self', '_blank']);
+  // Bounded wait for a mount that appears shortly after navigation: at most
+  // MOUNT_WAIT_MAX_MS / MOUNT_WAIT_INTERVAL_MS querySelector passes per route change.
+  var MOUNT_WAIT_INTERVAL_MS = 250;
+  var MOUNT_WAIT_MAX_MS = 15000;
+
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+
+  // Approved icon set: name -> stroke paths on a 24x24 grid. This is the only
+  // place icon markup is defined; unknown keys render no icon.
+  var ICONS = Object.freeze({
+    send: ['M21 3L10.5 13.5', 'M21 3L14 21L10.5 13.5L3 10L21 3Z'],
+    mail: ['M3 6h18v12H3z', 'M3 7l9 6l9-6'],
+    link: ['M9.5 14.5L14.5 9.5', 'M13 7l2-2a3.5 3.5 0 0 1 5 5l-2 2', 'M11 17l-2 2a3.5 3.5 0 0 1-5-5l2-2'],
+    external: ['M14 4h6v6', 'M20 4L11 13', 'M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5']
+  });
+
+  // Own-property lookup for every config-keyed read (locations, overrides,
+  // handlers, icons) so prototype names in config can never resolve.
+  function hasOwn(obj, key) {
+    return obj !== null && obj !== undefined && Object.prototype.hasOwnProperty.call(obj, key);
+  }
 
   // Selectors for elements this script owns (never HighLevel's).
   var OWN = Object.freeze({
@@ -218,6 +242,36 @@
     return readInputValue(region, selectors.contactPhone[1]);
   }
 
+  /**
+   * The outermost element HighLevel replaces wholesale when it re-renders an
+   * area (.hl_header, the contact region). The mount is either that root or
+   * nested inside it; the observers section watches the root and its parent.
+   */
+  function findRegionRoot(placement, mount) {
+    if (placement === 'header') {
+      var header = typeof mount.closest === 'function' ? mount.closest(selectors.header) : null;
+      return header || mount;
+    }
+    var region = findContactRegion();
+    return region && (region === mount || region.contains(mount)) ? region : mount;
+  }
+
+  // Boolean presence of every mount selector, for verify mode (FND-04). No
+  // element or value leaves the adapter, only true/false.
+  function probe() {
+    return {
+      sidebar: !!document.querySelector(selectors.sidebar),
+      header: !!document.querySelector(selectors.header),
+      headerMount: !!findHeaderMount(),
+      contactMount: !!findContactMount(),
+      contactRegion: !!findContactRegion(),
+      sidebarLogo: !!document.querySelector(selectors.sidebarLogo),
+      headerLogo: !!document.querySelector(selectors.headerLogo),
+      locationSwitcher: !!document.querySelector(selectors.locationSwitcher),
+      backToAgency: !!document.querySelector(selectors.backToAgency)
+    };
+  }
+
   var adapter = Object.freeze({
     routes: routes,
     selectors: selectors,
@@ -227,8 +281,10 @@
     findHeaderMount: findHeaderMount,
     findContactMount: findContactMount,
     findContactRegion: findContactRegion,
+    findRegionRoot: findRegionRoot,
     readContactEmail: readContactEmail,
-    readContactPhone: readContactPhone
+    readContactPhone: readContactPhone,
+    probe: probe
   });
 
 // ==== config ====
@@ -337,6 +393,16 @@
           warn('config-parse-failed', {});
           return null;
         }
+        if (isPlainObject(parsed)) {
+          // Recorded before validation so verify() can report what was served
+          // even when the script goes on to do nothing with it (FND-04/06).
+          state.lastSchemaVersion = typeof parsed.schemaVersion === 'number' ? parsed.schemaVersion : null;
+          state.lastEnabled = parsed.enabled === true;
+          if (parsed.schemaVersion !== 1) {
+            warn('config-schema-unsupported', { schemaVersion: Number(parsed.schemaVersion) || 0 });
+            return null;
+          }
+        }
         var result = validateConfig(parsed);
         if (!result.ok) {
           warn('config-invalid', { count: result.errors.length });
@@ -350,17 +416,44 @@
     });
   }
 
+  // A location override may replace label, icon, and action (whole object);
+  // id, placement, and scope are never overridable.
+  function applyOverride(button, override) {
+    var merged = {};
+    Object.keys(button).forEach(function (key) {
+      merged[key] = button[key];
+    });
+    if (typeof override.label === 'string' && override.label.length >= 1 && override.label.length <= 80) {
+      merged.label = override.label;
+    }
+    if (typeof override.icon === 'string') merged.icon = override.icon;
+    if (isPlainObject(override.action)) merged.action = override.action;
+    return merged;
+  }
+
   /**
-   * Buttons visible for a location. Agency-level pages (locationId null) get
-   * no buttons; buttons are a location-scoped feature.
+   * Buttons visible for a location (BTN-02). Agency-level pages (locationId
+   * null) get no buttons; buttons are a location-scoped feature.
+   * config.locations[locationId].buttons[buttonId]: false disables, true
+   * enables (even out of scope), an object enables and merges label/icon/action.
+   * Every lookup is an own-property lookup so prototype-named keys are ignored.
    */
   function resolveButtons(config, locationId) {
     if (!config || !Array.isArray(config.buttons) || !locationId) return [];
-    // Plan 03 merges config.locations[locationId].buttons overrides (BTN-02) here.
-    return config.buttons.filter(function (button) {
-      return button.scope === 'all' ||
+    var locations = isPlainObject(config.locations) ? config.locations : {};
+    var entry = hasOwn(locations, locationId) ? locations[locationId] : null;
+    var overrides = isPlainObject(entry) && isPlainObject(entry.buttons) ? entry.buttons : {};
+    var out = [];
+    config.buttons.forEach(function (button) {
+      var override = hasOwn(overrides, button.id) ? overrides[button.id] : undefined;
+      if (override === false) return;
+      var inScope = button.scope === 'all' ||
         (Array.isArray(button.scope) && button.scope.indexOf(locationId) !== -1);
+      if (override === true) out.push(button);
+      else if (isPlainObject(override)) out.push(applyOverride(button, override));
+      else if (override === undefined && inScope) out.push(button);
     });
+    return out;
   }
 
 // ==== context ====
@@ -374,7 +467,14 @@
     timers: new Map(),
     ready: null,
     hooksInstalled: false,
-    navTimer: null
+    navTimer: null,
+    // Observers section: one bounded observer set per placement, or null.
+    watch: { header: null, contact: null },
+    renderTimers: { header: null, contact: null },
+    mountWaits: { header: null, contact: null },
+    // What the last served config said, even when it was not adopted (verify).
+    lastSchemaVersion: null,
+    lastEnabled: null
   };
 
   function computeContext() {
@@ -398,8 +498,13 @@
     state.ctx = next;
     state.generation += 1;
     // Timers from the previous context die with it (BTN-06): a cooldown for an
-    // old element must never flip a new one.
+    // old element must never flip a new one. Pending re-renders and mount
+    // waits belong to the old route too; the new route starts them afresh.
     clearTimers();
+    PLACEMENTS.forEach(function (placement) {
+      cancelScheduledRender(placement);
+      cancelMountWait(placement);
+    });
     renderAll();
     log('nav', { reason: reason, generation: state.generation });
     log('context', {
@@ -464,18 +569,8 @@
 
 // ==== buttons ====
 
-  var SVG_NS = 'http://www.w3.org/2000/svg';
-
-  // Approved icon set: name -> stroke paths on a 24x24 grid. Unknown keys render no icon.
-  var ICONS = Object.freeze({
-    send: ['M21 3L10.5 13.5', 'M21 3L14 21L10.5 13.5L3 10L21 3Z'],
-    mail: ['M3 6h18v12H3z', 'M3 7l9 6l9-6'],
-    link: ['M9.5 14.5L14.5 9.5', 'M13 7l2-2a3.5 3.5 0 0 1 5 5l-2 2', 'M11 17l-2 2a3.5 3.5 0 0 1-5-5l2-2'],
-    external: ['M14 4h6v6', 'M20 4L11 13', 'M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5']
-  });
-
-  function createIcon(name) {
-    if (typeof name !== 'string' || !Object.prototype.hasOwnProperty.call(ICONS, name)) return null;
+  function makeIcon(name) {
+    if (typeof name !== 'string' || !hasOwn(ICONS, name)) return null;
     var svg = document.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('viewBox', '0 0 24 24');
     svg.setAttribute('focusable', 'false');
@@ -483,6 +578,8 @@
     ICONS[name].forEach(function (d) {
       var path = document.createElementNS(SVG_NS, 'path');
       path.setAttribute('d', d);
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', 'currentColor');
       path.setAttribute('stroke-linecap', 'round');
       path.setAttribute('stroke-linejoin', 'round');
       svg.appendChild(path);
@@ -490,19 +587,67 @@
     return svg;
   }
 
+  /**
+   * Handler registry (BTN-09). Config may name a handler by string; the name
+   * resolves against this frozen object via own-property lookup only, so
+   * prototype names (constructor, __proto__, ...) never resolve. Adding a
+   * handler means editing this object; config can never supply code.
+   * Signature: (ctx: { locationId, contactId, buttonId }, el)
+   *   -> { ok: boolean, message?: string } | Promise<same> | undefined
+   */
+  var handlers = Object.freeze({
+    copyContactId: function (ctx) {
+      if (!ctx || !ctx.contactId) return { ok: false, message: 'No contact open' };
+      var clipboard = typeof navigator !== 'undefined' && navigator ? navigator.clipboard : null;
+      if (!clipboard || typeof clipboard.writeText !== 'function') {
+        return { ok: false, message: 'Clipboard unavailable' };
+      }
+      return clipboard.writeText(ctx.contactId).then(function () {
+        return { ok: true, message: 'Contact ID copied' };
+      });
+    }
+  });
+
+  // A single-slash same-origin path, or an absolute URL whose scheme is in
+  // SAFE_LINK_SCHEMES (no credentials). Everything else, including any other
+  // scheme, protocol-relative URLs, and parse failures, is refused.
+  function isSafeLinkHref(href) {
+    if (typeof href !== 'string' || !href) return false;
+    if (href.charAt(0) === '/') return href.charAt(1) !== '/';
+    try {
+      var url = new URL(href);
+      return SAFE_LINK_SCHEMES.indexOf(url.protocol) !== -1 && url.username === '' && url.password === '';
+    } catch (e) {
+      return false;
+    }
+  }
+
   function ctxKey() {
     return (state.ctx.locationId || '') + '|' + (state.ctx.contactId || '');
   }
 
+  function unavailable(message) {
+    return { kind: 'unavailable', message: message };
+  }
+
+  /**
+   * Action allowlist (BTN-09). Only link, webhook, and handler are honored and
+   * only the fields named here are ever read from the action object; nothing
+   * from config is evaluated or inserted as markup.
+   */
   function resolveAction(button) {
     var action = button.action;
-    if (!isPlainObject(action) || ACTION_TYPES.indexOf(action.type) === -1) {
-      return { kind: 'unavailable', message: 'Action not available' };
+    if (!isPlainObject(action) || typeof action.type !== 'string' || ACTION_TYPES.indexOf(action.type) === -1) {
+      return unavailable('Action not available');
+    }
+    if (action.type === 'link') {
+      if (!isSafeLinkHref(action.href)) return unavailable('Link not allowed');
+      var target = SAFE_TARGETS.indexOf(action.target) !== -1 ? action.target : '_self';
+      return { kind: 'link', href: action.href, target: target };
     }
     if (action.type === 'webhook') {
-      if (!isSafeHttpsUrl(action.url)) {
-        return { kind: 'unavailable', message: 'Webhook URL must use HTTPS' };
-      }
+      if (button.placement !== 'contact') return unavailable('Requires an open contact');
+      if (!isSafeHttpsUrl(action.url)) return unavailable('Webhook URL must use HTTPS');
       return {
         kind: 'webhook',
         url: action.url,
@@ -512,8 +657,14 @@
           : DEFAULT_COOLDOWN_MS
       };
     }
-    // Plan 03 resolves link and handler actions here.
-    return { kind: 'unavailable', message: 'Action not available' };
+    if (action.type === 'handler') {
+      var name = action.handler;
+      if (typeof name === 'string' && hasOwn(handlers, name) && typeof handlers[name] === 'function') {
+        return { kind: 'handler', run: handlers[name] };
+      }
+      return unavailable('Action not available');
+    }
+    return unavailable('Action not available');
   }
 
   function setState(el, next, opts) {
@@ -545,10 +696,23 @@
     else el.removeAttribute('title');
   }
 
+  // Every control is a native <a href> or <button> (BTN-08): keyboard
+  // activation and focus come from the element itself, never from ARIA
+  // role or focus-order attributes bolted onto a generic element.
   function createButtonEl(button) {
-    var el = document.createElement('button');
-    el.setAttribute('type', 'button');
-    el.setAttribute('class', NS + '-btn');
+    var action = resolveAction(button);
+    var el;
+    if (action.kind === 'link') {
+      el = document.createElement('a');
+      el.setAttribute('class', NS + '-btn ' + NS + '-btn--link');
+      el.setAttribute('href', action.href);
+      el.setAttribute('target', action.target);
+      if (action.target === '_blank') el.setAttribute('rel', 'noopener noreferrer');
+    } else {
+      el = document.createElement('button');
+      el.setAttribute('type', 'button');
+      el.setAttribute('class', NS + '-btn');
+    }
     el.setAttribute('data-' + NS + '-button-id', button.id);
     el.setAttribute('data-' + NS + '-placement', button.placement);
     el.setAttribute('data-' + NS + '-ctx', ctxKey());
@@ -558,7 +722,7 @@
     var iconEl = document.createElement('span');
     iconEl.setAttribute('class', NS + '-btn__icon');
     iconEl.setAttribute('aria-hidden', 'true');
-    var svg = createIcon(button.icon);
+    var svg = makeIcon(button.icon);
     if (svg) iconEl.appendChild(svg);
 
     var labelEl = document.createElement('span');
@@ -574,9 +738,11 @@
     el.appendChild(labelEl);
     el.appendChild(msgEl);
 
-    var action = resolveAction(button);
     if (action.kind === 'unavailable') {
       setState(el, 'unavailable', { message: action.message });
+    } else if (action.kind === 'link') {
+      // Native anchor: no click listener, the browser navigates.
+      setState(el, 'ready');
     } else if (action.kind === 'webhook' && button.placement === 'contact' && !contactFieldsReadable()) {
       // D-02: HighLevel may render the toolbar before the email field. Render
       // unavailable now; a later renderPlacement recovers it (recoverNoContactFields).
@@ -635,21 +801,34 @@
     return group;
   }
 
+  // Idempotent reconcile by button id + ctx. Observers and the bounded mount
+  // wait re-enter here; a spurious call costs a few queries and no DOM writes.
   function renderPlacement(placement) {
-    var mount = placement === 'contact' ? adapter.findContactMount() : adapter.findHeaderMount();
-    if (!mount) {
-      // Missing mount: omit the customization, leave native UI untouched.
-      removeGroup(placement);
-      return;
-    }
+    var mount = placement === 'header' ? adapter.findHeaderMount() : adapter.findContactMount();
     var desired = resolveButtons(state.config, state.ctx.locationId).filter(function (button) {
       return button.placement === placement;
     });
     if (placement === 'contact' && !state.ctx.contactId) desired = [];
+    var expected = placement === 'contact' ? !!state.ctx.contactId : !!state.ctx.locationId;
+    if (!mount) {
+      // Missing mount: omit the customization, leave native UI untouched, and
+      // wait a bounded time for it only when this route should have it.
+      unwatchMount(placement);
+      removeGroup(placement);
+      if (expected && desired.length) waitForMount(placement);
+      else cancelMountWait(placement);
+      return;
+    }
+    cancelMountWait(placement);
     if (!desired.length) {
+      unwatchMount(placement);
       removeGroup(placement);
       return;
     }
+    // Watch before writing: every write below then yields only self-inflicted
+    // records, which onMountMutation drops. A no-op while the same mount is
+    // still watched; a new mount element swaps the set (never accumulates).
+    watchMount(placement, mount);
     var group = ensureGroup(mount, placement);
     var key = ctxKey();
     var wanted = Object.create(null);
@@ -673,8 +852,8 @@
   }
 
   function renderAll() {
+    renderPlacement('header');
     renderPlacement('contact');
-    // Plan 03 adds renderPlacement('header').
   }
 
   function uuid() {
@@ -863,21 +1042,221 @@
     });
   }
 
+  // Runs a registry handler with the same stale-click and generation guards
+  // as a webhook; the handler's own result decides ready vs failed.
+  function runHandler(button, action, el) {
+    if (refuseStaleClick(button, el)) return Promise.resolve();
+    var gen = state.generation;
+    setState(el, 'submitting');
+    return Promise.resolve().then(function () {
+      return action.run({
+        locationId: state.ctx.locationId,
+        contactId: state.ctx.contactId,
+        buttonId: button.id
+      }, el);
+    }).then(null, function () {
+      return { ok: false, message: 'Action failed' };
+    }).then(function (result) {
+      if (gen !== state.generation || !el.isConnected) {
+        log('handler-discarded', { buttonId: button.id, generation: gen });
+        return;
+      }
+      var ok = !(result && result.ok === false);
+      if (!ok) {
+        setState(el, 'failed', { message: result.message || 'Action failed' });
+      } else {
+        setState(el, 'ready', { message: (result && typeof result.message === 'string') ? result.message : '' });
+      }
+      log('handler', { buttonId: button.id, ok: ok });
+    });
+  }
+
   function onButtonClick(button, el) {
     var current = el.getAttribute('data-state');
     if (current !== 'ready' && current !== 'failed') return;
     var action = resolveAction(button);
     if (action.kind === 'webhook') runWebhook(button, action, el);
+    else if (action.kind === 'handler') runHandler(button, action, el);
   }
 
 // ==== observers ====
 
-  // Plan 03 fills this section with scoped, bounded MutationObservers and navigation listeners.
+  function everyNode(list, predicate) {
+    for (var i = 0; i < list.length; i++) {
+      if (!predicate(list[i])) return false;
+    }
+    return true;
+  }
+
+  // Elements this script created: buttons, groups, anything inside a group,
+  // the stylesheet link, and text nodes whose parent is own.
+  function isOwnNode(node) {
+    if (!node) return false;
+    if (node.nodeType === 3) return isOwnNode(node.parentNode);
+    if (node.nodeType !== 1 || typeof node.hasAttribute !== 'function') return false;
+    if (node.hasAttribute('data-' + NS + '-button-id')) return true;
+    if (node.hasAttribute('data-' + NS + '-styles')) return true;
+    if (node.classList && node.classList.contains(OWN.groupClass)) return true;
+    return typeof node.closest === 'function' && node.closest(OWN.groupSel) !== null;
+  }
+
+  /**
+   * A record is self-inflicted when it can only have come from this script:
+   *   (a) its target is own (setState swapping label/message text, reconcile
+   *       pruning a button) and every added node is own — a removed node was a
+   *       child of an own node, so it is own too (a detached text node has no
+   *       parentNode to prove it); or
+   *   (b) nothing was removed and every added node is own (our group or the
+   *       stylesheet link attached to a native parent).
+   * Everything else is HighLevel's doing: the mount's children wiped, our
+   * group removed by a native parent, the region replaced, a field appearing.
+   */
+  function isSelfInflicted(record) {
+    if (!record || record.type !== 'childList') return false;
+    var addedOwn = everyNode(record.addedNodes, isOwnNode);
+    if (isOwnNode(record.target)) return addedOwn;
+    return record.removedNodes.length === 0 && addedOwn;
+  }
+
+  function onMountMutation(placement, records) {
+    if (everyNode(records, isSelfInflicted)) return;
+    scheduleRender(placement);
+  }
+
+  // Coalesces a burst of native mutations into one render on the next tick.
+  // The render's own writes yield only self-inflicted records, so a render
+  // triggered by a native mutation settles after one pass (T-01-12).
+  function scheduleRender(placement) {
+    cancelScheduledRender(placement);
+    state.renderTimers[placement] = setTimeout(function () {
+      state.renderTimers[placement] = null;
+      renderPlacement(placement);
+      log('rerender', { placement: placement });
+    }, 0);
+  }
+
+  function cancelScheduledRender(placement) {
+    if (state.renderTimers[placement] === null) return;
+    clearTimeout(state.renderTimers[placement]);
+    state.renderTimers[placement] = null;
+  }
+
+  /**
+   * One bounded observer set per active placement, always exactly two
+   * observers, both scoped to the region:
+   *   rootMo   observes the region root with { childList, subtree }: the mount
+   *            swapped inside the region, its children wiped, our group
+   *            removed, a contact field appearing later.
+   *   anchorMo observes the root's parent with { childList } only. A
+   *            wholesale replacement of the region (HighLevel swapping the
+   *            entire header element or contact header element, exactly what
+   *            the harness "Re-render" buttons do) is a childList mutation on
+   *            the region's PARENT; no observer on or inside the region can
+   *            see the region's own removal. The anchor observer is shallow,
+   *            so it wakes only when a direct child of that parent changes.
+   *            The script never observes the whole page with subtree.
+   * renderPlacement re-watches the replacement mount, so the set follows a
+   * re-render instead of accumulating; leaving the route disconnects it.
+   */
+  function anchorFor(root) {
+    var parent = root.parentNode;
+    return parent && parent.nodeType === 1 ? parent : document.body;
+  }
+
+  function watchMount(placement, mount) {
+    var slot = state.watch[placement];
+    if (slot && slot.mount === mount && slot.anchor.isConnected && anchorFor(slot.root) === slot.anchor) return;
+    unwatchMount(placement);
+    var root = adapter.findRegionRoot(placement, mount);
+    var anchor = anchorFor(root);
+    var deliver = function (records) {
+      onMountMutation(placement, records);
+    };
+    var rootMo = new MutationObserver(deliver);
+    var anchorMo = new MutationObserver(deliver);
+    rootMo.observe(root, { childList: true, subtree: true });
+    anchorMo.observe(anchor, { childList: true, subtree: false });
+    state.watch[placement] = { mount: mount, root: root, anchor: anchor, rootMo: rootMo, anchorMo: anchorMo };
+    log('observer-attached', { placement: placement });
+  }
+
+  function unwatchMount(placement) {
+    var slot = state.watch[placement];
+    if (!slot) return;
+    slot.rootMo.disconnect();
+    slot.anchorMo.disconnect();
+    state.watch[placement] = null;
+    log('observer-detached', { placement: placement });
+  }
+
+  /**
+   * Bounded, route-scoped retry for a mount that appears shortly after
+   * navigation: one querySelector pass every MOUNT_WAIT_INTERVAL_MS for at
+   * most MOUNT_WAIT_MAX_MS (60 passes), then give up and leave the native UI
+   * alone. Ticks are counted, not clocked, so fake timers work. A context
+   * change cancels the wait; the new route starts its own. This is not
+   * whole-page polling: it runs only while a route expects a mount it lacks.
+   */
+  function waitForMount(placement) {
+    if (state.mountWaits[placement]) return;
+    var wait = { ticks: 0, timer: null };
+    state.mountWaits[placement] = wait;
+    scheduleMountTick(placement, wait);
+  }
+
+  function scheduleMountTick(placement, wait) {
+    wait.timer = setTimeout(function () {
+      wait.ticks += 1;
+      if (wait.ticks * MOUNT_WAIT_INTERVAL_MS > MOUNT_WAIT_MAX_MS) {
+        cancelMountWait(placement);
+        log('mount-missing', { placement: placement });
+        return;
+      }
+      // Re-arm first so renderPlacement's waitForMount is a no-op; it cancels
+      // the wait itself once the mount is found.
+      scheduleMountTick(placement, wait);
+      renderPlacement(placement);
+    }, MOUNT_WAIT_INTERVAL_MS);
+  }
+
+  function cancelMountWait(placement) {
+    var wait = state.mountWaits[placement];
+    if (!wait) return;
+    clearTimeout(wait.timer);
+    state.mountWaits[placement] = null;
+  }
 
 // ==== verify ====
 
+  /**
+   * FND-04 verify mode: window.GHLC.verify() or ?ghlc-debug=1. Reports which
+   * mount selectors and route patterns resolve on the current page. Only IDs,
+   * booleans, and states: contact fields are reported as present/absent, the
+   * webhook URL and config URL never appear (DLV-04).
+   */
   function verify() {
-    var report = { version: VERSION, route: computeContext(), generation: state.generation };
+    var region = adapter.findContactRegion();
+    var report = {
+      version: VERSION,
+      url: location.pathname,
+      route: computeContext(),
+      generation: state.generation,
+      hooksInstalled: state.hooksInstalled,
+      config: {
+        loaded: !!state.config,
+        enabled: state.lastEnabled,
+        schemaVersion: state.lastSchemaVersion,
+        buttonIds: state.config ? state.config.buttons.map(function (b) { return b.id; }) : []
+      },
+      mounts: adapter.probe(),
+      contactFields: {
+        email: adapter.readContactEmail(region) !== null,
+        phone: adapter.readContactPhone(region) !== null
+      },
+      buttons: getState().buttons,
+      observers: { header: !!state.watch.header, contact: !!state.watch.contact },
+      waiting: { header: !!state.mountWaits.header, contact: !!state.mountWaits.contact }
+    };
     console.info('[' + NS + '] verify', report);
     return report;
   }
@@ -925,14 +1304,17 @@
     document.head.appendChild(link);
   }
 
+  // FND-05/06: a disabled, unsupported, or unreachable config installs no
+  // hooks, injects no stylesheet or DOM, and creates no observers. Nothing is
+  // persisted anywhere, so a reload restores the native UI.
   function boot() {
-    ensureStyles();
     state.ready = loadConfig().then(function (cfg) {
       if (!cfg || cfg.enabled !== true) {
         log('disabled', { reason: cfg ? 'enabled-false' : 'no-config' });
         return false;
       }
       state.config = cfg;
+      ensureStyles();
       installNavigationHooks();
       applyContext('boot');
       if (DEBUG) verify();
@@ -947,7 +1329,11 @@
     window.GHLC.__test = {
       parseRoute: parseRoute,
       resolveButtons: resolveButtons,
+      resolveAction: resolveAction,
       isSafeHttpsUrl: isSafeHttpsUrl,
+      isSafeLinkHref: isSafeLinkHref,
+      handlers: handlers,
+      verify: verify,
       validateConfig: validateConfig,
       boot: boot,
       getState: getState,

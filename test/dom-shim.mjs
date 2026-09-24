@@ -883,7 +883,10 @@ export function createShim(options = {}) {
   win.document = doc;
   win.location = location;
   win.history = history;
+  // Plain object so a scenario can inject navigator.clipboard before shim.run.
   win.navigator = { clipboard: undefined, userAgent: 'ghlc-dom-shim', language: 'en-US' };
+  // Any accidental execution of config text (the fixture's "alert(1)") fails loudly.
+  win.alert = () => { throw new Error('alert must never be called'); };
   win.console = consoleObj;
   win.fetch = fetchImpl;
   win.crypto = globalThis.crypto;
