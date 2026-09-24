@@ -63,8 +63,17 @@ Plans:
   4. Rapidly switching A → B → A leaves A's logo showing even when B's image or config resolves late; a slow response from an earlier location never overwrites the current one.
   5. When HighLevel re-renders the logo element (route change, sidebar collapse/expand), the client logo is restored without duplicate images, and verify mode reports a single branding observer.
 
-**Plans**: TBD
+**Plans**: 2 plans
 **UI hint**: yes
+
+Plans:
+**Wave 1**
+
+- [ ] 02-01-PLAN.md — Tracer: config -> location context -> sidebar logo mount -> preload -> in-place src/alt swap -> native restore; then switching/fallback semantics (interim agency logo, location -> agency -> native error chain, stale-result discard, alt chain, scoped .ghlc-logo rule, log hygiene)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 02-02-PLAN.md — Single branding MutationObserver (img replaced, sidebar replaced, foreign src/alt writes), verify() branding report, harness sidebar logo + mutation controls, SVG fixture logos, sample-config logoMount, end-of-phase harness + live HighLevel check
 
 ### Phase 3: Accent Colors & Delivery
 
