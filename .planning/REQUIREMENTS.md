@@ -49,13 +49,16 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **BTN-06**: Navigating away from a contact removes contact buttons and any pending UI state; the previous contact ID is never reused
 - [ ] **BTN-07**: Buttons support ready, submitting, queued, unavailable, and failed states with visible feedback; repeat clicks are disabled while submitting
 - [ ] **BTN-08**: Buttons are keyboard accessible (real `<button>`/`<a>`, focus ring, Enter/Space) and match surrounding HighLevel styling
-- [ ] **BTN-09**: `handler` actions resolve only against an in-script allowlisted registry; unknown handlers render as unavailable
-- [ ] **BTN-10**: A `sendInvite` handler is registered that validates context and returns the `unavailable` state with a "not yet configured" message (no network call)
+- [ ] **BTN-09**: Action types are limited to `link`, `webhook`, and `handler` (in-script allowlisted registry); any other type or unknown handler renders as unavailable, and no JavaScript is ever executed from config
+- [ ] **BTN-10**: A `webhook` action POSTs JSON to the configured HighLevel Inbound Webhook URL (HTTPS only) with `contactId`, `locationId`, `buttonId`, `requestId` (UUID per click), and `sentAt`; optional `extraFields` from config are merged in
+- [ ] **BTN-11**: Webhook buttons move ready → submitting → queued on a 2xx response and → failed otherwise, showing "Workflow triggered" (never "Email delivered") and an actionable failure message that excludes the URL and payload
+- [ ] **BTN-12**: A webhook button cannot be re-fired while submitting; after queued it stays disabled for a configurable cooldown (default 10 s) so double-clicks and accidental resends are blocked client-side
+- [ ] **BTN-13**: Sample config ships one contact-record webhook button ("Send Invite") pointed at a placeholder Inbound Webhook URL, plus one header link button
 
 ### Delivery
 
 - [ ] **DLV-01**: README documents installation in HighLevel (Agency Settings → Custom JS/CSS snippet), config schema, hosting via jsDelivr with a pinned tag, and rollback
-- [ ] **DLV-02**: Sample config includes agency defaults, two location logo overrides, one header link button, and the inactive contact action
+- [ ] **DLV-02**: Sample config includes agency defaults, two location logo overrides, one header link button, and the contact-record webhook button
 - [ ] **DLV-03**: A local test harness (`test/harness.html`) mimics the HighLevel DOM shell so location switching, fallbacks, and re-render behavior can be exercised without a live account
 - [ ] **DLV-04**: Diagnostics never log credentials, contact content, or config payloads beyond IDs and states
 
@@ -63,13 +66,13 @@ Requirements for initial release. Each maps to roadmap phases.
 
 Deferred to future release. Tracked but not in current roadmap.
 
-### Send Invite (live)
+### Send Invite hardening (companion service)
 
-- **INV-01**: Companion endpoint authenticates the operator and authorizes location + action
-- **INV-02**: Endpoint verifies the contact belongs to the location before enrolling
-- **INV-03**: Duplicate submissions with the same request ID are rejected
-- **INV-04**: Success state reads "Invitation queued," not "Email delivered"
-- **INV-05**: Resend policy defined and enforced server-side
+- **INV-01**: Companion endpoint authenticates the operator and authorizes location + action before enrolling
+- **INV-02**: Endpoint verifies the contact belongs to the location and rejects mismatches
+- **INV-03**: Server-side duplicate rejection by `requestId`
+- **INV-04**: Webhook URL moves out of the public config into server-side configuration
+- **INV-05**: Resend policy enforced server-side
 
 ### Later
 
@@ -81,8 +84,7 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Feature | Reason |
 |---------|--------|
-| Live Send Invite submission | Destination, auth, and resend policy undefined (PRD) |
-| Companion service | Only needed once Send Invite is wired |
+| Companion service / server-side authorization | v1 triggers workflows via HighLevel Inbound Webhook directly from the browser (Rob's decision 2026-09-24); server-side hardening is v2 |
 | Full theme redesign | PRD restricts colors to verified surfaces |
 | Bulk invitations / contacts list action | Excluded by PRD |
 | Arbitrary JS from config | Security boundary |
@@ -98,10 +100,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 
 **Coverage:**
-- v1 requirements: 36 total
+- v1 requirements: 37 total
 - Mapped to phases: 0
-- Unmapped: 36 ⚠️
+- Unmapped: 37 ⚠️
 
 ---
 *Requirements defined: 2026-09-24*
-*Last updated: 2026-09-24 after initial definition*
+*Last updated: 2026-09-24 after Rob moved buttons + webhook trigger into Phase 1*

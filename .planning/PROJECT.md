@@ -6,7 +6,7 @@ A small, configuration-driven browser customization layer for our HighLevel agen
 
 ## Core Value
 
-When a staff member is inside a location, the correct client logo is showing and nothing stale from a previous location remains.
+From an open contact record, a staff member can press one button and reliably trigger the right HighLevel workflow for that exact contact and location, with no stale context and no duplicate sends.
 
 ## Requirements
 
@@ -22,7 +22,7 @@ When a staff member is inside a location, the correct client logo is showing and
 - [ ] Immediately clear the previous location's branding on switch; late responses from a previous location never overwrite the current one
 - [ ] Optional accent colors (primary, sidebar background, sidebar text, active nav) applied only to verified surfaces, with contrast-safe fallbacks
 - [ ] Configurable link buttons in a global header placement, scoped by location
-- [ ] Contact action button mechanism on the individual contact record, with a registered-handler action type (Send Invite handler registered but unwired)
+- [ ] Contact action button on the individual contact record that POSTs contact and location IDs to a HighLevel Inbound Webhook workflow trigger (Send Invite)
 - [ ] Button states: ready, submitting, queued, unavailable, failed; keyboard accessible; no duplicate clicks
 - [ ] Reapply on native re-render without duplicating buttons, listeners, or observers
 - [ ] HighLevel selectors and route parsing isolated in a small adapter with a debug/verify mode
@@ -31,8 +31,7 @@ When a staff member is inside a location, the correct client logo is showing and
 
 ### Out of Scope
 
-- Live Send Invite submission — needs an invitation destination, workflow, authentication path, and resend policy defined first; the button stays a registered no-op/test action
-- Companion service — only needed once Send Invite is wired
+- Companion service / server-side authorization — v1 fires the workflow via HighLevel Inbound Webhook directly from the browser; server-side auth, contact-to-location verification, and dedupe are v2 hardening
 - Full theme redesign / broad restyling — PRD limits colors to verified surfaces
 - Marketplace distribution, billing, arbitrary plugin loading, custom database fields — explicitly excluded by PRD
 - Bulk invitation sending / contacts-list bulk action — excluded by PRD
@@ -78,7 +77,8 @@ When a staff member is inside a location, the correct client logo is showing and
 | Location detection primarily from URL `/v2/location/{id}/` plus `popstate` and `routeChangeEvent`, with a lightweight `history` patch as backup | Stable ID, works across load/nav/back/forward; reference provides no context API | — Pending |
 | Adapter supports sidebar and header logo mounts; choice deferred to live inspection | Rob chose to decide after seeing the live DOM | — Pending |
 | GitHub + jsDelivr with pinned tag for hosting | Zero infra, trivial rollback | — Pending |
-| Send Invite = registered handler that returns `unavailable` state | Destination, auth, and resend policy undefined | — Pending |
+| Send Invite fires a HighLevel Inbound Webhook workflow trigger directly from the browser | Rob wants a working workflow trigger in Phase 1 without a server; webhook URL lives in public config, accepted trade-off for a staff-only tool | — Pending |
+| Phase order: buttons + webhook first, logo switching second | Rob rated workflow trigger as more important than branding | — Pending |
 | Skip GSD research | PRD is detailed; selectors gathered during questioning | — Pending |
 | Keep existing `.planning/config.json` | Preferences already set by Rob before kickoff | — Pending |
 
@@ -100,4 +100,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-24 after initialization*
+*Last updated: 2026-09-24 after roadmap adjustment (buttons first, webhook trigger in v1)*
