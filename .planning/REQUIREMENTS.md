@@ -28,8 +28,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **BRD-01**: A configured location's logo replaces the agency logo in the agreed mount point (sidebar or header, selected in adapter config) with preserved proportions, transparent-image support, and alt text
 - [ ] **BRD-02**: The existing logo's click/navigation behavior is preserved
-- [ ] **BRD-03**: On location change the previous override is removed immediately and the agency fallback shows until the new location resolves
-- [ ] **BRD-04**: A missing, unconfigured, or broken (onerror) client logo falls back to the agency logo, then to the native HighLevel logo; the previous client logo is never the fallback
+- [x] **BRD-03**: On location change the previous override is removed immediately and the agency fallback shows until the new location resolves
+- [x] **BRD-04**: A missing, unconfigured, or broken (onerror) client logo falls back to the agency logo, then to the native HighLevel logo; the previous client logo is never the fallback
 - [ ] **BRD-05**: Branding is reapplied when HighLevel re-renders the logo element, without duplicate observers
 
 ### Accent Colors
@@ -111,8 +111,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LOC-05 | Phase 1 | Complete |
 | BRD-01 | Phase 2 | Pending |
 | BRD-02 | Phase 2 | Pending |
-| BRD-03 | Phase 2 | Pending |
-| BRD-04 | Phase 2 | Pending |
+| BRD-03 | Phase 2 | Complete |
+| BRD-04 | Phase 2 | Complete |
 | BRD-05 | Phase 2 | Pending |
 | CLR-01 | Phase 3 | Pending |
 | CLR-02 | Phase 3 | Pending |
