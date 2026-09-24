@@ -372,7 +372,9 @@
     generation: 0,
     ctx: { locationId: null, contactId: null, isAgency: true },
     timers: new Map(),
-    ready: null
+    ready: null,
+    hooksInstalled: false,
+    navTimer: null
   };
 
   function computeContext() {
@@ -395,14 +397,69 @@
     }
     state.ctx = next;
     state.generation += 1;
+    // Timers from the previous context die with it (BTN-06): a cooldown for an
+    // old element must never flip a new one.
     clearTimers();
     renderAll();
+    log('nav', { reason: reason, generation: state.generation });
     log('context', {
       reason: reason,
       generation: state.generation,
       locationId: next.locationId || 'none',
       contactId: next.contactId || 'none'
     });
+  }
+
+  // Several signals fire for one navigation and the router updates the URL
+  // before it renders the new view. One zero-delay check after the current
+  // task queue drains is enough (LOC-02) and avoids double renders.
+  // state.navTimer is deliberately not in state.timers: applyContext clears
+  // those, and the pending check must survive the context change it causes.
+  function scheduleContextCheck(reason) {
+    if (state.navTimer !== null) clearTimeout(state.navTimer);
+    state.navTimer = setTimeout(function () {
+      state.navTimer = null;
+      applyContext(reason);
+    }, 0);
+  }
+
+  function onNavigationSignal(evt) {
+    scheduleContextCheck(evt && evt.type ? evt.type : 'navigation');
+  }
+
+  function dispatchNavigate(method) {
+    try {
+      window.dispatchEvent(new CustomEvent(adapter.events.navigate, { detail: { method: method } }));
+    } catch (e) {
+      // A dispatch failure must never break HighLevel's router.
+    }
+  }
+
+  function wrapHistoryMethod(original, method) {
+    return function () {
+      var result = original.apply(this, arguments);
+      dispatchNavigate(method);
+      return result;
+    };
+  }
+
+  /**
+   * Installed once. Patches history.pushState/replaceState to announce
+   * in-app navigation, and listens to browser back/forward plus HighLevel's
+   * own route event. Every signal coalesces into scheduleContextCheck.
+   */
+  function installNavigationHooks() {
+    if (state.hooksInstalled) return;
+    state.hooksInstalled = true;
+    if (typeof history.pushState === 'function') {
+      history.pushState = wrapHistoryMethod(history.pushState, 'pushState');
+    }
+    if (typeof history.replaceState === 'function') {
+      history.replaceState = wrapHistoryMethod(history.replaceState, 'replaceState');
+    }
+    window.addEventListener('popstate', onNavigationSignal);
+    window.addEventListener(adapter.events.routeChange, onNavigationSignal);
+    window.addEventListener(adapter.events.navigate, onNavigationSignal);
   }
 
 // ==== buttons ====
@@ -657,7 +714,30 @@
     });
   }
 
+  /**
+   * BTN-05 click-time revalidation: the element must still be bound to the
+   * contact and location in the URL right now, and to the current generation.
+   * Returns true when the click is stale (and has been refused).
+   */
+  function refuseStaleClick(button, el) {
+    var live = adapter.parseRoute(location.pathname);
+    var bound = (el.getAttribute('data-' + NS + '-ctx') || '').split('|');
+    var boundLocation = bound[0] || '';
+    var boundContact = bound[1] || '';
+    var boundGeneration = el.getAttribute('data-' + NS + '-generation');
+    var stale = (live.locationId || '') !== boundLocation ||
+      (live.contactId || '') !== boundContact ||
+      boundGeneration !== String(state.generation);
+    if (!stale) return false;
+    setState(el, 'unavailable', { message: 'Context changed — reopen the contact and try again' });
+    log('stale-click', { buttonId: button.id, generation: state.generation });
+    // Let the DOM catch up with the URL the click just revealed.
+    scheduleContextCheck('stale-click');
+    return true;
+  }
+
   function runWebhook(button, action, el) {
+    if (refuseStaleClick(button, el)) return Promise.resolve();
     var gen = state.generation;
     var region = adapter.findContactRegion();
     var email = region ? adapter.readContactEmail(region) : null;
@@ -710,6 +790,7 @@
       contactId: state.ctx.contactId,
       isAgency: state.ctx.isAgency,
       configLoaded: !!state.config,
+      hooksInstalled: state.hooksInstalled,
       buttons: Array.prototype.slice.call(document.querySelectorAll(OWN.buttonSel)).map(function (el) {
         return {
           id: el.getAttribute('data-' + NS + '-button-id'),
@@ -749,6 +830,7 @@
         return false;
       }
       state.config = cfg;
+      installNavigationHooks();
       applyContext('boot');
       if (DEBUG) verify();
       return true;

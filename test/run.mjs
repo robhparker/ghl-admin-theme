@@ -463,6 +463,184 @@ scenario('production mode: no __test surface, window.GHLC exposes version/ready/
 });
 
 // ---------------------------------------------------------------------------
+// Navigation, generation, and stale-context scenarios (Plan 02, Task 1)
+// ---------------------------------------------------------------------------
+
+const C2 = { email: 'c2@example.test' };
+const invites = (shim) => shim.document.querySelectorAll('[data-ghlc-button-id="sendInvite"]');
+const invite = (shim) => {
+  const list = invites(shim);
+  assert.equal(list.length, 1, 'exactly one Send Invite button in the document');
+  return list[0];
+};
+
+scenario('nav: pushState to another contact rebinds the button and bumps generation', async () => {
+  const { shim, GHLC } = await bootContactPage();
+  const old = invite(shim);
+  assert.equal(old.getAttribute('data-ghlc-ctx'), 'locA|c1');
+  shim.navigate('/v2/location/locA/contacts/detail/c2', { via: 'pushState' });
+  shim.setContact(C2);
+  await shim.flush();
+  const fresh = invite(shim);
+  assert.equal(fresh.getAttribute('data-ghlc-ctx'), 'locA|c2');
+  assert.equal(fresh.getAttribute('data-ghlc-generation'), '2');
+  assert.equal(old.isConnected, false, 'previous element is gone');
+  assert.notEqual(old, fresh, 'element is never reused across contexts');
+  assert.equal(GHLC.__test.getState().generation, 2);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('nav: browser back and forward rebind through popstate', async () => {
+  const { shim, GHLC } = await bootContactPage();
+  shim.navigate('/v2/location/locA/contacts/detail/c2', { via: 'pushState' });
+  shim.setContact(C2);
+  await shim.flush();
+  assert.equal(invite(shim).getAttribute('data-ghlc-ctx'), 'locA|c2');
+
+  shim.back();
+  shim.setContact(JANE);
+  await shim.flush();
+  assert.equal(shim.window.location.pathname, CONTACT_PATH);
+  assert.equal(invite(shim).getAttribute('data-ghlc-ctx'), 'locA|c1');
+  assert.equal(GHLC.__test.getState().generation, 3);
+
+  shim.forward();
+  shim.setContact(C2);
+  await shim.flush();
+  assert.equal(invite(shim).getAttribute('data-ghlc-ctx'), 'locA|c2');
+  assert.equal(GHLC.__test.getState().generation, 4);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('nav: routeChangeEvent alone is honored', async () => {
+  const { shim, GHLC } = await bootContactPage();
+  shim.navigate('/v2/location/locA/contacts/detail/c3', { via: 'routeChangeEvent' });
+  shim.setContact({ phone: '+15555550103' });
+  await shim.flush();
+  assert.equal(invite(shim).getAttribute('data-ghlc-ctx'), 'locA|c3');
+  assert.equal(GHLC.__test.getState().contactId, 'c3');
+});
+
+scenario('nav: replaceState is hooked', async () => {
+  const { shim, GHLC } = await bootContactPage();
+  shim.navigate('/v2/location/locA/contacts/detail/c4', { via: 'replaceState' });
+  shim.setContact({ email: 'c4@example.test' });
+  await shim.flush();
+  assert.equal(invite(shim).getAttribute('data-ghlc-ctx'), 'locA|c4');
+  assert.equal(GHLC.__test.getState().generation, 2);
+});
+
+scenario('nav: patched pushState still updates location and history', async () => {
+  const { shim } = await bootContactPage();
+  const len = shim.window.history.length;
+  const before = shim.window.history.pushState;
+  shim.window.history.pushState({ marker: 1 }, '', '/v2/location/locA/dashboard');
+  assert.equal(shim.window.location.pathname, '/v2/location/locA/dashboard');
+  assert.equal(shim.window.history.length, len + 1);
+  assert.deepEqual(plain(shim.window.history.state), { marker: 1 });
+  assert.equal(shim.window.history.pushState, before, 'patch is installed once and stays');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('nav: leaving the contact removes the button and clears pending timers', async () => {
+  const { shim, GHLC } = await bootContactPage();
+  invite(shim).click();
+  await shim.flush();
+  assert.equal(invite(shim).getAttribute('data-state'), 'queued');
+  shim.navigate('/v2/location/locA/dashboard', { via: 'pushState' });
+  shim.setContact(null);
+  await shim.flush();
+  assert.equal(shim.document.querySelectorAll('[data-ghlc-button-id]').length, 0);
+  assert.equal(shim.document.querySelectorAll('.ghlc-group').length, 0);
+  assert.equal(GHLC.__test.getState().buttons.length, 0);
+  await shim.advanceTimers(10000);
+  assert.equal(shim.document.querySelectorAll('[data-ghlc-button-id]').length, 0, 'no timer resurrects a button');
+  assert.equal(shim.fetchLog.length, 1);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('nav: agency route yields a null location and zero buttons', async () => {
+  const { shim, GHLC } = await bootContactPage();
+  shim.navigate('/v2/agency/dashboard', { via: 'pushState' });
+  shim.setSidebarMode('agency');
+  shim.setContact(null);
+  await shim.flush();
+  const s = GHLC.__test.getState();
+  assert.equal(s.locationId, null);
+  assert.equal(s.contactId, null);
+  assert.equal(s.isAgency, true);
+  assert.equal(s.buttons.length, 0);
+  assert.equal(shim.document.querySelectorAll('.ghlc-group').length, 0);
+  const api = GHLC.__test;
+  assert.equal(api.parseRoute('/agency_dashboard/overview').isAgency, true);
+  assert.deepEqual(plain(api.parseRoute('/v2/location/locB/settings')), { locationId: 'locB', contactId: null, isAgency: false });
+});
+
+scenario('stale: click after an unobserved URL change refuses to fire', async () => {
+  const { shim } = await bootContactPage();
+  const button = invite(shim);
+  shim.setPath('/v2/location/locA/contacts/detail/c9');
+  button.click();
+  assert.equal(button.getAttribute('data-state'), 'unavailable');
+  assert.ok(button.querySelector('.ghlc-btn__msg').textContent.includes('Context changed'));
+  assert.ok(button.disabled);
+  assert.equal(shim.fetchLog.length, 0, 'nothing is sent for a stale click');
+  assert.ok(shim.console.lines.some((l) => l.includes('stale-click')));
+  await shim.flush();
+  assert.equal(button.isConnected, false, 'stale element is replaced once the DOM catches up');
+  const fresh = invite(shim);
+  assert.equal(fresh.getAttribute('data-ghlc-ctx'), 'locA|c9');
+  assert.equal(fresh.getAttribute('data-state'), 'ready');
+  assertNoLeak(shim.console.lines, LEAK_STRINGS, 'DLV-04');
+});
+
+scenario('stale: in-flight result from an older generation is discarded', async () => {
+  const { shim } = await bootContactPage();
+  shim.setFetchMode('hold');
+  const old = invite(shim);
+  old.click();
+  assert.equal(old.getAttribute('data-state'), 'submitting');
+  shim.navigate('/v2/location/locA/contacts/detail/c2', { via: 'pushState' });
+  shim.setContact(C2);
+  await shim.flush();
+  const fresh = invite(shim);
+  assert.notEqual(fresh, old);
+  assert.equal(fresh.getAttribute('data-state'), 'ready');
+  shim.releaseFetch();
+  await shim.flush();
+  assert.equal(fresh.getAttribute('data-state'), 'ready', 'late result never touches the new element');
+  assert.equal(old.isConnected, false);
+  assert.equal(old.getAttribute('data-state'), 'submitting', 'old element is never updated');
+  assert.equal(shim.fetchLog.length, 1);
+  assert.ok(shim.console.lines.some((l) => l.includes('webhook-discarded')));
+  assertNoLeak(shim.console.lines, LEAK_STRINGS, 'DLV-04');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('ctx: unchanged URL does not bump generation', async () => {
+  const { shim, GHLC } = await bootContactPage();
+  const button = invite(shim);
+  shim.navigate(CONTACT_PATH, { via: 'routeChangeEvent' });
+  shim.navigate(CONTACT_PATH, { via: 'routeChangeEvent' });
+  shim.window.dispatchEvent(new shim.Event('popstate'));
+  await shim.flush();
+  assert.equal(GHLC.__test.getState().generation, 1);
+  assert.equal(invite(shim), button, 'element survives a no-op signal');
+});
+
+scenario('ctx: hooks are installed exactly once', async () => {
+  const { shim, GHLC } = await bootContactPage();
+  assert.equal(shim.listenerCount(shim.window, 'popstate'), 1);
+  assert.equal(shim.listenerCount(shim.window, 'routeChangeEvent'), 1);
+  assert.equal(shim.listenerCount(shim.window, 'ghlc:navigate'), 1);
+  assert.equal(GHLC.__test.getState().hooksInstalled, true);
+  await GHLC.__test.boot();
+  await shim.flush();
+  assert.equal(shim.listenerCount(shim.window, 'popstate'), 1, 'second boot adds no listener');
+  assert.equal(shim.listenerCount(shim.window, 'ghlc:navigate'), 1);
+});
+
+// ---------------------------------------------------------------------------
 // Run
 // ---------------------------------------------------------------------------
 
