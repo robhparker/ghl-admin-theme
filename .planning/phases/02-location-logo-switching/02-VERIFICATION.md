@@ -30,7 +30,7 @@ covered_files:
   - test/fixtures/logos/native.svg
   - test/harness.html
   - test/run.mjs
-covered_digest: "v1:sha256:e169ad645dfe92de0d36acc56f6cc627a3b92708de4684a30b471314cf3f255f"
+covered_digest: "v1:sha256:699da6c569ef0a4418c5c60347c8d52774e679964f483aed43135459a6f95323"
 behavior_unverified: 0
 overrides_applied: 0
 prohibitions:
