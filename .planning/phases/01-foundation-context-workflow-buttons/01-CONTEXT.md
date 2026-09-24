@@ -19,7 +19,23 @@ Captured from the kickoff questioning on 2026-09-24 with Rob Parker (product own
 - **D-11 Webhook fetch strategy:** Try a normal CORS `fetch` with `Content-Type: application/json`. If the request fails with a network/CORS `TypeError`, retry once with `mode: "no-cors"` and report state `queued` with the label "Sent (unconfirmed)". A non-2xx CORS response is `failed`. Whether HighLevel's webhook endpoint returns CORS headers is unverified; the harness stubs both outcomes.
 - **D-12 Local testing:** `test/harness.html` mimics the HighLevel shell (sidebar with `#sidebar-v2`, `.hl_header`, a contact detail region with email/phone fields, and a fake history-based router) so switching, re-render, and webhook states can be exercised offline. Uses no build tooling; open the file directly or with a static server.
 
-### Candidate HighLevel selectors (unverified — verify mode exists so Rob can confirm live)
+### HighLevel selectors — verified live 2026-09-24 on app.gohighlevel.com (agency Park Health Systems, location Dummy Clinic)
+
+| Purpose | Verified |
+|---|---|
+| Sidebar container | `#sidebar-v2` (aside) ✓ |
+| Sidebar state classes | `.sidebar-v2-agency` / `.sidebar-v2-location` on the sidebar's wrapper div; the location wrapper also carries the location ID as a class ✓ |
+| Location switcher | `#location-switcher-sidbar-v2` (a div) ✓ |
+| Back-to-agency | `#backButtonv2` NOT found in either view ✗ |
+| Header | `header.hl_header` (`.--agency` modifier on agency pages) ✓; two `.hl_header--controls` divs, first one is the right-side icon cluster ✓ |
+| Sidebar logo | `#sidebar-v2 img.agency-logo` ✓ |
+| Contact region | `#record-details-lhs` (left "Contact Details" panel) ✓; none of the class-based candidates exist ✗ |
+| Contact toolbar mount | parent of `#delete-contact-trigger` (the name row) ✓ |
+| Contact email | input inside element id `contact.email` (additional emails are `contact.email-additional-N-…`) ✓; no `mailto:` anchors ✗ |
+| Contact phone | input inside element id `contact.phone` ✓ |
+| Routes | `/v2/location/{id}/contacts/detail/{contactId}` ✓; agency `/agency_dashboard`, `/sub-accounts/...` (no `/v2/location/`) ✓ |
+
+### Original candidates (pre-verification, kept as fallbacks)
 
 | Purpose | Candidate |
 |---|---|

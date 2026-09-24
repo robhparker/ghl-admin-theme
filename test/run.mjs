@@ -1364,6 +1364,42 @@ scenario('review IN-06: cooldownMs is clamped to five minutes', async () => {
   assert.equal(action.cooldownMs, 300000);
 });
 
+scenario('live DOM: HighLevel record-details structure mounts on the name row and reads the stateful fields', async () => {
+  const { shim, shell, GHLC } = await bootContactPage();
+  const doc = shim.document;
+  const host = shell.main || shell.contactRegion.parentNode;
+  shell.contactRegion.parentNode.removeChild(shell.contactRegion);
+  const lhs = doc.createElement('div'); lhs.setAttribute('id', 'record-details-lhs');
+  const nameRow = doc.createElement('div'); nameRow.setAttribute('class', 'flex items-center justify-between gap-2');
+  const name = doc.createElement('span'); name.textContent = '(Example) Jordan Smith';
+  const del = doc.createElement('i'); del.setAttribute('id', 'delete-contact-trigger');
+  nameRow.appendChild(name); nameRow.appendChild(del);
+  const emailField = doc.createElement('div'); emailField.setAttribute('id', 'contact.email');
+  const emailInput = doc.createElement('input'); emailInput.setAttribute('type', 'text'); emailInput.value = 'jordan.smith@example.com';
+  emailField.appendChild(emailInput);
+  const phoneField = doc.createElement('div'); phoneField.setAttribute('id', 'contact.phone');
+  const phoneInput = doc.createElement('input'); phoneInput.setAttribute('type', 'tel'); phoneInput.value = '';
+  phoneField.appendChild(phoneInput);
+  lhs.appendChild(nameRow); lhs.appendChild(emailField); lhs.appendChild(phoneField);
+  host.appendChild(lhs);
+  GHLC.__test.renderAll();
+  await shim.flush();
+  const button = invite(shim);
+  assert.ok(button, 'Send Invite rendered');
+  assert.equal(button.parentNode.parentNode, nameRow, 'group mounted on the name row (parent of #delete-contact-trigger)');
+  const r = GHLC.verify();
+  assert.equal(r.mounts.contactMountVia, 'toolbar-anchor');
+  assert.equal(r.mounts.contactEmailField, true);
+  assert.deepEqual(plain(r.contactFields), { email: true, phone: false, emailCandidates: 0, phoneCandidates: 1 });
+  button.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 1);
+  const body = JSON.parse(shim.fetchLog[0].body);
+  assert.equal(body.email, 'jordan.smith@example.com');
+  assert.ok(body.phone == null, 'phone omitted when the field is empty');
+  assert.equal(shim.errors.length, 0);
+});
+
 scenario('observers: own writes do not cause render loops', async () => {
   const { shim } = await bootContactPage();
   await shim.advanceTimers(50);
@@ -1569,6 +1605,9 @@ scenario('verify: report shape and hygiene', async () => {
     headerLogo: false,
     locationSwitcher: true,
     backToAgency: true,
+    contactMountVia: 'selector',
+    contactEmailField: false,
+    contactPhoneField: false,
   });
   assert.deepEqual(plain(r.contactFields), { email: true, phone: true, emailCandidates: 1, phoneCandidates: 1 });
   assert.deepEqual(plain(r.observers), { header: true, contact: true });

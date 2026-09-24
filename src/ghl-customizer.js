@@ -144,10 +144,19 @@
       '[class*="contact-details"] .hl_header--controls'
     ]),
     contactRegion: Object.freeze([
+      '#record-details-lhs',
       '.hl_contact-details-header',
       '.contact-detail-header',
       '[class*="contact-detail"]'
     ]),
+    // Verified live 2026-09-24 (app.gohighlevel.com contact record): the left
+    // "Contact Details" panel is #record-details-lhs; its name row holds
+    // #delete-contact-trigger; the primary email and phone are stateful
+    // inputs inside elements whose ids are literally "contact.email" and
+    // "contact.phone" (looked up by id, never by CSS, because of the dot).
+    contactToolbarAnchorId: 'delete-contact-trigger',
+    contactEmailFieldId: 'contact.email',
+    contactPhoneFieldId: 'contact.phone',
     contactEmail: Object.freeze(['a[href^="mailto:"]', 'input[type="email"]']),
     contactPhone: Object.freeze(['a[href^="tel:"]', 'input[type="tel"]']),
     sidebarLogo: '#sidebar-v2 img',
@@ -183,8 +192,17 @@
     return findFirst(selectors.headerMount, document);
   }
 
+  // The contact toolbar is the name row that contains the delete trigger
+  // (verified live); the class-based candidates remain as fallbacks.
   function findContactMount() {
+    var anchor = document.getElementById(selectors.contactToolbarAnchorId);
+    if (anchor && anchor.parentNode && anchor.parentNode.nodeType === 1) return anchor.parentNode;
     return findFirst(selectors.contactMount, document);
+  }
+  function contactMountVia() {
+    var anchor = document.getElementById(selectors.contactToolbarAnchorId);
+    if (anchor && anchor.parentNode && anchor.parentNode.nodeType === 1) return 'toolbar-anchor';
+    return findFirst(selectors.contactMount, document) ? 'selector' : null;
   }
 
   function findContactRegion() {
@@ -223,8 +241,21 @@
     return value ? value : null;
   }
 
+  // Stateful field lookup by element id (HighLevel's ids contain a dot):
+  // the field must sit inside the region, and its first input carries the value.
+  function readFieldValue(region, fieldId) {
+    var field = document.getElementById(fieldId);
+    if (!field || (region && !region.contains(field))) return null;
+    var input = field.querySelector('input');
+    var value = input ? String(input.value === undefined || input.value === null ? '' : input.value) : field.textContent;
+    value = (value || '').trim();
+    return value ? value : null;
+  }
+
   function readContactEmail(region) {
     if (!region) return null;
+    var fieldValue = readFieldValue(region, selectors.contactEmailFieldId);
+    if (fieldValue !== null && fieldValue.indexOf('@') !== -1) return fieldValue;
     var raw = readHrefValue(region, selectors.contactEmail[0], 'mailto:');
     if (raw !== null) {
       var q = raw.indexOf('?');
@@ -242,6 +273,8 @@
 
   function readContactPhone(region) {
     if (!region) return null;
+    var fieldValue = readFieldValue(region, selectors.contactPhoneFieldId);
+    if (fieldValue !== null) return fieldValue;
     var raw = readHrefValue(region, selectors.contactPhone[0], 'tel:');
     if (raw !== null) {
       raw = raw.trim();
@@ -272,7 +305,10 @@
       header: !!document.querySelector(selectors.header),
       headerMount: !!findHeaderMount(),
       contactMount: !!findContactMount(),
+      contactMountVia: contactMountVia(),
       contactRegion: !!findContactRegion(),
+      contactEmailField: !!document.getElementById(selectors.contactEmailFieldId),
+      contactPhoneField: !!document.getElementById(selectors.contactPhoneFieldId),
       sidebarLogo: !!document.querySelector(selectors.sidebarLogo),
       headerLogo: !!document.querySelector(selectors.headerLogo),
       locationSwitcher: !!document.querySelector(selectors.locationSwitcher),
