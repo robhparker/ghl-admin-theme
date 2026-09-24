@@ -617,7 +617,7 @@
     // Observers section: one bounded observer set per placement, or null.
     watch: { header: null, contact: null },
     renderTimers: { header: null, contact: null },
-    mountWaits: { header: null, contact: null },
+    mountWaits: { header: null, contact: null, branding: null },
     // D-02: bounded poll for contact fields that populate after the toolbar
     // renders (a programmatic input value change yields no MutationRecord).
     fieldWait: null,
@@ -680,6 +680,7 @@
       cancelScheduledRender(placement);
       cancelMountWait(placement);
     });
+    cancelMountWait('branding');
     cancelContactFieldsWait();
     // A logo still resolving for the old location must never land on the new
     // one (BRD-03): the preload dies with the generation that started it.
@@ -1508,7 +1509,8 @@
     var mount = adapter.findLogoMount(mountName);
     branding.mountName = mountName;
     if (!mount) {
-      // Missing mount: omit the customization and leave the native UI alone.
+      // Missing mount: omit the customization, leave the native UI alone, and
+      // wait a bounded time for it only when this context has a logo to show.
       branding.native = null;
       branding.applied = null;
       branding.appliedSrc = null;
@@ -1517,8 +1519,11 @@
         branding.missingGen = state.generation;
         log('logo-mount-missing', { mount: mountName, reason: reason });
       }
+      if (resolveBranding(state.config, state.ctx.locationId).length) waitForMount('branding');
+      else cancelMountWait('branding');
       return;
     }
+    cancelMountWait('branding');
     captureNativeLogo(mount);
     var candidates = resolveBranding(state.config, state.ctx.locationId).filter(function (candidate) {
       return !branding.failed[candidate.src];
@@ -1681,10 +1686,12 @@
         log('mount-missing', { placement: placement });
         return;
       }
-      // Re-arm first so renderPlacement's waitForMount is a no-op; it cancels
-      // the wait itself once the mount is found.
+      // Re-arm first so the render's waitForMount is a no-op; it cancels the
+      // wait itself once the mount is found. The branding slot re-enters
+      // renderBranding, the placement slots renderPlacement.
       scheduleMountTick(placement, wait);
-      renderPlacement(placement);
+      if (placement === 'branding') renderBranding('mount-wait');
+      else renderPlacement(placement);
     }, MOUNT_WAIT_INTERVAL_MS);
   }
 
@@ -1725,7 +1732,12 @@
       },
       buttons: getState().buttons,
       observers: { header: !!state.watch.header, contact: !!state.watch.contact },
-      waiting: { header: !!state.mountWaits.header, contact: !!state.mountWaits.contact, contactFields: !!state.fieldWait }
+      waiting: {
+        header: !!state.mountWaits.header,
+        contact: !!state.mountWaits.contact,
+        contactFields: !!state.fieldWait,
+        branding: !!state.mountWaits.branding
+      }
     };
     console.info('[' + NS + '] verify', report);
     return report;

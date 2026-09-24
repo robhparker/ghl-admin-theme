@@ -1508,7 +1508,7 @@ scenario('observers: context change cancels the wait and leaving to agency disco
   shim.setContact(null);
   await shim.flush();
   const r = GHLC.verify();
-  assert.deepEqual(plain(r.waiting), { header: false, contact: false, contactFields: false });
+  assert.deepEqual(plain(r.waiting), { header: false, contact: false, contactFields: false, branding: false });
   assert.deepEqual(plain(r.observers), { header: false, contact: false });
   assert.equal(shim.observers().length, 0, 'agency pages end with zero observers');
   assert.equal(shim.document.querySelectorAll('[data-ghlc-button-id]').length, 0);
@@ -1641,7 +1641,7 @@ scenario('verify: report shape and hygiene', async () => {
   });
   assert.deepEqual(plain(r.contactFields), { email: true, phone: true, emailCandidates: 1, phoneCandidates: 1 });
   assert.deepEqual(plain(r.observers), { header: true, contact: true });
-  assert.deepEqual(plain(r.waiting), { header: false, contact: false, contactFields: false });
+  assert.deepEqual(plain(r.waiting), { header: false, contact: false, contactFields: false, branding: false });
   assert.ok(Array.isArray(r.buttons) && r.buttons.length === 6);
   assert.ok(r.buttons.some((b) => b.id === 'sendInvite' && b.placement === 'contact' && b.state === 'ready'));
   assert.ok(r.buttons.every((b) => Object.keys(b).length === 3), 'buttons carry id, placement, state only');
@@ -1710,11 +1710,13 @@ const NATIVE_SRC = 'https://native.test/agency.png';
 const BRANDING_LEAKS = ['loc-a.svg', 'loc-b.svg', 'logos/', 'native.test', 'Location A', 'Location B'];
 
 // Boots at a location dashboard (debug on) with the fixture, or a config body
-// when given. `shell` options pass through to buildShell.
-async function bootBranding({ path = '/v2/location/locA/dashboard', config = null, shell: shellOpts = {} } = {}) {
+// when given. `shell` options pass through to buildShell; `before(shim)` runs
+// before the script (to hold image loads that boot itself will request).
+async function bootBranding({ path = '/v2/location/locA/dashboard', config = null, shell: shellOpts = {}, before = null } = {}) {
   const shim = createShim({ pathname: path, search: '?ghlc-debug=1', fixture: loadFixture() });
   const shell = shim.buildShell({ sidebarMode: 'location', contact: null, ...shellOpts });
   if (config) shim.setConfigResponse({ status: 200, body: config });
+  if (before) before(shim);
   const GHLC = shim.run(src);
   assert.equal(await GHLC.__test.boot(), true, 'boot resolves true');
   await shim.flush();
@@ -1827,6 +1829,250 @@ scenario('branding tracer: configured location swaps the sidebar logo in place a
 
   assertNoLeak(shim.console.lines, ['loc-a.svg', 'logos/', 'native.test', 'Location A'], 'branding');
   assert.ok(logCount(shim, '[ghlc]') > 0, 'diagnostics were produced');
+  assert.equal(shim.errors.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Switching and fallback semantics (Phase 2, Plan 01, Task 2)
+// ---------------------------------------------------------------------------
+
+const AGENCY_LOGO = 'https://cdn.test/agency.png';
+const withAgencyLogo = () => {
+  const cfg = loadFixture();
+  cfg.agency.logoUrl = AGENCY_LOGO;
+  cfg.agency.logoAlt = 'Agency';
+  return cfg;
+};
+const go = async (shim, path) => {
+  shim.navigate(path, { via: 'pushState' });
+  await shim.flush();
+};
+
+scenario('branding: switching A -> B shows the agency logo while B resolves, then B; A is never on the mount', async () => {
+  const { shim, shell } = await bootBranding({ config: withAgencyLogo() });
+  logoIs(shell.logo, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+  const mark = shim.imageLog.length;
+  shim.setImageOutcome(LOC_B_LOGO, 'hold');
+  await go(shim, '/v2/location/locB/dashboard');
+  // loc-b is held, so the interim is the resting state after the navigation flush.
+  logoIs(shell.logo, { src: AGENCY_LOGO, alt: 'Agency', tier: 'agency' });
+  const since = shim.imageLog.slice(mark);
+  const interimIdx = since.findIndex((e) => e.el === shell.logo && e.src === AGENCY_LOGO);
+  const preloadIdx = since.findIndex((e) => e.el !== shell.logo && e.src === LOC_B_LOGO);
+  assert.ok(interimIdx !== -1 && preloadIdx !== -1, 'interim write and B preload both happened');
+  assert.ok(interimIdx < preloadIdx, 'the interim is written before the preload starts');
+  assert.equal(shim.heldImages.length, 1, 'B preload is held');
+  assert.equal(shim.releaseImage(LOC_B_LOGO, 'load'), 1);
+  await shim.flush();
+  logoIs(shell.logo, { src: LOC_B_LOGO, alt: 'Location B', tier: 'location' });
+  assert.ok(!shim.imageLog.slice(mark).some((e) => e.el === shell.logo && e.src === LOC_A_LOGO), "A's src never returns to the mount after the switch");
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('branding: with no agency logo the interim is the native logo', async () => {
+  const { shim, shell } = await bootBranding();
+  logoIs(shell.logo, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+  shim.setImageOutcome(LOC_B_LOGO, 'hold');
+  await go(shim, '/v2/location/locB/dashboard');
+  logoIs(shell.logo, { src: NATIVE_SRC, alt: 'Native Agency', tier: null });
+  shim.releaseImage(LOC_B_LOGO, 'load');
+  await shim.flush();
+  logoIs(shell.logo, { src: LOC_B_LOGO, alt: 'Location B', tier: 'location' });
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('branding: rapid A -> B -> A keeps A when B resolves late', async () => {
+  const { shim, shell, GHLC } = await bootBranding({
+    before: (s) => {
+      s.setImageOutcome(LOC_A_LOGO, 'hold');
+      s.setImageOutcome(LOC_B_LOGO, 'hold');
+    },
+  });
+  logoIs(shell.logo, { src: NATIVE_SRC, alt: 'Native Agency', tier: null });
+  assert.equal(shim.heldImages.length, 1, 'A preload pending');
+  await go(shim, '/v2/location/locB/dashboard');
+  assert.equal(shim.heldImages.filter((h) => h.src === LOC_B_LOGO).length, 1, 'B preload pending');
+  assert.equal(shim.heldImages[0].el.getAttribute('src'), null, "A's first preload was cancelled (src dropped)");
+  await go(shim, '/v2/location/locA/dashboard');
+  assert.equal(GHLC.__test.getState().generation, 3);
+  assert.equal(shim.releaseImage(LOC_B_LOGO, 'load'), 1, 'B resolves after the last switch');
+  await shim.flush();
+  assert.notEqual(shell.logo.getAttribute('src'), LOC_B_LOGO, 'the mount never shows B');
+  logoIs(shell.logo, { src: NATIVE_SRC, alt: 'Native Agency', tier: null });
+  assert.ok(logCount(shim, 'logo-discarded') >= 1, 'the late result was discarded');
+  assert.equal(shim.releaseImage(LOC_A_LOGO, 'load'), 2, 'the cancelled and the current A preload both settle');
+  await shim.flush();
+  logoIs(shell.logo, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+  assert.equal(mountWrites(shim, shell).filter((e) => e.src === LOC_A_LOGO).length, 1, 'A written to the mount exactly once');
+  assert.equal(GHLC.__test.getState().generation, 3);
+  // loc-a is still set to hold, so the only parked request left is the mount's own write.
+  assert.equal(shim.heldImages.length, 1);
+  assert.equal(shim.heldImages[0].el, shell.logo);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('branding: broken location logo falls back to the agency logo, broken agency logo falls back to native, previous client logo is never used', async () => {
+  const { shim, shell } = await bootBranding({
+    config: withAgencyLogo(),
+    before: (s) => s.setImageOutcome('./fixtures/logos/missing.svg', 'error'),
+  });
+  logoIs(shell.logo, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+  await go(shim, '/v2/location/locC/dashboard');
+  logoIs(shell.logo, { src: AGENCY_LOGO, alt: 'Agency', tier: 'agency' });
+  assert.equal(logCount(shim, 'logo-failed'), 1, 'the preload error');
+  assert.equal(logCount(shim, 'logo-failed', "tier: 'location'"), 1);
+  assert.ok(!mountWrites(shim, shell).some((e) => e.src === './fixtures/logos/missing.svg'), 'a broken URL never reaches the mount');
+
+  // Force a fresh agency write: back to A (loaded, instant), then to an
+  // unconfigured location with the agency logo now broken.
+  await go(shim, '/v2/location/locA/dashboard');
+  logoIs(shell.logo, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+  const mark = shim.imageLog.length;
+  shim.setImageOutcome(AGENCY_LOGO, 'error');
+  await go(shim, '/v2/location/locZ/dashboard');
+  logoIs(shell.logo, { src: NATIVE_SRC, alt: 'Native Agency', tier: null });
+  assert.equal(logCount(shim, 'logo-failed'), 2, 'preload error plus mount error');
+  assert.equal(logCount(shim, 'logo-failed', "tier: 'agency'"), 1);
+  assert.ok(!shim.imageLog.slice(mark).some((e) => e.el === shell.logo && e.src === LOC_A_LOGO), 'the previously applied client logo is never a fallback');
+  // The failed agency URL stays excluded for the session: the agency route goes straight to native.
+  await go(shim, '/v2/agency/dashboard');
+  logoIs(shell.logo, { src: NATIVE_SRC, alt: 'Native Agency', tier: null });
+  assert.equal(shim.imageLog.slice(mark).filter((e) => e.src === AGENCY_LOGO).length, 1, 'the broken agency URL was requested once and never retried');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('branding: unconfigured location and agency route resolve to agency then native', async () => {
+  const withAgency = await bootBranding({ path: '/v2/location/locZ/dashboard', config: withAgencyLogo() });
+  logoIs(withAgency.shell.logo, { src: AGENCY_LOGO, alt: 'Agency', tier: 'agency' });
+  await go(withAgency.shim, '/v2/agency/dashboard');
+  logoIs(withAgency.shell.logo, { src: AGENCY_LOGO, alt: 'Agency', tier: 'agency' });
+  assert.equal(preloads(withAgency.shim, withAgency.shell).length, 0, 'the agency tier is applied directly, never preloaded');
+  assert.equal(withAgency.shim.errors.length, 0);
+
+  const shipped = await bootBranding({ path: '/v2/location/locZ/dashboard' });
+  logoIs(shipped.shell.logo, { src: NATIVE_SRC, alt: 'Native Agency', tier: null });
+  await go(shipped.shim, '/v2/agency/dashboard');
+  logoIs(shipped.shell.logo, { src: NATIVE_SRC, alt: 'Native Agency', tier: null });
+  assert.equal(mountWrites(shipped.shim, shipped.shell).length, 1, 'only the shell build wrote the native src; the script never touched it');
+  assert.equal(shipped.shim.errors.length, 0);
+});
+
+scenario('branding: same-context re-render is a no-op write and a loaded logo re-applies instantly', async () => {
+  const { shim, shell, GHLC } = await bootBranding();
+  logoIs(shell.logo, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+  const writes = mountWrites(shim, shell).length;
+  const applied = logCount(shim, 'logo-applied');
+  GHLC.__test.renderAll();
+  await shim.flush();
+  assert.equal(mountWrites(shim, shell).length, writes, 're-render writes nothing');
+  assert.equal(logCount(shim, 'logo-applied'), applied, 're-render logs nothing');
+  assert.equal(GHLC.__test.getState().generation, 1);
+
+  await go(shim, '/v2/location/locB/dashboard');
+  logoIs(shell.logo, { src: LOC_B_LOGO, alt: 'Location B', tier: 'location' });
+  assert.equal(logCount(shim, 'logo-resolving'), 2, 'A and B each preloaded once');
+  await go(shim, '/v2/location/locA/dashboard');
+  logoIs(shell.logo, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+  assert.equal(preloads(shim, shell).filter((e) => e.src === LOC_A_LOGO).length, 1, 'no second preload for a loaded URL');
+  assert.equal(logCount(shim, 'logo-resolving'), 2, 'the revisit did not resolve again');
+  assert.equal(shim.heldImages.length, 0);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('branding: srcset is removed while branded and restored on native', async () => {
+  const native = { src: 'https://native.test/a.png', alt: 'N', srcset: 'https://native.test/a@2x.png 2x' };
+  const { shim, shell } = await bootBranding({ shell: { logo: native } });
+  logoIs(shell.logo, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+  assert.equal(shell.logo.hasAttribute('srcset'), false, 'srcset removed while branded');
+  await go(shim, '/v2/agency/dashboard');
+  logoIs(shell.logo, { src: native.src, alt: 'N', tier: null });
+  assert.equal(shell.logo.getAttribute('srcset'), native.srcset, 'srcset restored verbatim');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('branding: alt chain — logoAlt, then location name, then agency logoAlt, then native alt', async () => {
+  const a = await bootBranding();
+  assert.equal(a.shell.logo.getAttribute('alt'), 'Location A logo', 'logoAlt wins');
+  const b = await bootBranding({ path: '/v2/location/locB/dashboard' });
+  assert.equal(b.shell.logo.getAttribute('alt'), 'Location B', 'location name when logoAlt is absent');
+
+  const bare = loadFixture();
+  bare.agency.logoAlt = 'Agency';
+  bare.locations.locQ = { logoUrl: 'https://cdn.test/q.png' };
+  const q = await bootBranding({ path: '/v2/location/locQ/dashboard', config: bare });
+  logoIs(q.shell.logo, { src: 'https://cdn.test/q.png', alt: 'Agency', tier: 'location' });
+
+  const noAgencyAlt = loadFixture();
+  delete noAgencyAlt.agency.logoAlt;
+  noAgencyAlt.locations.locQ = { logoUrl: 'https://cdn.test/q.png' };
+  const n = await bootBranding({ path: '/v2/location/locQ/dashboard', config: noAgencyAlt });
+  logoIs(n.shell.logo, { src: 'https://cdn.test/q.png', alt: 'Native Agency', tier: 'location' });
+
+  // Agency tier without an agency logoAlt keeps the native alt too.
+  const agencyNoAlt = loadFixture();
+  agencyNoAlt.agency.logoUrl = AGENCY_LOGO;
+  delete agencyNoAlt.agency.logoAlt;
+  const z = await bootBranding({ path: '/v2/location/locZ/dashboard', config: agencyNoAlt });
+  logoIs(z.shell.logo, { src: AGENCY_LOGO, alt: 'Native Agency', tier: 'agency' });
+  for (const s of [a, b, q, n, z]) assert.equal(s.shim.errors.length, 0);
+});
+
+scenario('branding: mount missing leaves the DOM untouched and waits bounded', async () => {
+  const { shim, shell, GHLC } = await bootBranding({ shell: { logo: false } });
+  assert.equal(shell.logo, null);
+  const snapshot = shell.sidebar.childNodes.slice();
+  assert.equal(logCount(shim, 'logo-mount-missing'), 1);
+  assert.equal(GHLC.verify().waiting.branding, true, 'a bounded wait runs while the route has a logo to show');
+  assert.equal(shim.document.querySelectorAll('img').length, 0, 'nothing was added to the document');
+  await shim.advanceTimers(600);
+  assert.equal(logCount(shim, 'logo-mount-missing'), 1, 'reported once per generation while waiting');
+  assert.deepEqual(shell.sidebar.childNodes, snapshot, 'sidebar untouched while waiting');
+  const img = shim.el('img', { class: 'agency-logo', src: NATIVE_SRC, alt: 'Native Agency' });
+  shell.sidebar.appendChild(shim.el('a', { class: 'hx-logo-link', href: '/v2/agency/dashboard' }, [img]));
+  await shim.advanceTimers(300);
+  logoIs(img, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+  assert.equal(GHLC.verify().waiting.branding, false);
+  assert.equal(logCount(shim, 'mount-missing', 'branding'), 0, 'the wait was satisfied, not exhausted');
+  assert.equal(shim.errors.length, 0);
+
+  // Second half: no mount ever appears; the wait gives up within the bound.
+  const bare = await bootBranding({ shell: { logo: false } });
+  const before = bare.shell.sidebar.childNodes.slice();
+  assert.equal(bare.GHLC.verify().waiting.branding, true);
+  await bare.shim.advanceTimers(16000);
+  assert.equal(bare.GHLC.verify().waiting.branding, false, 'wait gave up');
+  assert.equal(logCount(bare.shim, 'mount-missing', 'branding'), 1);
+  assert.equal(logCount(bare.shim, 'logo-mount-missing'), 1);
+  assert.deepEqual(bare.shell.sidebar.childNodes, before, 'still untouched after the wait');
+  await bare.shim.advanceTimers(5000);
+  assert.equal(logCount(bare.shim, 'mount-missing', 'branding'), 1, 'nothing keeps polling after giving up');
+  assert.equal(bare.shim.errors.length, 0);
+
+  // Agency route with no agency logo: nothing to show, so no wait at all.
+  const idle = await bootBranding({ path: '/v2/agency/dashboard', shell: { logo: false, sidebarMode: 'agency' } });
+  assert.equal(idle.GHLC.verify().waiting.branding, false);
+  await idle.shim.advanceTimers(16000);
+  assert.equal(logCount(idle.shim, 'mount-missing', 'branding'), 0);
+  assert.equal(idle.shim.errors.length, 0);
+});
+
+scenario('logs: branding diagnostics never contain logo URLs, alt text, or location names', async () => {
+  const { shim, shell } = await bootBranding({
+    config: withAgencyLogo(),
+    before: (s) => s.setImageOutcome('./fixtures/logos/missing.svg', 'error'),
+  });
+  shim.setImageOutcome(LOC_B_LOGO, 'hold');
+  await go(shim, '/v2/location/locB/dashboard');
+  shim.releaseImage(LOC_B_LOGO, 'load');
+  await shim.flush();
+  await go(shim, '/v2/location/locC/dashboard');
+  await go(shim, '/v2/location/locA/dashboard');
+  shim.setImageOutcome(AGENCY_LOGO, 'error');
+  await go(shim, '/v2/location/locZ/dashboard');
+  logoIs(shell.logo, { src: NATIVE_SRC, alt: 'Native Agency', tier: null });
+  assert.ok(logCount(shim, 'logo-applied', "tier: 'location'") >= 1, 'branding diagnostics were produced');
+  assert.ok(logCount(shim, 'logo-failed') >= 2 && logCount(shim, 'logo-resolving') >= 2);
+  assertNoLeak(shim.console.lines, ['cdn.test', 'logos/', '.svg', '.png', 'Location A', 'Location B', 'Agency logo', 'native.test', 'Native Agency', 'Test Agency'], 'branding DLV-04');
   assert.equal(shim.errors.length, 0);
 });
 

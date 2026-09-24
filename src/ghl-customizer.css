@@ -112,3 +112,10 @@
     transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
   }
 }
+
+/* Native logo element while a client or agency logo is showing: contain a
+   mismatched aspect ratio and keep transparent areas transparent. Removed on native restore. */
+.ghlc-logo {
+  object-fit: contain;
+  background: transparent;
+}
