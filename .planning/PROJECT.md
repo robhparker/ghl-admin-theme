@@ -63,7 +63,7 @@ From an open contact record, a staff member can press one button and reliably tr
 
 - **Tech stack**: Vanilla JavaScript (ES2019+, IIFE, no build step) and scoped CSS — PRD requires no framework, single hosted script
 - **Configuration**: Manually maintained public JSON — no secrets, tokens, patient data, or contact records in it
-- **Security**: No arbitrary JS from config; only `link` and `handler` action types with an allowlisted handler registry
+- **Security**: No arbitrary JS from config; only `link`, `webhook`, and `handler` action types; handlers resolve against an in-script allowlist
 - **Compatibility**: Must degrade gracefully — if a mount point is missing, omit the customization and leave native UI usable
 - **Performance**: Bounded, scoped MutationObservers; no whole-page polling
 - **Licensing**: Reference project has no license; all code must be original
