@@ -242,6 +242,36 @@
     return readInputValue(region, selectors.contactPhone[1]);
   }
 
+  /**
+   * The outermost element HighLevel replaces wholesale when it re-renders an
+   * area (.hl_header, the contact region). The mount is either that root or
+   * nested inside it; the observers section watches the root and its parent.
+   */
+  function findRegionRoot(placement, mount) {
+    if (placement === 'header') {
+      var header = typeof mount.closest === 'function' ? mount.closest(selectors.header) : null;
+      return header || mount;
+    }
+    var region = findContactRegion();
+    return region && (region === mount || region.contains(mount)) ? region : mount;
+  }
+
+  // Boolean presence of every mount selector, for verify mode (FND-04). No
+  // element or value leaves the adapter, only true/false.
+  function probe() {
+    return {
+      sidebar: !!document.querySelector(selectors.sidebar),
+      header: !!document.querySelector(selectors.header),
+      headerMount: !!findHeaderMount(),
+      contactMount: !!findContactMount(),
+      contactRegion: !!findContactRegion(),
+      sidebarLogo: !!document.querySelector(selectors.sidebarLogo),
+      headerLogo: !!document.querySelector(selectors.headerLogo),
+      locationSwitcher: !!document.querySelector(selectors.locationSwitcher),
+      backToAgency: !!document.querySelector(selectors.backToAgency)
+    };
+  }
+
   var adapter = Object.freeze({
     routes: routes,
     selectors: selectors,
@@ -251,8 +281,10 @@
     findHeaderMount: findHeaderMount,
     findContactMount: findContactMount,
     findContactRegion: findContactRegion,
+    findRegionRoot: findRegionRoot,
     readContactEmail: readContactEmail,
-    readContactPhone: readContactPhone
+    readContactPhone: readContactPhone,
+    probe: probe
   });
 
 // ==== config ====
@@ -361,6 +393,16 @@
           warn('config-parse-failed', {});
           return null;
         }
+        if (isPlainObject(parsed)) {
+          // Recorded before validation so verify() can report what was served
+          // even when the script goes on to do nothing with it (FND-04/06).
+          state.lastSchemaVersion = typeof parsed.schemaVersion === 'number' ? parsed.schemaVersion : null;
+          state.lastEnabled = parsed.enabled === true;
+          if (parsed.schemaVersion !== 1) {
+            warn('config-schema-unsupported', { schemaVersion: Number(parsed.schemaVersion) || 0 });
+            return null;
+          }
+        }
         var result = validateConfig(parsed);
         if (!result.ok) {
           warn('config-invalid', { count: result.errors.length });
@@ -425,7 +467,14 @@
     timers: new Map(),
     ready: null,
     hooksInstalled: false,
-    navTimer: null
+    navTimer: null,
+    // Observers section: one bounded observer set per placement, or null.
+    watch: { header: null, contact: null },
+    renderTimers: { header: null, contact: null },
+    mountWaits: { header: null, contact: null },
+    // What the last served config said, even when it was not adopted (verify).
+    lastSchemaVersion: null,
+    lastEnabled: null
   };
 
   function computeContext() {
@@ -449,8 +498,13 @@
     state.ctx = next;
     state.generation += 1;
     // Timers from the previous context die with it (BTN-06): a cooldown for an
-    // old element must never flip a new one.
+    // old element must never flip a new one. Pending re-renders and mount
+    // waits belong to the old route too; the new route starts them afresh.
     clearTimers();
+    PLACEMENTS.forEach(function (placement) {
+      cancelScheduledRender(placement);
+      cancelMountWait(placement);
+    });
     renderAll();
     log('nav', { reason: reason, generation: state.generation });
     log('context', {
@@ -747,21 +801,34 @@
     return group;
   }
 
+  // Idempotent reconcile by button id + ctx. Observers and the bounded mount
+  // wait re-enter here; a spurious call costs a few queries and no DOM writes.
   function renderPlacement(placement) {
-    var mount = placement === 'contact' ? adapter.findContactMount() : adapter.findHeaderMount();
-    if (!mount) {
-      // Missing mount: omit the customization, leave native UI untouched.
-      removeGroup(placement);
-      return;
-    }
+    var mount = placement === 'header' ? adapter.findHeaderMount() : adapter.findContactMount();
     var desired = resolveButtons(state.config, state.ctx.locationId).filter(function (button) {
       return button.placement === placement;
     });
     if (placement === 'contact' && !state.ctx.contactId) desired = [];
+    var expected = placement === 'contact' ? !!state.ctx.contactId : !!state.ctx.locationId;
+    if (!mount) {
+      // Missing mount: omit the customization, leave native UI untouched, and
+      // wait a bounded time for it only when this route should have it.
+      unwatchMount(placement);
+      removeGroup(placement);
+      if (expected && desired.length) waitForMount(placement);
+      else cancelMountWait(placement);
+      return;
+    }
+    cancelMountWait(placement);
     if (!desired.length) {
+      unwatchMount(placement);
       removeGroup(placement);
       return;
     }
+    // Watch before writing: every write below then yields only self-inflicted
+    // records, which onMountMutation drops. A no-op while the same mount is
+    // still watched; a new mount element swaps the set (never accumulates).
+    watchMount(placement, mount);
     var group = ensureGroup(mount, placement);
     var key = ctxKey();
     var wanted = Object.create(null);
@@ -1014,12 +1081,182 @@
 
 // ==== observers ====
 
-  // Plan 03 fills this section with scoped, bounded MutationObservers and navigation listeners.
+  function everyNode(list, predicate) {
+    for (var i = 0; i < list.length; i++) {
+      if (!predicate(list[i])) return false;
+    }
+    return true;
+  }
+
+  // Elements this script created: buttons, groups, anything inside a group,
+  // the stylesheet link, and text nodes whose parent is own.
+  function isOwnNode(node) {
+    if (!node) return false;
+    if (node.nodeType === 3) return isOwnNode(node.parentNode);
+    if (node.nodeType !== 1 || typeof node.hasAttribute !== 'function') return false;
+    if (node.hasAttribute('data-' + NS + '-button-id')) return true;
+    if (node.hasAttribute('data-' + NS + '-styles')) return true;
+    if (node.classList && node.classList.contains(OWN.groupClass)) return true;
+    return typeof node.closest === 'function' && node.closest(OWN.groupSel) !== null;
+  }
+
+  /**
+   * A record is self-inflicted when it can only have come from this script:
+   *   (a) its target is own (setState swapping label/message text, reconcile
+   *       pruning a button) and every added node is own — a removed node was a
+   *       child of an own node, so it is own too (a detached text node has no
+   *       parentNode to prove it); or
+   *   (b) nothing was removed and every added node is own (our group or the
+   *       stylesheet link attached to a native parent).
+   * Everything else is HighLevel's doing: the mount's children wiped, our
+   * group removed by a native parent, the region replaced, a field appearing.
+   */
+  function isSelfInflicted(record) {
+    if (!record || record.type !== 'childList') return false;
+    var addedOwn = everyNode(record.addedNodes, isOwnNode);
+    if (isOwnNode(record.target)) return addedOwn;
+    return record.removedNodes.length === 0 && addedOwn;
+  }
+
+  function onMountMutation(placement, records) {
+    if (everyNode(records, isSelfInflicted)) return;
+    scheduleRender(placement);
+  }
+
+  // Coalesces a burst of native mutations into one render on the next tick.
+  // The render's own writes yield only self-inflicted records, so a render
+  // triggered by a native mutation settles after one pass (T-01-12).
+  function scheduleRender(placement) {
+    cancelScheduledRender(placement);
+    state.renderTimers[placement] = setTimeout(function () {
+      state.renderTimers[placement] = null;
+      renderPlacement(placement);
+      log('rerender', { placement: placement });
+    }, 0);
+  }
+
+  function cancelScheduledRender(placement) {
+    if (state.renderTimers[placement] === null) return;
+    clearTimeout(state.renderTimers[placement]);
+    state.renderTimers[placement] = null;
+  }
+
+  /**
+   * One bounded observer set per active placement, always exactly two
+   * observers, both scoped to the region:
+   *   rootMo   observes the region root with { childList, subtree }: the mount
+   *            swapped inside the region, its children wiped, our group
+   *            removed, a contact field appearing later.
+   *   anchorMo observes the root's parent with { childList } only. A
+   *            wholesale replacement of the region (HighLevel swapping the
+   *            entire header element or contact header element, exactly what
+   *            the harness "Re-render" buttons do) is a childList mutation on
+   *            the region's PARENT; no observer on or inside the region can
+   *            see the region's own removal. The anchor observer is shallow,
+   *            so it wakes only when a direct child of that parent changes.
+   *            The script never observes the whole page with subtree.
+   * renderPlacement re-watches the replacement mount, so the set follows a
+   * re-render instead of accumulating; leaving the route disconnects it.
+   */
+  function anchorFor(root) {
+    var parent = root.parentNode;
+    return parent && parent.nodeType === 1 ? parent : document.body;
+  }
+
+  function watchMount(placement, mount) {
+    var slot = state.watch[placement];
+    if (slot && slot.mount === mount && slot.anchor.isConnected && anchorFor(slot.root) === slot.anchor) return;
+    unwatchMount(placement);
+    var root = adapter.findRegionRoot(placement, mount);
+    var anchor = anchorFor(root);
+    var deliver = function (records) {
+      onMountMutation(placement, records);
+    };
+    var rootMo = new MutationObserver(deliver);
+    var anchorMo = new MutationObserver(deliver);
+    rootMo.observe(root, { childList: true, subtree: true });
+    anchorMo.observe(anchor, { childList: true, subtree: false });
+    state.watch[placement] = { mount: mount, root: root, anchor: anchor, rootMo: rootMo, anchorMo: anchorMo };
+    log('observer-attached', { placement: placement });
+  }
+
+  function unwatchMount(placement) {
+    var slot = state.watch[placement];
+    if (!slot) return;
+    slot.rootMo.disconnect();
+    slot.anchorMo.disconnect();
+    state.watch[placement] = null;
+    log('observer-detached', { placement: placement });
+  }
+
+  /**
+   * Bounded, route-scoped retry for a mount that appears shortly after
+   * navigation: one querySelector pass every MOUNT_WAIT_INTERVAL_MS for at
+   * most MOUNT_WAIT_MAX_MS (60 passes), then give up and leave the native UI
+   * alone. Ticks are counted, not clocked, so fake timers work. A context
+   * change cancels the wait; the new route starts its own. This is not
+   * whole-page polling: it runs only while a route expects a mount it lacks.
+   */
+  function waitForMount(placement) {
+    if (state.mountWaits[placement]) return;
+    var wait = { ticks: 0, timer: null };
+    state.mountWaits[placement] = wait;
+    scheduleMountTick(placement, wait);
+  }
+
+  function scheduleMountTick(placement, wait) {
+    wait.timer = setTimeout(function () {
+      wait.ticks += 1;
+      if (wait.ticks * MOUNT_WAIT_INTERVAL_MS > MOUNT_WAIT_MAX_MS) {
+        cancelMountWait(placement);
+        log('mount-missing', { placement: placement });
+        return;
+      }
+      // Re-arm first so renderPlacement's waitForMount is a no-op; it cancels
+      // the wait itself once the mount is found.
+      scheduleMountTick(placement, wait);
+      renderPlacement(placement);
+    }, MOUNT_WAIT_INTERVAL_MS);
+  }
+
+  function cancelMountWait(placement) {
+    var wait = state.mountWaits[placement];
+    if (!wait) return;
+    clearTimeout(wait.timer);
+    state.mountWaits[placement] = null;
+  }
 
 // ==== verify ====
 
+  /**
+   * FND-04 verify mode: window.GHLC.verify() or ?ghlc-debug=1. Reports which
+   * mount selectors and route patterns resolve on the current page. Only IDs,
+   * booleans, and states: contact fields are reported as present/absent, the
+   * webhook URL and config URL never appear (DLV-04).
+   */
   function verify() {
-    var report = { version: VERSION, route: computeContext(), generation: state.generation };
+    var region = adapter.findContactRegion();
+    var report = {
+      version: VERSION,
+      url: location.pathname,
+      route: computeContext(),
+      generation: state.generation,
+      hooksInstalled: state.hooksInstalled,
+      config: {
+        loaded: !!state.config,
+        enabled: state.lastEnabled,
+        schemaVersion: state.lastSchemaVersion,
+        buttonIds: state.config ? state.config.buttons.map(function (b) { return b.id; }) : []
+      },
+      mounts: adapter.probe(),
+      contactFields: {
+        email: adapter.readContactEmail(region) !== null,
+        phone: adapter.readContactPhone(region) !== null
+      },
+      buttons: getState().buttons,
+      observers: { header: !!state.watch.header, contact: !!state.watch.contact },
+      waiting: { header: !!state.mountWaits.header, contact: !!state.mountWaits.contact }
+    };
     console.info('[' + NS + '] verify', report);
     return report;
   }
@@ -1067,14 +1304,17 @@
     document.head.appendChild(link);
   }
 
+  // FND-05/06: a disabled, unsupported, or unreachable config installs no
+  // hooks, injects no stylesheet or DOM, and creates no observers. Nothing is
+  // persisted anywhere, so a reload restores the native UI.
   function boot() {
-    ensureStyles();
     state.ready = loadConfig().then(function (cfg) {
       if (!cfg || cfg.enabled !== true) {
         log('disabled', { reason: cfg ? 'enabled-false' : 'no-config' });
         return false;
       }
       state.config = cfg;
+      ensureStyles();
       installNavigationHooks();
       applyContext('boot');
       if (DEBUG) verify();
