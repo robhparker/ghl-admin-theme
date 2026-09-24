@@ -2172,7 +2172,7 @@ scenario('observers: replacing the sidebar logo img re-brands once through a sin
   assert.ok(anchorReg && anchorReg.options.childList === true && anchorReg.options.subtree === false, 'anchor: the sidebar parent, shallow');
   const imgReg = regs.find((r) => r.target === shell.logo);
   assert.ok(imgReg && imgReg.options.attributes === true && imgReg.options.childList === false, 'img: attributes only');
-  assert.deepEqual(plain(imgReg.options.attributeFilter), ['src', 'alt']);
+  assert.deepEqual(plain(imgReg.options.attributeFilter), ['src', 'alt', 'srcset', 'class'], 'every attribute the script writes is defended');
   assert.equal(logCount(shim, 'branding-observer-attached'), 1);
   assert.equal(logCount(shim, 'rebrand'), 0, 'boot writes never schedule a rebrand');
 
@@ -2388,6 +2388,51 @@ scenario('review CR-01: a branded img that stops matching the mount selector is 
   logoIs(shell.logo, { src: NATIVE_SRC, alt: 'Native Agency', tier: null });
   assert.equal(brandingRegs(shim).length, 0, 'native resting state keeps no branding observer');
   assertNoLeak(shim.console.lines, BRANDING_LEAKS, 'branding DLV-04');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('review WR-01: srcset and class written back on the same element are re-stripped and re-added; the srcset is remembered as native', async () => {
+  const { shim, shell, GHLC } = await bootBranding();
+  logoIs(shell.logo, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+  const writesOfA = () => mountWrites(shim, shell).filter((e) => e.src === LOC_A_LOGO).length;
+  assert.equal(writesOfA(), 1);
+
+  // HighLevel re-adds a srcset on the branded element: the browser would pick
+  // its native 2x candidate over our src. It is stripped again, at no image
+  // request, and remembered as the native srcset.
+  const NATIVE_SRCSET = 'https://native.test/agency@2x.png 2x';
+  shell.logo.setAttribute('srcset', NATIVE_SRCSET);
+  await shim.flush();
+  assert.equal(shell.logo.hasAttribute('srcset'), false, 'srcset re-stripped while branded');
+  logoIs(shell.logo, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+  assert.equal(logCount(shim, 'rebrand'), 1);
+  assert.equal(logCount(shim, 'logo-native-updated'), 1);
+  assert.equal(writesOfA(), 1, 'a srcset rebrand never rewrites src');
+
+  // A framework class rewrite drops our class: only the class comes back,
+  // HighLevel's own classes are kept, and src is untouched.
+  shell.logo.setAttribute('class', 'agency-logo hl-fresh');
+  await shim.flush();
+  assert.ok(shell.logo.classList.contains('ghlc-logo'), 'ghlc-logo re-added');
+  assert.ok(shell.logo.classList.contains('hl-fresh'), 'HighLevel classes kept');
+  logoIs(shell.logo, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+  assert.equal(logCount(shim, 'rebrand'), 2);
+  assert.equal(writesOfA(), 1, 'a class rebrand never rewrites src');
+
+  // A class write that keeps our token is HighLevel's business, not a rebrand.
+  shell.logo.setAttribute('class', 'agency-logo ghlc-logo hl-newer');
+  await shim.advanceTimers(50);
+  assert.equal(logCount(shim, 'rebrand'), 2, 'own class/srcset writes and a class rewrite that keeps our token never schedule a rebrand');
+  assert.equal(logCount(shim, 'branding-observer-attached'), 1, 'same img: registrations kept');
+  assertOneBrandingInstance(brandingRegs(shim));
+
+  // Native restore puts back the srcset HighLevel wrote while branded.
+  await go(shim, '/v2/agency/dashboard');
+  logoIs(shell.logo, { src: NATIVE_SRC, alt: 'Native Agency', tier: null });
+  assert.equal(shell.logo.getAttribute('srcset'), NATIVE_SRCSET, 'the srcset HighLevel wrote while branded is restored');
+  assert.equal(GHLC.verify().branding.applied, 'native');
+  assert.equal(brandingRegs(shim).length, 0);
+  assertNoLeak(shim.console.lines, [...BRANDING_LEAKS, 'agency@2x'], 'branding DLV-04');
   assert.equal(shim.errors.length, 0);
 });
 

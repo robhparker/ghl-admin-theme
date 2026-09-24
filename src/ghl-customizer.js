@@ -1391,14 +1391,18 @@
   // nothing, so observers and mount waits can re-enter freely.
   function applyLogo(mount, candidate) {
     var alt = resolveAlt(candidate);
+    // Defended on every pass, ahead of the idempotency check, since HighLevel
+    // can write either back on the same element: srcset would let the browser
+    // pick a native variant over our src, and a class rewrite drops the
+    // scoped styling. Both are no-op writes when already in place.
+    if (mount.hasAttribute('srcset')) mount.removeAttribute('srcset');
+    if (!mount.classList.contains(OWN.logoClass)) mount.classList.add(OWN.logoClass);
     if (mount.getAttribute('src') === candidate.src &&
         mount.getAttribute('alt') === alt &&
         mount.getAttribute(OWN.logoAttr) === candidate.tier) {
       recordApplied(candidate.tier, candidate.src, alt);
       return;
     }
-    // srcset would let the browser pick a native variant over our src.
-    if (mount.hasAttribute('srcset')) mount.removeAttribute('srcset');
     // Policy before src, so the request the src write starts carries it (P-01).
     // Only attributes that differ are written: a rebrand after HighLevel
     // reset the alt alone must not start a second image request.
@@ -1406,7 +1410,6 @@
     if (mount.getAttribute('alt') !== alt) mount.setAttribute('alt', alt);
     if (mount.getAttribute('src') !== candidate.src) mount.setAttribute('src', candidate.src);
     mount.setAttribute(OWN.logoAttr, candidate.tier);
-    mount.classList.add(OWN.logoClass);
     recordApplied(candidate.tier, candidate.src, alt);
     log('logo-applied', {
       tier: candidate.tier,
@@ -1719,8 +1722,9 @@
    *           img replaced anywhere inside it.
    *   anchor  the root's parent, { childList } only: the whole container
    *           replaced, which nothing inside it can see.
-   *   img     the mount itself, { attributes, attributeFilter: [src, alt] }:
-   *           HighLevel resetting the logo on the same element.
+   *   img     the mount itself, { attributes, attributeFilter: [src, alt,
+   *           srcset, class] }: HighLevel resetting the logo, re-adding a
+   *           srcset, or rewriting the class list on the same element.
    * Native showing means no observer at all: an agency page without an agency
    * logo carries no branding footprint. A new img or root swaps the
    * registrations; they never accumulate.
@@ -1734,7 +1738,7 @@
     var mo = new MutationObserver(onBrandingMutation);
     mo.observe(root, { childList: true, subtree: true });
     mo.observe(anchor, { childList: true, subtree: false });
-    mo.observe(img, { attributes: true, attributeFilter: ['src', 'alt'] });
+    mo.observe(img, { attributes: true, attributeFilter: ['src', 'alt', 'srcset', 'class'] });
     state.brandingWatch = { mo: mo, img: img, root: root, anchor: anchor };
     log('branding-observer-attached', { mount: mountName });
   }
@@ -1749,9 +1753,10 @@
 
   /**
    * A-12: an attribute record on the img is self-inflicted when the attribute
-   * now holds what this script last wrote (appliedSrc / appliedAlt); anything
-   * else is HighLevel's write, so the native capture learns the new value
-   * before the tier is put back. childList records are always HighLevel's
+   * now holds what this script last wrote (appliedSrc / appliedAlt; no srcset;
+   * our class token present); anything else is HighLevel's write, so the
+   * native capture learns the new value (src, alt, srcset) before the tier is
+   * put back. childList records are always HighLevel's
    * (branding adds no nodes). Any foreign record schedules ONE coalesced
    * rebrand; the rebrand is an idempotent reconcile, so a burst of unrelated
    * sidebar mutations costs a single no-op pass (T-02-04).
@@ -1767,6 +1772,21 @@
         if (record.target !== slot.img) continue;
         var name = record.attributeName;
         var value = slot.img.getAttribute(name);
+        if (name === 'class') {
+          // Our token rides along with HighLevel's classes: the record is
+          // foreign only when a rewrite dropped it.
+          if (!slot.img.classList.contains(OWN.logoClass)) foreign = true;
+          continue;
+        }
+        if (name === 'srcset') {
+          // This script only ever removes srcset, so one present is
+          // HighLevel's: remember it for the restore, then strip it again.
+          if (value === null) continue;
+          if (branding.native && branding.native.el === slot.img) branding.native.srcset = value;
+          foreign = true;
+          log('logo-native-updated', { attribute: name, generation: state.generation });
+          continue;
+        }
         var own = name === 'src' ? branding.appliedSrc : branding.appliedAlt;
         if (value === own) continue;
         if (branding.native && branding.native.el === slot.img) {
