@@ -195,7 +195,7 @@ check('notice: NOTICE.md records the reference project, its revision, its missin
 
 check('harness: test/harness.html carries the required HighLevel shell, router hook, config, and stub', () => {
   const harness = fs.readFileSync(path.join(root, 'test', 'harness.html'), 'utf8');
-  for (const s of ['id="sidebar-v2"', 'hl_header--controls', 'id="location-switcher-sidbar-v2"', 'hl_contact-details-header', 'data-config="./fixtures/config.json"', 'routeChangeEvent', 'no-cors']) {
+  for (const s of ['id="sidebar-v2"', 'hl_header--controls', 'id="location-switcher-sidbar-v2"', "id: 'record-details-lhs'", "id: 'delete-contact-trigger'", "id: 'contact.email'", 'data-config="./fixtures/config.json"', 'routeChangeEvent', 'no-cors']) {
     assert.ok(harness.includes(s), `harness must contain ${s}`);
   }
 });
@@ -1400,6 +1400,33 @@ scenario('live DOM: HighLevel record-details structure mounts on the name row an
   assert.equal(shim.errors.length, 0);
 });
 
+scenario('live DOM: email field that fills in after render recovers the button by polling (no mutation)', async () => {
+  const { shim, shell, GHLC } = await bootContactPage();
+  const doc = shim.document;
+  const host = shell.main || shell.contactRegion.parentNode;
+  shell.contactRegion.parentNode.removeChild(shell.contactRegion);
+  const lhs = doc.createElement('div'); lhs.setAttribute('id', 'record-details-lhs');
+  const nameRow = doc.createElement('div'); const del = doc.createElement('i'); del.setAttribute('id', 'delete-contact-trigger'); nameRow.appendChild(del);
+  const emailField = doc.createElement('div'); emailField.setAttribute('id', 'contact.email');
+  const emailInput = doc.createElement('input'); emailInput.setAttribute('type', 'text'); emailInput.value = '';
+  emailField.appendChild(emailInput);
+  lhs.appendChild(nameRow); lhs.appendChild(emailField); host.appendChild(lhs);
+  GHLC.__test.renderAll();
+  await shim.flush();
+  const button = invite(shim);
+  assert.equal(button.getAttribute('data-state'), 'unavailable', 'no value yet');
+  assert.equal(GHLC.verify().waiting.contactFields, true, 'poll started');
+  emailInput.value = 'late@example.test'; // property change only: no MutationRecord
+  await shim.advanceTimers(600);
+  assert.equal(button.getAttribute('data-state'), 'ready', 'poll recovered the button');
+  assert.equal(GHLC.verify().waiting.contactFields, false);
+  assert.ok(shim.console.lines.some((l) => l.includes('contact-fields-recovered')));
+  button.click();
+  await shim.flush();
+  assert.equal(JSON.parse(shim.fetchLog[0].body).email, 'late@example.test');
+  assert.equal(shim.errors.length, 0);
+});
+
 scenario('observers: own writes do not cause render loops', async () => {
   const { shim } = await bootContactPage();
   await shim.advanceTimers(50);
@@ -1478,7 +1505,7 @@ scenario('observers: context change cancels the wait and leaving to agency disco
   shim.setContact(null);
   await shim.flush();
   const r = GHLC.verify();
-  assert.deepEqual(plain(r.waiting), { header: false, contact: false });
+  assert.deepEqual(plain(r.waiting), { header: false, contact: false, contactFields: false });
   assert.deepEqual(plain(r.observers), { header: false, contact: false });
   assert.equal(shim.observers().length, 0, 'agency pages end with zero observers');
   assert.equal(shim.document.querySelectorAll('[data-ghlc-button-id]').length, 0);
@@ -1611,7 +1638,7 @@ scenario('verify: report shape and hygiene', async () => {
   });
   assert.deepEqual(plain(r.contactFields), { email: true, phone: true, emailCandidates: 1, phoneCandidates: 1 });
   assert.deepEqual(plain(r.observers), { header: true, contact: true });
-  assert.deepEqual(plain(r.waiting), { header: false, contact: false });
+  assert.deepEqual(plain(r.waiting), { header: false, contact: false, contactFields: false });
   assert.ok(Array.isArray(r.buttons) && r.buttons.length === 6);
   assert.ok(r.buttons.some((b) => b.id === 'sendInvite' && b.placement === 'contact' && b.state === 'ready'));
   assert.ok(r.buttons.every((b) => Object.keys(b).length === 3), 'buttons carry id, placement, state only');

@@ -18,8 +18,15 @@
     .hl_header { display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 16px; background: #ffffff; border-bottom: 1px solid #eaecf0; }
     .hl_header--controls { display: inline-flex; align-items: center; gap: 8px; }
     .hx-main { padding: 16px; }
-    .hl_contact-details-header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #ffffff; border: 1px solid #eaecf0; border-radius: 8px; }
-    .hl_contact-details-header h2 { margin: 0; font-size: 16px; }
+    /* Mirrors the live HighLevel contact record (verified 2026-09-24): left panel
+       #record-details-lhs, a name row holding #delete-contact-trigger, and stateful
+       fields whose ids are literally contact.email / contact.phone. */
+    #record-details-lhs { max-width: 360px; padding: 12px 16px; background: #ffffff; border: 1px solid #eaecf0; border-radius: 8px; }
+    #record-details-lhs .hx-name-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    #record-details-lhs h2 { margin: 0; font-size: 16px; }
+    #record-details-lhs label { display: block; margin-top: 10px; font-size: 12px; color: #667085; }
+    #record-details-lhs input { width: 100%; box-sizing: border-box; padding: 4px 6px; font: inherit; font-size: 13px; }
+    #delete-contact-trigger { cursor: pointer; color: #98a2b3; }
     .hx-placeholder { padding: 24px; background: #ffffff; border: 1px dashed #d0d5dd; border-radius: 8px; color: #667085; }
     .hx-panel { margin-top: 24px; padding: 16px; background: #ffffff; border: 1px solid #eaecf0; border-radius: 8px; }
     .hx-panel h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: #667085; }
@@ -74,6 +81,7 @@
           <div class="hx-row">
             <button type="button" id="hx-rerender-header">Re-render header</button>
             <button type="button" id="hx-rerender-contact">Re-render contact toolbar</button>
+            <label><input type="checkbox" id="hx-late-fields"> Fill contact fields 1.5 s after render (live HighLevel behavior)</label>
             <button type="button" id="hx-route-event">Dispatch routeChangeEvent</button>
           </div>
 
@@ -181,9 +189,16 @@
 
       function buildContactBlock(contactId) {
         var c = CONTACTS[contactId] || { name: 'Unknown contact (' + contactId + ')', email: '', phone: '' };
-        var block = el('div', { 'class': 'hl_contact-details-header' }, [el('h2', {}, [c.name])]);
-        if (c.email) block.appendChild(el('a', { href: 'mailto:' + c.email }, ['email']));
-        if (c.phone) block.appendChild(el('a', { href: 'tel:' + c.phone }, ['phone']));
+        var nameRow = el('div', { 'class': 'hx-name-row' }, [el('h2', {}, [c.name]), el('i', { id: 'delete-contact-trigger', title: 'Delete' }, ['\u{1F5D1}'])]);
+        var emailInput = el('input', { type: 'text' });
+        var phoneInput = el('input', { type: 'tel' });
+        var block = el('div', { id: 'record-details-lhs' }, [
+          nameRow,
+          el('label', {}, ['Email (Primary)']), el('div', { id: 'contact.email' }, [emailInput]),
+          el('label', {}, ['Phone']), el('div', { id: 'contact.phone' }, [phoneInput])
+        ]);
+        var fill = function () { emailInput.value = c.email; phoneInput.value = c.phone; };
+        if (document.getElementById('hx-late-fields').checked) setTimeout(fill, 1500); else fill();
         return block;
       }
 
@@ -235,7 +250,7 @@
         hxLog({ time: new Date().toISOString(), harness: 're-rendered header' });
       });
       document.getElementById('hx-rerender-contact').addEventListener('click', function () {
-        var old = document.querySelector('.hl_contact-details-header');
+        var old = document.getElementById('record-details-lhs');
         var m = CONTACT_RE.exec(location.pathname);
         if (!old || !m) { hxLog({ time: new Date().toISOString(), harness: 'no contact toolbar to re-render' }); return; }
         old.replaceWith(buildContactBlock(m[2]));

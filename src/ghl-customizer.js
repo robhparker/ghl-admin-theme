@@ -521,6 +521,9 @@
     watch: { header: null, contact: null },
     renderTimers: { header: null, contact: null },
     mountWaits: { header: null, contact: null },
+    // D-02: bounded poll for contact fields that populate after the toolbar
+    // renders (a programmatic input value change yields no MutationRecord).
+    fieldWait: null,
     // What the last served config said, even when it was not adopted (verify).
     lastSchemaVersion: null,
     lastEnabled: null
@@ -562,6 +565,7 @@
       cancelScheduledRender(placement);
       cancelMountWait(placement);
     });
+    cancelContactFieldsWait();
     renderAll();
     log('nav', { reason: reason, generation: state.generation });
     log('context', {
@@ -1029,6 +1033,41 @@
   function markNoContactFields(el) {
     el.setAttribute('data-' + NS + '-reason', 'no-contact-fields');
     setState(el, 'unavailable', { message: MSG_NO_CONTACT_FIELDS });
+    waitForContactFields();
+  }
+
+  // Verified live: HighLevel mounts the name row before the stateful email
+  // field carries a value, and filling it in is not a DOM mutation. Poll on
+  // the mount-wait cadence, bounded by MOUNT_WAIT_MAX_MS, until the fields
+  // read or the context changes; recovery itself is the normal reconcile.
+  function waitForContactFields() {
+    if (state.fieldWait) return;
+    var wait = { ticks: 0, timer: null };
+    state.fieldWait = wait;
+    var tickFn = function () {
+      wait.ticks += 1;
+      if (state.fieldWait !== wait) return;
+      if (!state.ctx.contactId || wait.ticks * MOUNT_WAIT_INTERVAL_MS > MOUNT_WAIT_MAX_MS) {
+        state.fieldWait = null;
+        log('contact-fields-wait-ended', { readable: contactFieldsReadable(), ticks: wait.ticks });
+        return;
+      }
+      if (contactFieldsReadable()) {
+        state.fieldWait = null;
+        renderPlacement('contact');
+        log('contact-fields-recovered', { ticks: wait.ticks });
+        return;
+      }
+      wait.timer = setTimeout(tickFn, MOUNT_WAIT_INTERVAL_MS);
+    };
+    wait.timer = setTimeout(tickFn, MOUNT_WAIT_INTERVAL_MS);
+  }
+
+  function cancelContactFieldsWait() {
+    var wait = state.fieldWait;
+    if (!wait) return;
+    clearTimeout(wait.timer);
+    state.fieldWait = null;
   }
 
   // BTN-12: after a queued outcome the element stays disabled for cooldownMs,
@@ -1325,7 +1364,7 @@
       },
       buttons: getState().buttons,
       observers: { header: !!state.watch.header, contact: !!state.watch.contact },
-      waiting: { header: !!state.mountWaits.header, contact: !!state.mountWaits.contact }
+      waiting: { header: !!state.mountWaits.header, contact: !!state.mountWaits.contact, contactFields: !!state.fieldWait }
     };
     console.info('[' + NS + '] verify', report);
     return report;
