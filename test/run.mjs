@@ -149,6 +149,18 @@ check('static: no ES2020+ optional chaining or nullish coalescing in src', () =>
   assert.ok(!/\?\.\s*[A-Za-z_$[(]/.test(noStrings), 'source must not use ?.');
 });
 
+check('static: DLV-04 — console is reached only through log/warn (constants) or verify()', () => {
+  const cut = (text, from, to) => {
+    const a = text.indexOf(from);
+    const b = text.indexOf(to);
+    assert.ok(a !== -1 && b > a, `sections ${from} .. ${to} not found`);
+    return text.slice(0, a) + text.slice(b);
+  };
+  let rest = cut(src, '// ==== constants ====', '// ==== adapter ====');
+  rest = cut(rest, '// ==== verify ====', '// ==== boot ====');
+  assert.ok(!rest.includes('console.'), 'console.* must not appear outside the constants and verify sections');
+});
+
 check('static: schema documentation, data-config attribute, constant fallback, reserved mounts', () => {
   assert.equal(src.split('Config schema (schemaVersion 1)').length - 1, 1);
   assert.ok(src.includes('data-config'));
@@ -359,17 +371,16 @@ scenario('tracer: network failure shows failed with a connection message', async
   assertNoLeak(shim.console.lines, LEAK_STRINGS, 'DLV-04');
 });
 
-scenario('D-02: contact without email or phone renders unavailable on click', async () => {
-  const shim = createShim({ pathname: CONTACT_PATH, search: '?ghlc-debug=1', fixture: loadFixture() });
-  shim.buildShell({ sidebarMode: 'location', contact: { name: 'No Details' } });
-  const GHLC = shim.run(src);
-  assert.equal(await GHLC.__test.boot(), true);
-  await shim.flush();
+scenario('D-02: fields removed after render make the next click unavailable, not a POST', async () => {
+  const { shim, shell } = await bootContactPage();
   const button = shim.document.querySelector('[data-ghlc-button-id="sendInvite"]');
   assert.equal(button.getAttribute('data-state'), 'ready');
+  // HighLevel re-renders the record without the anchors; the click must re-read.
+  for (const a of shell.contactRegion.querySelectorAll('a')) a.remove();
   button.click();
   await shim.flush();
   assert.equal(button.getAttribute('data-state'), 'unavailable');
+  assert.equal(button.getAttribute('data-ghlc-reason'), 'no-contact-fields');
   assert.equal(button.querySelector('.ghlc-btn__msg').textContent, 'contact email/phone not found');
   assert.equal(shim.fetchLog.length, 0, 'no POST without a contact identifier');
   assertNoLeak(shim.console.lines, LEAK_STRINGS, 'DLV-04');
@@ -638,6 +649,240 @@ scenario('ctx: hooks are installed exactly once', async () => {
   await shim.flush();
   assert.equal(shim.listenerCount(shim.window, 'popstate'), 1, 'second boot adds no listener');
   assert.equal(shim.listenerCount(shim.window, 'ghlc:navigate'), 1);
+});
+
+// ---------------------------------------------------------------------------
+// Webhook hardening and log hygiene scenarios (Plan 02, Task 2)
+// Fixture: sendInvite.cooldownMs is 3000.
+// ---------------------------------------------------------------------------
+
+const label = (el) => el.querySelector('.ghlc-btn__label').textContent;
+const msg = (el) => el.querySelector('.ghlc-btn__msg').textContent;
+
+async function bootWithContact(contact, extra = {}) {
+  const shim = createShim({ pathname: CONTACT_PATH, search: '?ghlc-debug=1', fixture: loadFixture(), ...extra });
+  const shell = shim.buildShell({ sidebarMode: 'location', contact });
+  const GHLC = shim.run(src);
+  assert.equal(await GHLC.__test.boot(), true);
+  await shim.flush();
+  return { shim, shell, GHLC };
+}
+
+scenario('webhook: queued stays disabled for cooldownMs then returns to ready', async () => {
+  const { shim } = await bootContactPage();
+  const button = invite(shim);
+  button.click();
+  await shim.flush();
+  assert.equal(button.getAttribute('data-state'), 'queued');
+  assert.ok(button.disabled);
+  assert.equal(label(button), 'Workflow triggered');
+  await shim.advanceTimers(2999);
+  assert.equal(button.getAttribute('data-state'), 'queued');
+  assert.ok(button.disabled);
+  await shim.advanceTimers(1);
+  assert.equal(button.getAttribute('data-state'), 'ready');
+  assert.ok(!button.disabled);
+  assert.equal(label(button), 'Send Invite');
+  assert.equal(msg(button), '');
+  assert.ok(shim.console.lines.some((l) => l.includes('webhook-queued')));
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('webhook: triple click sends exactly one request', async () => {
+  const { shim } = await bootContactPage();
+  const button = invite(shim);
+  button.click();
+  button.click();
+  button.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 1);
+  assert.equal(button.getAttribute('data-state'), 'queued');
+});
+
+scenario('webhook: click during cooldown sends nothing', async () => {
+  const { shim } = await bootContactPage();
+  const button = invite(shim);
+  button.click();
+  await shim.flush();
+  assert.equal(button.getAttribute('data-state'), 'queued');
+  button.click();
+  await shim.flush();
+  await shim.advanceTimers(100);
+  button.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 1);
+  assert.equal(button.getAttribute('data-state'), 'queued');
+});
+
+scenario('webhook: non-2xx -> failed with an actionable message; retry sends a new requestId', async () => {
+  const { shim } = await bootContactPage();
+  shim.setFetchMode('error');
+  const button = invite(shim);
+  button.click();
+  await shim.flush();
+  assert.equal(button.getAttribute('data-state'), 'failed');
+  assert.ok(!button.disabled);
+  assert.equal(label(button), 'Failed — retry');
+  const text = msg(button);
+  assert.ok(text.includes('HTTP 500'), `message names the status: ${text}`);
+  assert.ok(!text.includes('hooks/') && !text.includes('TEST-HOOK') && !text.includes('c1'));
+  assert.ok(shim.console.lines.some((l) => l.includes('webhook-failed')));
+  shim.setFetchMode('ok');
+  button.click();
+  await shim.flush();
+  assert.equal(button.getAttribute('data-state'), 'queued');
+  assert.equal(shim.fetchLog.length, 2);
+  assert.notEqual(shim.fetchLog[0].bodyJson.requestId, shim.fetchLog[1].bodyJson.requestId);
+  assertNoLeak(shim.console.lines, LEAK_STRINGS, 'DLV-04');
+});
+
+scenario('webhook: CORS TypeError falls back to no-cors and reports Sent (unconfirmed)', async () => {
+  const { shim } = await bootContactPage();
+  shim.setFetchMode('cors');
+  const button = invite(shim);
+  button.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 2);
+  assert.equal(shim.fetchLog[0].mode, 'cors');
+  assert.equal(shim.fetchLog[0].headers['content-type'], 'application/json');
+  assert.equal(shim.fetchLog[1].mode, 'no-cors');
+  assert.equal(shim.fetchLog[1].method, 'POST');
+  assert.equal(shim.fetchLog[1].credentials, 'omit');
+  assert.ok(!('content-type' in shim.fetchLog[1].headers), 'no-cors retry carries no content type');
+  assert.equal(shim.fetchLog[0].bodyJson.requestId, shim.fetchLog[1].bodyJson.requestId, 'same request, same id');
+  assert.equal(button.getAttribute('data-state'), 'queued');
+  assert.equal(label(button), 'Sent (unconfirmed)');
+  assert.ok(msg(button).includes('did not confirm'));
+  assert.ok(button.disabled);
+  assert.ok(shim.console.lines.some((l) => l.includes('webhook-unconfirmed')));
+  await shim.advanceTimers(3000);
+  assert.equal(button.getAttribute('data-state'), 'ready');
+  assert.equal(label(button), 'Send Invite');
+  assertNoLeak(shim.console.lines, LEAK_STRINGS, 'DLV-04');
+});
+
+scenario('webhook: offline -> failed after both attempts', async () => {
+  const { shim } = await bootContactPage();
+  shim.setFetchMode('offline');
+  const button = invite(shim);
+  button.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 2);
+  assert.equal(shim.fetchLog[1].mode, 'no-cors');
+  assert.equal(button.getAttribute('data-state'), 'failed');
+  assert.ok(/connection/i.test(msg(button)));
+  assert.ok(!button.disabled);
+  assert.ok(shim.console.lines.some((l) => l.includes('webhook-network')));
+  assertNoLeak(shim.console.lines, LEAK_STRINGS, 'DLV-04');
+});
+
+scenario('webhook: record without email or phone renders unavailable and sends nothing', async () => {
+  const { shim } = await bootWithContact({});
+  const button = invite(shim);
+  assert.equal(button.getAttribute('data-state'), 'unavailable');
+  assert.equal(button.getAttribute('data-ghlc-reason'), 'no-contact-fields');
+  assert.equal(msg(button), 'contact email/phone not found');
+  assert.ok(button.disabled);
+  assert.equal(button.getAttribute('aria-disabled'), 'true');
+  button.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 0);
+});
+
+scenario('webhook: fields appearing later flip unavailable to ready on re-render', async () => {
+  const { shim, shell, GHLC } = await bootWithContact({});
+  const button = invite(shim);
+  assert.equal(button.getAttribute('data-state'), 'unavailable');
+  const before = GHLC.__test.getState().generation;
+  shell.contactRegion.appendChild(shim.el('a', { href: 'mailto:late@example.test' }, ['email']));
+  GHLC.__test.renderAll();
+  await shim.flush();
+  assert.equal(invite(shim), button, 'same element survives the re-render');
+  assert.equal(button.getAttribute('data-state'), 'ready');
+  assert.equal(button.getAttribute('data-ghlc-reason'), null);
+  assert.equal(GHLC.__test.getState().generation, before, 'no generation bump on re-render');
+  button.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 1);
+  assert.equal(shim.fetchLog[0].bodyJson.email, 'late@example.test');
+  assert.equal(button.getAttribute('data-state'), 'queued');
+  // A second re-render must not attach a second listener (one click, one POST).
+  await shim.advanceTimers(3000);
+  GHLC.__test.renderAll();
+  await shim.flush();
+  button.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 2, 'exactly one listener per element');
+});
+
+scenario('webhook: email-only record sends email and omits phone', async () => {
+  const { shim } = await bootWithContact({ email: 'only@example.test' });
+  const button = invite(shim);
+  button.click();
+  await shim.flush();
+  const body = shim.fetchLog[0].bodyJson;
+  assert.equal(body.email, 'only@example.test');
+  assert.equal(Object.prototype.hasOwnProperty.call(body, 'phone'), false);
+});
+
+scenario('webhook: extraFields cannot override identity keys', async () => {
+  const { shim } = await bootContactPage();
+  invite(shim).click();
+  await shim.flush();
+  const body = shim.fetchLog[0].bodyJson;
+  assert.equal(body.contactId, 'c1');
+  assert.equal(body.locationId, 'locA');
+  assert.equal(body.buttonId, 'sendInvite');
+  assert.equal(body.source, 'ghlc-harness');
+  // Core keys are assigned last, after extraFields, so they always win.
+  assert.deepEqual(Object.keys(body).slice(-7), ['contactId', 'locationId', 'buttonId', 'requestId', 'sentAt', 'email', 'phone']);
+});
+
+scenario('webhook: non-https URL renders unavailable', async () => {
+  const fixture = loadFixture();
+  fixture.buttons.find((b) => b.id === 'sendInvite').action.url = 'http://services.leadconnectorhq.com/hooks/TEST-HOOK';
+  const shim = createShim({ pathname: CONTACT_PATH, fixture: loadFixture() });
+  shim.buildShell({ sidebarMode: 'location', contact: JANE });
+  shim.setConfigResponse({ status: 200, body: fixture });
+  const GHLC = shim.run(src);
+  assert.equal(await GHLC.__test.boot(), true);
+  await shim.flush();
+  const button = invite(shim);
+  assert.equal(button.getAttribute('data-state'), 'unavailable');
+  assert.ok(msg(button).includes('HTTPS'));
+  assert.ok(!msg(button).includes('hooks/'));
+  button.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 0);
+});
+
+scenario('logs: debug mode never prints URL, payload, email, or phone', async () => {
+  const { shim } = await bootContactPage();
+  const button = invite(shim);
+  button.click();
+  await shim.flush();
+  assert.equal(button.getAttribute('data-state'), 'queued');
+  await shim.advanceTimers(3000);
+  shim.setFetchMode('error');
+  button.click();
+  await shim.flush();
+  assert.equal(button.getAttribute('data-state'), 'failed');
+  shim.setFetchMode('cors');
+  button.click();
+  await shim.flush();
+  assert.equal(button.getAttribute('data-state'), 'queued');
+  await shim.advanceTimers(3000);
+  shim.setFetchMode('offline');
+  button.click();
+  await shim.flush();
+  assert.equal(button.getAttribute('data-state'), 'failed');
+  assert.equal(shim.fetchLog.length, 6);
+  const text = shim.console.lines.join('\n');
+  assert.ok(text.includes('[ghlc]'), 'logging happened');
+  for (const s of ['hooks/', 'TEST-HOOK', '@example', '5550100', '"contactId"', 'requestId', 'sentAt', 'leadconnectorhq']) {
+    assert.ok(!text.includes(s), `console output must not contain "${s}"\n--- console ---\n${text}`);
+  }
+  assert.equal(shim.errors.length, 0);
 });
 
 // ---------------------------------------------------------------------------

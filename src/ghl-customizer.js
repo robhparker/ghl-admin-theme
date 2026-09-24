@@ -577,13 +577,35 @@
     var action = resolveAction(button);
     if (action.kind === 'unavailable') {
       setState(el, 'unavailable', { message: action.message });
+    } else if (action.kind === 'webhook' && button.placement === 'contact' && !contactFieldsReadable()) {
+      // D-02: HighLevel may render the toolbar before the email field. Render
+      // unavailable now; a later renderPlacement recovers it (recoverNoContactFields).
+      markNoContactFields(el);
     } else {
+      bindClick(button, el);
       setState(el, 'ready');
-      el.addEventListener('click', function () {
-        onButtonClick(button, el);
-      });
     }
     return el;
+  }
+
+  // The click listener is attached at most once per element (data-ghlc-bound).
+  function bindClick(button, el) {
+    if (el.getAttribute('data-' + NS + '-bound') === '1') return;
+    el.setAttribute('data-' + NS + '-bound', '1');
+    el.addEventListener('click', function () {
+      onButtonClick(button, el);
+    });
+  }
+
+  // A survivor rendered unavailable for missing contact fields flips to ready
+  // once a field becomes readable. Survivors keep their generation stamp:
+  // they exist only when the context did not change, so it is still current.
+  function recoverNoContactFields(button, el) {
+    if (el.getAttribute('data-' + NS + '-reason') !== 'no-contact-fields') return;
+    if (!contactFieldsReadable()) return;
+    el.removeAttribute('data-' + NS + '-reason');
+    bindClick(button, el);
+    setState(el, 'ready');
   }
 
   function findGroups(placement) {
@@ -638,8 +660,12 @@
     Array.prototype.slice.call(group.querySelectorAll(OWN.buttonSel)).forEach(function (el) {
       var id = el.getAttribute('data-' + NS + '-button-id');
       var stale = !wanted[id] || el.getAttribute('data-' + NS + '-ctx') !== key || surviving[id];
-      if (stale) group.removeChild(el);
-      else surviving[id] = true;
+      if (stale) {
+        group.removeChild(el);
+      } else {
+        surviving[id] = true;
+        recoverNoContactFields(wanted[id], el);
+      }
     });
     desired.forEach(function (button) {
       if (!surviving[button.id]) group.appendChild(createButtonEl(button));
@@ -685,33 +711,95 @@
     return payload;
   }
 
-  // Messages never include the URL or the payload.
-  function sendWebhook(url, payload) {
-    var request;
+  var MSG_HTTP_FAILED_PREFIX = 'Workflow did not accept the request (HTTP ';
+  var MSG_HTTP_FAILED_SUFFIX = '). Try again or contact your admin.';
+  var MSG_NETWORK = 'Could not reach the workflow. Check your connection and try again.';
+  var MSG_UNEXPECTED = 'Something went wrong sending the request. Try again.';
+  var MSG_UNCONFIRMED = 'The workflow endpoint did not confirm receipt. Check the workflow execution log before resending.';
+  var MSG_NO_CONTACT_FIELDS = 'contact email/phone not found';
+
+  function attemptFetch(url, init) {
     try {
-      request = fetch(url, {
-        method: 'POST',
-        mode: 'cors',
-        credentials: 'omit',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      return Promise.resolve(fetch(url, init));
     } catch (e) {
-      request = Promise.reject(e);
+      return Promise.reject(e);
     }
-    return request.then(function (res) {
-      if (res && res.ok) return { outcome: 'ok' };
-      var status = res ? res.status : 0;
+  }
+
+  /**
+   * D-11 delivery strategy. Attempt 1 is a normal CORS POST with a JSON body.
+   * If that throws a TypeError (network or CORS failure) there is exactly one
+   * retry with mode 'no-cors'; its response is opaque, so the best the script
+   * can say is 'unconfirmed'. Outcomes:
+   *   ok           2xx CORS response
+   *   failed       non-2xx CORS response (status carried), or a non-TypeError throw
+   *   unconfirmed  the no-cors retry resolved (opaque; status 0 by design)
+   *   network      both attempts threw
+   * Messages are fixed strings with only the HTTP status interpolated; they
+   * never include the URL or the payload.
+   */
+  function sendWebhook(url, payload) {
+    var body = JSON.stringify(payload);
+    return attemptFetch(url, {
+      method: 'POST',
+      mode: 'cors',
+      credentials: 'omit',
+      headers: { 'Content-Type': 'application/json' },
+      body: body
+    }).then(function (res) {
+      if (res && res.ok) return { outcome: 'ok', status: res.status };
+      var status = res && typeof res.status === 'number' ? res.status : 0;
       return {
         outcome: 'failed',
-        message: 'Workflow did not accept the request (HTTP ' + status + '). Try again or contact your admin.'
+        status: status,
+        message: MSG_HTTP_FAILED_PREFIX + status + MSG_HTTP_FAILED_SUFFIX
       };
-    }, function () {
-      return {
-        outcome: 'failed',
-        message: 'Could not reach the workflow. Check your connection and try again.'
-      };
+    }, function (err) {
+      if (!err || err.name !== 'TypeError') {
+        return { outcome: 'failed', status: 0, message: MSG_UNEXPECTED };
+      }
+      // A no-cors request may only carry CORS-safelisted headers; the browser
+      // would silently drop a JSON content type, so none is pretended here.
+      return attemptFetch(url, {
+        method: 'POST',
+        mode: 'no-cors',
+        credentials: 'omit',
+        body: body
+      }).then(function () {
+        return { outcome: 'unconfirmed', status: 0 };
+      }, function () {
+        return { outcome: 'network', status: 0, message: MSG_NETWORK };
+      });
     });
+  }
+
+  function contactFieldsReadable() {
+    var region = adapter.findContactRegion();
+    if (!region) return false;
+    return adapter.readContactEmail(region) !== null || adapter.readContactPhone(region) !== null;
+  }
+
+  function markNoContactFields(el) {
+    el.setAttribute('data-' + NS + '-reason', 'no-contact-fields');
+    setState(el, 'unavailable', { message: MSG_NO_CONTACT_FIELDS });
+  }
+
+  // BTN-12: after a queued outcome the element stays disabled for cooldownMs,
+  // then returns to ready only if it is still on screen in the same generation.
+  function startCooldown(action, el) {
+    var cooldownMs = typeof action.cooldownMs === 'number' && isFinite(action.cooldownMs) && action.cooldownMs >= 0
+      ? action.cooldownMs
+      : DEFAULT_COOLDOWN_MS;
+    var existing = state.timers.get(el);
+    if (existing !== undefined) clearTimeout(existing);
+    var id = setTimeout(function () {
+      state.timers.delete(el);
+      if (el.isConnected && el.getAttribute('data-' + NS + '-generation') === String(state.generation)) {
+        setState(el, 'ready');
+      }
+    }, cooldownMs);
+    state.timers.set(el, id);
+    return cooldownMs;
   }
 
   /**
@@ -743,7 +831,8 @@
     var email = region ? adapter.readContactEmail(region) : null;
     var phone = region ? adapter.readContactPhone(region) : null;
     if (email === null && phone === null) {
-      setState(el, 'unavailable', { message: 'contact email/phone not found' });
+      // Fields can disappear after render; a later re-render recovers the element.
+      markNoContactFields(el);
       log('webhook-unavailable', { buttonId: button.id });
       return Promise.resolve();
     }
@@ -755,8 +844,22 @@
         log('webhook-discarded', { buttonId: button.id, generation: gen });
         return;
       }
-      if (result.outcome === 'ok') setState(el, 'queued');
-      else setState(el, 'failed', { message: result.message });
+      var cooldownMs;
+      if (result.outcome === 'ok') {
+        setState(el, 'queued');
+        cooldownMs = startCooldown(action, el);
+        log('webhook-queued', { buttonId: button.id, generation: gen, cooldownMs: cooldownMs });
+      } else if (result.outcome === 'unconfirmed') {
+        setState(el, 'queued', { label: 'Sent (unconfirmed)', message: MSG_UNCONFIRMED });
+        cooldownMs = startCooldown(action, el);
+        log('webhook-unconfirmed', { buttonId: button.id, generation: gen, cooldownMs: cooldownMs });
+      } else if (result.outcome === 'network') {
+        setState(el, 'failed', { message: result.message });
+        log('webhook-network', { buttonId: button.id, status: 0 });
+      } else {
+        setState(el, 'failed', { message: result.message });
+        log('webhook-failed', { buttonId: button.id, status: result.status || 0 });
+      }
     });
   }
 
@@ -849,6 +952,8 @@
       boot: boot,
       getState: getState,
       applyContext: applyContext,
+      // Re-render with NO generation bump: the path Plan 03's observers drive.
+      renderAll: renderAll,
       adapter: adapter
     };
   } else if (document.readyState === 'loading') {
