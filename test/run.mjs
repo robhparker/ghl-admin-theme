@@ -1114,6 +1114,7 @@ scenario('actions: unsafe link hrefs are unavailable, safe ones render anchors',
   const unsafe = {
     js: 'javascript:alert(1)',
     protoRel: '//evil.test/x',
+    backslash: '/\\evil.test/x',
     http: 'http://plain.test/',
     data: 'data:text/html,x',
     ftp: 'ftp://f.test/',
@@ -1316,6 +1317,53 @@ scenario('observers: contact toolbar re-render keeps one button bound to the cur
   assert.equal(shim.errors.length, 0);
 });
 
+scenario('review WR-02: cooldown survives a same-context region re-render', async () => {
+  const { shim } = await bootContactPage();
+  const first = invite(shim);
+  first.click();
+  await shim.flush();
+  assert.equal(first.getAttribute('data-state'), 'queued');
+  await shim.advanceTimers(1000);
+  shim.setContact(JANE);
+  await shim.flush();
+  const restored = invite(shim);
+  assert.notEqual(restored, first, 'button was recreated by the re-render');
+  assert.equal(restored.getAttribute('data-state'), 'queued', 'recreated inside the cooldown window stays queued');
+  assert.ok(restored.disabled);
+  restored.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 1, 'no second POST inside the cooldown');
+  await shim.advanceTimers(2001);
+  assert.equal(restored.getAttribute('data-state'), 'ready', 'cooldown expires at the original deadline');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('review WR-03: ambiguous email/phone in the contact region is refused, counts reported', async () => {
+  const { shim, shell, GHLC } = await bootContactPage();
+  const extra = shim.document.createElement('a');
+  extra.setAttribute('href', 'mailto:someone-else@example.test');
+  shell.contactRegion.appendChild(extra);
+  const r = GHLC.verify();
+  assert.equal(r.contactFields.email, false, 'two mailto anchors -> no email');
+  assert.equal(r.contactFields.emailCandidates, 2);
+  assert.equal(r.contactFields.phone, true);
+  const button = invite(shim);
+  button.click();
+  await shim.flush();
+  const body = shim.fetchLog.length ? JSON.parse(shim.fetchLog[0].body) : null;
+  assert.ok(!body || body.email === undefined || body.email === null, 'ambiguous email is never sent');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('review IN-06: cooldownMs is clamped to five minutes', async () => {
+  const fixture = loadFixture();
+  const btn = fixture.buttons.find((b) => b.id === 'sendInvite');
+  btn.action.cooldownMs = 1e10;
+  const { GHLC } = await bootWithConfig(fixture);
+  const action = GHLC.__test.resolveAction(btn);
+  assert.equal(action.cooldownMs, 300000);
+});
+
 scenario('observers: own writes do not cause render loops', async () => {
   const { shim } = await bootContactPage();
   await shim.advanceTimers(50);
@@ -1506,7 +1554,7 @@ scenario('verify: report shape and hygiene', async () => {
   assert.ok(logCount(shim, '[ghlc] verify') >= 1, 'debug mode auto-ran verify at boot');
   const r = GHLC.verify();
   assert.equal(r.version, '0.1.0');
-  assert.equal(r.url, CONTACT_PATH);
+  assert.equal(r.url, undefined, 'raw pathname is not reported (IN-03)');
   assert.deepEqual(plain(r.route), { locationId: 'locA', contactId: 'c1', isAgency: false });
   assert.equal(r.generation, 1);
   assert.equal(r.hooksInstalled, true);
@@ -1522,7 +1570,7 @@ scenario('verify: report shape and hygiene', async () => {
     locationSwitcher: true,
     backToAgency: true,
   });
-  assert.deepEqual(plain(r.contactFields), { email: true, phone: true });
+  assert.deepEqual(plain(r.contactFields), { email: true, phone: true, emailCandidates: 1, phoneCandidates: 1 });
   assert.deepEqual(plain(r.observers), { header: true, contact: true });
   assert.deepEqual(plain(r.waiting), { header: false, contact: false });
   assert.ok(Array.isArray(r.buttons) && r.buttons.length === 6);
@@ -1555,7 +1603,7 @@ scenario('verify: missing mounts are reported false and native DOM stays untouch
   assert.equal(r.mounts.sidebar, true);
   assert.equal(r.mounts.locationSwitcher, true);
   assert.equal(r.mounts.backToAgency, false);
-  assert.deepEqual(plain(r.contactFields), { email: false, phone: false });
+  assert.deepEqual(plain(r.contactFields), { email: false, phone: false, emailCandidates: 0, phoneCandidates: 0 });
   assert.deepEqual(plain(r.observers), { header: false, contact: false });
   assert.equal(r.waiting.header, true, 'the route expects a header, so a bounded wait runs');
   assert.equal(r.waiting.contact, false, 'no contact in the URL, no contact wait');

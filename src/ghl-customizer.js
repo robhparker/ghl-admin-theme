@@ -39,6 +39,7 @@
   // jsDelivr tag; the data-config attribute on the script tag always wins.
   var DEFAULT_CONFIG_URL = 'https://cdn.jsdelivr.net/gh/robhparker/admin-theme@v0.1.0/config/agency-config.json';
   var DEFAULT_COOLDOWN_MS = 10000;
+  var MAX_COOLDOWN_MS = 300000; // 5 minutes; also keeps setTimeout inside int32
   var ACTION_TYPES = Object.freeze(['link', 'webhook', 'handler']);
   var STATES = Object.freeze(['ready', 'submitting', 'queued', 'unavailable', 'failed']);
   // Link buttons may only navigate to these schemes or to a same-origin path (BTN-09).
@@ -145,7 +146,6 @@
     contactRegion: Object.freeze([
       '.hl_contact-details-header',
       '.contact-detail-header',
-      '[class*="contact-details"]',
       '[class*="contact-detail"]'
     ]),
     contactEmail: Object.freeze(['a[href^="mailto:"]', 'input[type="email"]']),
@@ -199,7 +199,14 @@
     return null;
   }
 
+  // A region with more than one candidate is ambiguous: the value would be
+  // used by HighLevel to FIND the contact, so guessing risks the wrong person.
+  function countMatches(region, selector) {
+    return region ? region.querySelectorAll(selector).length : 0;
+  }
+
   function readHrefValue(region, selector, scheme) {
+    if (countMatches(region, selector) > 1) return null;
     var anchor = region.querySelector(selector);
     if (!anchor) return null;
     var href = anchor.getAttribute('href') || '';
@@ -208,6 +215,7 @@
   }
 
   function readInputValue(region, selector) {
+    if (countMatches(region, selector) > 1) return null;
     var input = region.querySelector(selector);
     if (!input) return null;
     var value = input.value === undefined || input.value === null ? '' : String(input.value);
@@ -273,6 +281,7 @@
   }
 
   var adapter = Object.freeze({
+    countMatches: countMatches,
     routes: routes,
     selectors: selectors,
     events: events,
@@ -465,6 +474,10 @@
     generation: 0,
     ctx: { locationId: null, contactId: null, isAgency: true },
     timers: new Map(),
+    // BTN-12: cooldown expiry (ms since epoch) keyed by ctxKey() + '|' + buttonId.
+    // Lives in state, not on the element, so a native re-render of the region
+    // inside the cooldown window recreates the button still disabled.
+    cooldowns: Object.create(null),
     ready: null,
     hooksInstalled: false,
     navTimer: null,
@@ -479,6 +492,13 @@
 
   function computeContext() {
     return adapter.parseRoute(location.pathname);
+  }
+
+  function pruneCooldowns() {
+    var now = Date.now();
+    Object.keys(state.cooldowns).forEach(function (key) {
+      if (state.cooldowns[key] <= now) delete state.cooldowns[key];
+    });
   }
 
   function clearTimers() {
@@ -501,6 +521,7 @@
     // old element must never flip a new one. Pending re-renders and mount
     // waits belong to the old route too; the new route starts them afresh.
     clearTimers();
+    pruneCooldowns();
     PLACEMENTS.forEach(function (placement) {
       cancelScheduledRender(placement);
       cancelMountWait(placement);
@@ -613,9 +634,12 @@
   // scheme, protocol-relative URLs, and parse failures, is refused.
   function isSafeLinkHref(href) {
     if (typeof href !== 'string' || !href) return false;
-    if (href.charAt(0) === '/') return href.charAt(1) !== '/';
     try {
-      var url = new URL(href);
+      // Resolve against the page origin so a path that the URL parser would
+      // treat as an authority (e.g. a backslash right after the slash) is
+      // caught by an origin comparison rather than a character check.
+      var url = new URL(href, location.origin);
+      if (href.charAt(0) === '/') return url.origin === location.origin;
       return SAFE_LINK_SCHEMES.indexOf(url.protocol) !== -1 && url.username === '' && url.password === '';
     } catch (e) {
       return false;
@@ -652,8 +676,8 @@
         kind: 'webhook',
         url: action.url,
         extraFields: isPlainObject(action.extraFields) ? action.extraFields : {},
-        cooldownMs: typeof action.cooldownMs === 'number' && action.cooldownMs >= 0
-          ? action.cooldownMs
+        cooldownMs: typeof action.cooldownMs === 'number' && isFinite(action.cooldownMs) && action.cooldownMs >= 0
+          ? Math.min(action.cooldownMs, MAX_COOLDOWN_MS)
           : DEFAULT_COOLDOWN_MS
       };
     }
@@ -749,7 +773,14 @@
       markNoContactFields(el);
     } else {
       bindClick(button, el);
-      setState(el, 'ready');
+      var until = state.cooldowns[ctxKey() + '|' + button.id];
+      if (action.kind === 'webhook' && until && until > Date.now()) {
+        // Re-rendered inside a cooldown window: stay queued for the remainder.
+        setState(el, 'queued', { message: MSG_COOLDOWN_RESTORED });
+        startCooldown(action, el, until - Date.now());
+      } else {
+        setState(el, 'ready');
+      }
     }
     return el;
   }
@@ -896,6 +927,7 @@
   var MSG_UNEXPECTED = 'Something went wrong sending the request. Try again.';
   var MSG_UNCONFIRMED = 'The workflow endpoint did not confirm receipt. Check the workflow execution log before resending.';
   var MSG_NO_CONTACT_FIELDS = 'contact email/phone not found';
+  var MSG_COOLDOWN_RESTORED = 'Recently sent — wait before sending again';
 
   function attemptFetch(url, init) {
     try {
@@ -965,10 +997,11 @@
 
   // BTN-12: after a queued outcome the element stays disabled for cooldownMs,
   // then returns to ready only if it is still on screen in the same generation.
-  function startCooldown(action, el) {
-    var cooldownMs = typeof action.cooldownMs === 'number' && isFinite(action.cooldownMs) && action.cooldownMs >= 0
-      ? action.cooldownMs
-      : DEFAULT_COOLDOWN_MS;
+  function startCooldown(action, el, remainingMs) {
+    var cooldownMs = typeof remainingMs === 'number' ? remainingMs : action.cooldownMs;
+    if (typeof remainingMs !== 'number') {
+      state.cooldowns[el.getAttribute('data-' + NS + '-ctx') + '|' + el.getAttribute('data-' + NS + '-button-id')] = Date.now() + cooldownMs;
+    }
     var existing = state.timers.get(el);
     if (existing !== undefined) clearTimeout(existing);
     var id = setTimeout(function () {
@@ -1238,7 +1271,6 @@
     var region = adapter.findContactRegion();
     var report = {
       version: VERSION,
-      url: location.pathname,
       route: computeContext(),
       generation: state.generation,
       hooksInstalled: state.hooksInstalled,
@@ -1251,7 +1283,9 @@
       mounts: adapter.probe(),
       contactFields: {
         email: adapter.readContactEmail(region) !== null,
-        phone: adapter.readContactPhone(region) !== null
+        phone: adapter.readContactPhone(region) !== null,
+        emailCandidates: adapter.countMatches(region, selectors.contactEmail[0]) + adapter.countMatches(region, selectors.contactEmail[1]),
+        phoneCandidates: adapter.countMatches(region, selectors.contactPhone[0]) + adapter.countMatches(region, selectors.contactPhone[1])
       },
       buttons: getState().buttons,
       observers: { header: !!state.watch.header, contact: !!state.watch.contact },
@@ -1263,6 +1297,10 @@
 
 // ==== boot ====
 
+  if (window.GHLC && window.GHLC.version && window.__GHLC_TEST__ !== true) {
+    warn('duplicate-instance', { existing: String(window.GHLC.version) });
+    return;
+  }
   window.GHLC = { version: VERSION, verify: verify, ready: null };
 
   function getState() {
@@ -1324,7 +1362,7 @@
     return state.ready;
   }
 
-  var testMode = typeof globalThis !== 'undefined' && globalThis.__GHLC_TEST__ === true;
+  var testMode = window.__GHLC_TEST__ === true;
   if (testMode) {
     window.GHLC.__test = {
       parseRoute: parseRoute,

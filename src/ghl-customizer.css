@@ -73,34 +73,9 @@
   color: #ffffff;
 }
 
-.ghlc-btn--link {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  background: var(--ghlc-primary);
-  color: var(--ghlc-primary-text);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1;
-  cursor: pointer;
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.ghlc-btn--link:hover {
-  filter: brightness(0.95);
-  text-decoration: none;
-}
-
-.ghlc-btn--link:focus-visible {
-  outline: 2px solid var(--ghlc-focus);
-  outline-offset: 2px;
-}
+/* Link buttons share every .ghlc-btn declaration; the modifier only pins
+   the anchor-specific reset. */
+.ghlc-btn--link:hover { text-decoration: none; }
 
 .ghlc-btn__icon {
   display: inline-flex;

@@ -744,6 +744,13 @@ export function createShim(options = {}) {
   const timers = new Map();
   let now = 0;
   let nextTimerId = 1;
+  // Date inside the script's realm follows the same virtual clock as the
+  // timers, so expiry math (cooldown deadlines) is observable under advanceTimers.
+  const epoch = Date.now();
+  const VirtualDate = class VirtualDate extends Date {
+    constructor(...args) { super(...(args.length ? args : [epoch + now])); }
+    static now() { return epoch + now; }
+  };
   const schedule = (fn, delay, args, interval) => {
     const id = nextTimerId++;
     const ms = Math.max(0, Number(delay) || 0);
@@ -873,6 +880,7 @@ export function createShim(options = {}) {
 
   // ---- window --------------------------------------------------------------
   const win = {};
+  win.Date = VirtualDate;
   env.window = win;
   const doc = new Document(env);
   const target = env.windowTarget;

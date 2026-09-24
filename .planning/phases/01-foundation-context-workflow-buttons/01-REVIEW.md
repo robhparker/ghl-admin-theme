@@ -17,8 +17,10 @@ findings:
   warning: 3
   info: 7
   total: 10
-status: issues_found
+status: fixed
 ---
+
+> **Resolution (2026-09-24, orchestrator):** WR-01, WR-02, WR-03 and IN-01..IN-06 fixed in commit "fix(01): address code review" — link guard resolves against the page origin; cooldown expiry tracked in `state.cooldowns` per ctx+button and honored on re-render; email/phone readers refuse ambiguous regions and `verify()` reports candidate counts; duplicate-instance guard; `window.__GHLC_TEST__` instead of `globalThis`; raw pathname dropped from verify; cooldownMs clamped to 5 min; redundant selector and CSS block removed. Regression scenarios added (76/76). IN-07 (real jsDelivr tag, REPLACE_ME webhook URL) remains a Phase 3 delivery item.
 
 # Phase 1: Code Review Report
 
