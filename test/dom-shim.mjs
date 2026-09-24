@@ -928,6 +928,18 @@ export function createShim(options = {}) {
     return node;
   };
 
+  // The contact region and the dashboard placeholder are built by one helper so
+  // buildShell and setContact always produce the same class names and anchor shapes.
+  const buildContactRegion = (contact) => {
+    const region = el('div', { class: 'hl_contact-details-header' }, [el('h2', {}, [contact.name || 'Contact'])]);
+    if (contact.email) region.appendChild(el('a', { href: `mailto:${contact.email}` }, ['email']));
+    if (contact.phone) region.appendChild(el('a', { href: `tel:${contact.phone}` }, ['phone']));
+    return region;
+  };
+  const buildDashboard = () => el('div', { class: 'hx-dashboard' }, ['Dashboard']);
+
+  let shell = null;
+
   const buildShell = ({ sidebarMode = 'location', contact = null } = {}) => {
     while (doc.body.firstChild) doc.body.removeChild(doc.body.firstChild);
     const sidebar = el('aside', { id: 'sidebar-v2', class: `sidebar-v2-${sidebarMode}` }, [
@@ -942,17 +954,50 @@ export function createShim(options = {}) {
     const main = el('main', {});
     let contactRegion = null;
     if (contact) {
-      contactRegion = el('div', { class: 'hl_contact-details-header' }, [el('h2', {}, [contact.name || 'Contact'])]);
-      if (contact.email) contactRegion.appendChild(el('a', { href: `mailto:${contact.email}` }, ['email']));
-      if (contact.phone) contactRegion.appendChild(el('a', { href: `tel:${contact.phone}` }, ['phone']));
+      contactRegion = buildContactRegion(contact);
       main.appendChild(contactRegion);
     } else {
-      main.appendChild(el('div', { class: 'hx-dashboard' }, ['Dashboard']));
+      main.appendChild(buildDashboard());
     }
     doc.body.appendChild(sidebar);
     doc.body.appendChild(header);
     doc.body.appendChild(main);
-    return { sidebar, header, headerControls, main, contactRegion };
+    shell = { sidebar, header, headerControls, main, contactRegion };
+    return shell;
+  };
+
+  // Replaces the contents of <main>: a fresh contact region (never the old node
+  // mutated in place, so isConnected on the previous region turns false) or a
+  // dashboard placeholder. Returns the new region, or null.
+  const setContact = (contact) => {
+    let main = shell ? shell.main : doc.querySelector('main');
+    if (!main) {
+      main = el('main', {});
+      doc.body.appendChild(main);
+    }
+    while (main.firstChild) main.removeChild(main.firstChild);
+    let region = null;
+    if (contact) {
+      region = buildContactRegion(contact);
+      main.appendChild(region);
+    } else {
+      main.appendChild(buildDashboard());
+    }
+    if (shell) shell.contactRegion = region;
+    return region;
+  };
+
+  const setSidebarMode = (mode) => {
+    const sidebar = doc.getElementById('sidebar-v2');
+    if (!sidebar) return null;
+    sidebar.setAttribute('class', `sidebar-v2-${mode}`);
+    return sidebar;
+  };
+
+  // Simulates a URL change the script did not observe: rewrites the current
+  // history entry's URL silently. No new entry, no event.
+  const setPath = (path) => {
+    hist.entries[hist.index] = { url: resolveUrl(path), state: hist.entries[hist.index].state };
   };
 
   const run = (src) => {
@@ -1004,6 +1049,9 @@ export function createShim(options = {}) {
     context,
     el,
     buildShell,
+    setContact,
+    setSidebarMode,
+    setPath,
     run,
     fetchLog,
     setFetchMode(mode) { fetchMode = mode; },
