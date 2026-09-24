@@ -1,0 +1,107 @@
+# Requirements: GHL Customizer (admin-theme)
+
+**Defined:** 2026-09-24
+**Core Value:** When a staff member is inside a location, the correct client logo is showing and nothing stale from a previous location remains.
+
+## v1 Requirements
+
+Requirements for initial release. Each maps to roadmap phases.
+
+### Foundation & Adapter
+
+- [ ] **FND-01**: Repo contains `src/ghl-customizer.js` (vanilla IIFE), `src/ghl-customizer.css`, and `config/agency-config.json` with a documented schema (`schemaVersion`, `enabled`, `agency`, `locations`, `buttons`)
+- [ ] **FND-02**: `NOTICE.md` records the reference project URL, commit hash, its lack of license, and that no code was copied
+- [ ] **FND-03**: All HighLevel selectors and route regexes live in a single `adapter` object; no selector strings appear elsewhere in the script
+- [ ] **FND-04**: Adapter exposes a verify mode (`?ghlc-debug=1` or `window.GHLC.verify()`) that logs which mount points and route patterns resolve on the current page, so selectors can be confirmed in a live account
+- [ ] **FND-05**: Script fetches config from a configurable HTTPS URL, validates `schemaVersion`, and does nothing when `enabled` is false or the fetch/parse fails
+- [ ] **FND-06**: Disabling or removing the script from HighLevel custom JS restores the native UI after reload (no persisted DOM or storage changes)
+
+### Location Context
+
+- [ ] **LOC-01**: Active location ID is resolved from the URL on initial load
+- [ ] **LOC-02**: Location changes are detected on in-app navigation, browser back/forward, and location-switcher use (popstate, `routeChangeEvent`, and pushState/replaceState hooks)
+- [ ] **LOC-03**: Agency-level routes resolve to a null location and restore agency branding
+- [ ] **LOC-04**: Each browser tab keeps independent active-location state (in-memory only; no localStorage for location)
+- [ ] **LOC-05**: Each context change carries a generation token; async work from an older generation is discarded and cannot apply to the DOM
+
+### Location Branding
+
+- [ ] **BRD-01**: A configured location's logo replaces the agency logo in the agreed mount point (sidebar or header, selected in adapter config) with preserved proportions, transparent-image support, and alt text
+- [ ] **BRD-02**: The existing logo's click/navigation behavior is preserved
+- [ ] **BRD-03**: On location change the previous override is removed immediately and the agency fallback shows until the new location resolves
+- [ ] **BRD-04**: A missing, unconfigured, or broken (onerror) client logo falls back to the agency logo, then to the native HighLevel logo; the previous client logo is never the fallback
+- [ ] **BRD-05**: Branding is reapplied when HighLevel re-renders the logo element, without duplicate observers
+
+### Accent Colors
+
+- [ ] **CLR-01**: Config supports optional theme tokens (`primary`, `sidebarBg`, `sidebarText`, `navActive`) at agency and location levels
+- [ ] **CLR-02**: When tokens are present they are applied as CSS custom properties on a scoped root and used only by the customizer's own buttons and the verified sidebar surfaces
+- [ ] **CLR-03**: Invalid color values are ignored; sidebar text/background pairs below 4.5:1 contrast fall back to safe defaults
+- [ ] **CLR-04**: Native success, warning, and error colors are untouched
+
+### Configurable Buttons
+
+- [ ] **BTN-01**: Each button has `id`, `label`, optional `icon` (from an approved icon set), `placement` (`header` or `contact`), `scope` (all locations or a list of location IDs), and `action` (`{type:"link", href, target}` or `{type:"handler", handler}`)
+- [ ] **BTN-02**: Location overrides can enable, disable, or override buttons by stable button ID
+- [ ] **BTN-03**: Header buttons render in the global header mount point for locations in scope, exactly once even after native re-render
+- [ ] **BTN-04**: Contact buttons render in the contact record toolbar only when both a location and a contact ID are resolved
+- [ ] **BTN-05**: Contact buttons revalidate location and contact at click time and refuse to act if either changed or is missing
+- [ ] **BTN-06**: Navigating away from a contact removes contact buttons and any pending UI state; the previous contact ID is never reused
+- [ ] **BTN-07**: Buttons support ready, submitting, queued, unavailable, and failed states with visible feedback; repeat clicks are disabled while submitting
+- [ ] **BTN-08**: Buttons are keyboard accessible (real `<button>`/`<a>`, focus ring, Enter/Space) and match surrounding HighLevel styling
+- [ ] **BTN-09**: `handler` actions resolve only against an in-script allowlisted registry; unknown handlers render as unavailable
+- [ ] **BTN-10**: A `sendInvite` handler is registered that validates context and returns the `unavailable` state with a "not yet configured" message (no network call)
+
+### Delivery
+
+- [ ] **DLV-01**: README documents installation in HighLevel (Agency Settings → Custom JS/CSS snippet), config schema, hosting via jsDelivr with a pinned tag, and rollback
+- [ ] **DLV-02**: Sample config includes agency defaults, two location logo overrides, one header link button, and the inactive contact action
+- [ ] **DLV-03**: A local test harness (`test/harness.html`) mimics the HighLevel DOM shell so location switching, fallbacks, and re-render behavior can be exercised without a live account
+- [ ] **DLV-04**: Diagnostics never log credentials, contact content, or config payloads beyond IDs and states
+
+## v2 Requirements
+
+Deferred to future release. Tracked but not in current roadmap.
+
+### Send Invite (live)
+
+- **INV-01**: Companion endpoint authenticates the operator and authorizes location + action
+- **INV-02**: Endpoint verifies the contact belongs to the location before enrolling
+- **INV-03**: Duplicate submissions with the same request ID are rejected
+- **INV-04**: Success state reads "Invitation queued," not "Email delivered"
+- **INV-05**: Resend policy defined and enforced server-side
+
+### Later
+
+- **LTR-01**: Automatic logo/color sync from HighLevel location data
+- **LTR-02**: Spark-style folders or submenus
+- **LTR-03**: Configuration UI
+
+## Out of Scope
+
+| Feature | Reason |
+|---------|--------|
+| Live Send Invite submission | Destination, auth, and resend policy undefined (PRD) |
+| Companion service | Only needed once Send Invite is wired |
+| Full theme redesign | PRD restricts colors to verified surfaces |
+| Bulk invitations / contacts list action | Excluded by PRD |
+| Arbitrary JS from config | Security boundary |
+| Marketplace, billing, plugin loading, custom DB fields | Excluded by PRD |
+| Copying reference code | Reference repo has no license |
+| Mobile layouts | Desktop web app only |
+
+## Traceability
+
+Which phases cover which requirements. Updated during roadmap creation.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+
+**Coverage:**
+- v1 requirements: 36 total
+- Mapped to phases: 0
+- Unmapped: 36 ⚠️
+
+---
+*Requirements defined: 2026-09-24*
+*Last updated: 2026-09-24 after initial definition*
