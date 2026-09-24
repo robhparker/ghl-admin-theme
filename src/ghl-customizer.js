@@ -5,15 +5,17 @@
  *
  * One hosted vanilla JavaScript IIFE (ES2019, no build step) that reads a public
  * JSON config, resolves the active HighLevel location and contact from the URL,
- * and renders configurable buttons where staff work. Every HighLevel selector,
- * route regex, and DOM reader lives in the single `adapter` object below; when
- * HighLevel's markup changes, that object is the only thing that changes.
+ * shows the active location's logo in place of the native one, and renders
+ * configurable buttons where staff work. Every HighLevel selector, route regex,
+ * and DOM reader lives in the single `adapter` object below; when HighLevel's
+ * markup changes, that object is the only thing that changes.
  *
  * Config schema (schemaVersion 1)
  *   schemaVersion  number   must be exactly 1
  *   enabled        boolean  false disables the script entirely (native UI untouched)
- *   agency         object   { logoUrl?: string, logoAlt?: string, theme?: object, buttons?: object }
- *   locations      object   { [locationId: string]: { name?: string, logoUrl?: string,
+ *   agency         object   { logoUrl?: string, logoAlt?: string, logoMount?: 'sidebar' | 'header',
+ *                              theme?: object, buttons?: object }
+ *   locations      object   { [locationId: string]: { name?: string, logoUrl?: string, logoAlt?: string,
  *                              theme?: object, buttons?: { [buttonId: string]: boolean | object } } }
  *   buttons        array    Array<{ id: string, label: string, icon?: string,
  *                              placement: 'header' | 'contact',
@@ -50,6 +52,14 @@
   var MOUNT_WAIT_INTERVAL_MS = 250;
   var MOUNT_WAIT_MAX_MS = 15000;
 
+  // Branding source tiers, in fallback order: the active location's logo, the
+  // agency logo, then the native element as HighLevel rendered it. The native
+  // tier is never configured; it is captured from the element on first touch.
+  var BRANDING_TIERS = Object.freeze(['location', 'agency', 'native']);
+  // Where the logo lives; config.agency.logoMount may pick one, the adapter
+  // carries the default.
+  var LOGO_MOUNTS = Object.freeze(['sidebar', 'header']);
+
   var SVG_NS = 'http://www.w3.org/2000/svg';
 
   // Approved icon set: name -> stroke paths on a 24x24 grid. This is the only
@@ -74,7 +84,10 @@
     buttonSel: '[data-' + NS + '-button-id]',
     styleLinkSel: 'link[data-' + NS + '-styles]',
     labelSel: '.' + NS + '-btn__label',
-    msgSel: '.' + NS + '-btn__msg'
+    msgSel: '.' + NS + '-btn__msg',
+    // Marks on the native logo element while a non-native tier is showing.
+    logoClass: NS + '-logo',
+    logoAttr: 'data-' + NS + '-logo'
   });
 
   var DEBUG = (function () {
@@ -123,7 +136,9 @@
 
   // All HighLevel knowledge. Candidate selectors come from community guides and
   // are unverified against the live DOM; verify mode (Plan 03) reports which
-  // ones resolve. sidebarLogo / headerLogo are reserved for Phase 2 (D-07).
+  // ones resolve. The sidebar logo mount was verified live on 2026-09-24; the
+  // header logo is the config-selectable alternative (agency.logoMount) and is
+  // narrowed to the same class so a header avatar can never be branded.
   var routes = Object.freeze({
     location: /^\/v2\/location\/([^/?#]+)/,
     contactDetail: /^\/v2\/location\/([^/?#]+)\/contacts\/detail\/([^/?#]+)/,
@@ -159,8 +174,8 @@
     contactPhoneFieldId: 'contact.phone',
     contactEmail: Object.freeze(['a[href^="mailto:"]', 'input[type="email"]']),
     contactPhone: Object.freeze(['a[href^="tel:"]', 'input[type="tel"]']),
-    sidebarLogo: '#sidebar-v2 img',
-    headerLogo: '.hl_header img'
+    sidebarLogo: '#sidebar-v2 img.agency-logo',
+    headerLogo: '.hl_header img.agency-logo'
   });
 
   var events = Object.freeze({
@@ -297,6 +312,21 @@
     return region && (region === mount || region.contains(mount)) ? region : mount;
   }
 
+  // The logo element for a named mount (LOGO_MOUNTS), or null. This is the
+  // only place the logo img is located; branding never queries on its own.
+  function findLogoMount(name) {
+    return document.querySelector(name === 'header' ? selectors.headerLogo : selectors.sidebarLogo);
+  }
+
+  // The container HighLevel replaces wholesale when it re-renders the area the
+  // logo sits in (the sidebar or the header), for the branding observer.
+  function findLogoRoot(name, img) {
+    var root = typeof img.closest === 'function'
+      ? img.closest(name === 'header' ? selectors.header : selectors.sidebar)
+      : null;
+    return root || img.parentNode || img;
+  }
+
   // Boolean presence of every mount selector, for verify mode (FND-04). No
   // element or value leaves the adapter, only true/false.
   function probe() {
@@ -329,6 +359,10 @@
     findRegionRoot: findRegionRoot,
     readContactEmail: readContactEmail,
     readContactPhone: readContactPhone,
+    // Default logo mount; config.agency.logoMount may select the other one.
+    logoMount: 'sidebar',
+    findLogoMount: findLogoMount,
+    findLogoRoot: findLogoRoot,
     probe: probe
   });
 
@@ -359,6 +393,69 @@
     } catch (e) {
       return false;
     }
+  }
+
+  /**
+   * Image sources a config may point the logo at (T-02-01): a string that
+   * resolves against the page to https without credentials, or to the page's
+   * own origin (so the offline harness can serve relative files). data:,
+   * blob:, javascript:, cross-origin http:, credentialed URLs, non-strings,
+   * and parse failures are absent, never written. The raw config string is
+   * what reaches src; no normalization, so equality is raw-string equality.
+   */
+  function isSafeImageUrl(value) {
+    if (typeof value !== 'string' || !value) return false;
+    try {
+      var url = new URL(value, location.href);
+      if (url.protocol === 'https:' && url.username === '' && url.password === '') return true;
+      return url.origin === location.origin;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // config.agency.logoMount when it names a known mount, else the adapter default.
+  function resolveLogoMount(config) {
+    var agency = config && isPlainObject(config.agency) ? config.agency : null;
+    if (agency && LOGO_MOUNTS.indexOf(agency.logoMount) !== -1) return agency.logoMount;
+    return adapter.logoMount;
+  }
+
+  function firstString(values) {
+    for (var i = 0; i < values.length; i++) {
+      if (typeof values[i] === 'string') return values[i];
+    }
+    return null;
+  }
+
+  /**
+   * Ordered branding candidates for a location (BRD-01, BRD-04): the
+   * location's own logo when configured and safe, then the agency logo when
+   * configured and safe. The native logo is not a candidate; it is the
+   * implicit last tier restored from the per-element capture. A null alt
+   * means "keep the captured native alt". Own-property lookups only, so a
+   * prototype-named location ID never resolves. Agency-level pages
+   * (locationId null) get the agency tier or nothing.
+   */
+  function resolveBranding(config, locationId) {
+    var out = [];
+    if (!config) return out;
+    var agency = isPlainObject(config.agency) ? config.agency : {};
+    var agencyAlt = typeof agency.logoAlt === 'string' ? agency.logoAlt : null;
+    if (typeof locationId === 'string' && isPlainObject(config.locations) && hasOwn(config.locations, locationId)) {
+      var entry = config.locations[locationId];
+      if (isPlainObject(entry) && isSafeImageUrl(entry.logoUrl)) {
+        out.push({
+          tier: 'location',
+          src: entry.logoUrl,
+          alt: firstString([entry.logoAlt, entry.name, agencyAlt])
+        });
+      }
+    }
+    if (isSafeImageUrl(agency.logoUrl)) {
+      out.push({ tier: 'agency', src: agency.logoUrl, alt: agencyAlt });
+    }
+    return out;
   }
 
   var BUTTON_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -526,7 +623,25 @@
     fieldWait: null,
     // What the last served config said, even when it was not adopted (verify).
     lastSchemaVersion: null,
-    lastEnabled: null
+    lastEnabled: null,
+    // Branding section. `native` is the logo element as HighLevel rendered it
+    // (captured per element before the first write, restored verbatim);
+    // `applied` is the tier currently on the mount; `resolving` is the one
+    // in-flight detached preload; `loaded` / `failed` remember URLs for the
+    // session so a revisit is instant and a broken URL is never retried.
+    branding: {
+      mountName: null,
+      native: null,
+      applied: null,
+      appliedSrc: null,
+      appliedAlt: null,
+      resolving: null,
+      loaded: Object.create(null),
+      failed: Object.create(null),
+      timer: null,
+      errorBound: null,
+      missingGen: null
+    }
   };
 
   function computeContext() {
@@ -566,6 +681,13 @@
       cancelMountWait(placement);
     });
     cancelContactFieldsWait();
+    // A logo still resolving for the old location must never land on the new
+    // one (BRD-03): the preload dies with the generation that started it.
+    cancelLogoPreload();
+    if (state.branding.timer !== null) {
+      clearTimeout(state.branding.timer);
+      state.branding.timer = null;
+    }
     renderAll();
     log('nav', { reason: reason, generation: state.generation });
     log('context', {
@@ -926,6 +1048,7 @@
   function renderAll() {
     renderPlacement('header');
     renderPlacement('contact');
+    renderBranding('render');
   }
 
   function uuid() {
@@ -1188,6 +1311,243 @@
     else if (action.kind === 'handler') runHandler(button, action, el);
   }
 
+// ==== branding ====
+
+  /**
+   * Location logo switching (BRD-01..04). The native logo element is never
+   * cloned, wrapped, moved, or replaced: branding writes src, alt,
+   * referrerpolicy, the ghlc-logo class, and data-ghlc-logo on the element
+   * HighLevel rendered, removes srcset while branded, and puts every captured
+   * value back on native restore. Nothing else is touched, so the element's
+   * identity, its anchor, and its click behavior are preserved by
+   * construction (A-03, BRD-02).
+   *
+   * Switch sequence (A-04): every render first shows the interim tier (the
+   * agency logo when configured, else native) and starts one detached preload
+   * for the location logo; the preload result is applied only when the
+   * generation and location it was started for are still current. URLs that
+   * loaded once apply instantly for the rest of the session; URLs that errored
+   * are excluded for the rest of the session. Fallbacks come only from the
+   * current context's candidates plus the native capture, never from the logo
+   * that happened to be on the mount before (T-02-03).
+   */
+
+  function captureNativeLogo(mount) {
+    var branding = state.branding;
+    if (branding.native && branding.native.el === mount) return;
+    branding.native = {
+      el: mount,
+      src: mount.getAttribute('src'),
+      alt: mount.getAttribute('alt'),
+      srcset: mount.getAttribute('srcset')
+    };
+    branding.applied = null;
+    branding.appliedSrc = null;
+    branding.appliedAlt = null;
+    // The only listener ever bound to the mount, once per element (T-02-07).
+    if (branding.errorBound !== mount) {
+      if (branding.errorBound) branding.errorBound.removeEventListener('error', onLogoError);
+      mount.addEventListener('error', onLogoError);
+      branding.errorBound = mount;
+    }
+  }
+
+  // A-07: the candidate's alt when configured, else the captured native alt.
+  function resolveAlt(candidate) {
+    if (typeof candidate.alt === 'string') return candidate.alt;
+    var native = state.branding.native;
+    return native && typeof native.alt === 'string' ? native.alt : '';
+  }
+
+  function recordApplied(tier, src, alt) {
+    state.branding.applied = tier;
+    state.branding.appliedSrc = src;
+    state.branding.appliedAlt = alt;
+  }
+
+  // Idempotent: a re-render with the same tier already on the mount writes
+  // nothing, so observers and mount waits can re-enter freely.
+  function applyLogo(mount, candidate) {
+    var alt = resolveAlt(candidate);
+    if (mount.getAttribute('src') === candidate.src &&
+        mount.getAttribute('alt') === alt &&
+        mount.getAttribute(OWN.logoAttr) === candidate.tier) {
+      recordApplied(candidate.tier, candidate.src, alt);
+      return;
+    }
+    // srcset would let the browser pick a native variant over our src.
+    if (mount.hasAttribute('srcset')) mount.removeAttribute('srcset');
+    // Policy before src, so the request the src write starts carries it (P-01).
+    mount.setAttribute('referrerpolicy', 'no-referrer');
+    mount.setAttribute('alt', alt);
+    mount.setAttribute('src', candidate.src);
+    mount.setAttribute(OWN.logoAttr, candidate.tier);
+    mount.classList.add(OWN.logoClass);
+    recordApplied(candidate.tier, candidate.src, alt);
+    log('logo-applied', {
+      tier: candidate.tier,
+      generation: state.generation,
+      locationId: state.ctx.locationId || 'none'
+    });
+  }
+
+  function restoreNativeLogo(mount) {
+    var native = state.branding.native;
+    if (!native) return;
+    if (!mount.hasAttribute(OWN.logoAttr)) {
+      // Nothing of ours is on the element: it is showing what HighLevel put
+      // there. Record that as the native tier and leave the element alone.
+      if (state.branding.applied !== 'native') {
+        recordApplied('native', native.src, native.alt);
+        log('logo-applied', { tier: 'native', generation: state.generation, locationId: state.ctx.locationId || 'none' });
+      }
+      return;
+    }
+    mount.removeAttribute('referrerpolicy');
+    mount.removeAttribute(OWN.logoAttr);
+    mount.classList.remove(OWN.logoClass);
+    if (native.alt === null) mount.removeAttribute('alt');
+    else mount.setAttribute('alt', native.alt);
+    if (native.src === null) mount.removeAttribute('src');
+    else mount.setAttribute('src', native.src);
+    if (native.srcset !== null) mount.setAttribute('srcset', native.srcset);
+    recordApplied('native', native.src, native.alt);
+    log('logo-applied', { tier: 'native', generation: state.generation, locationId: state.ctx.locationId || 'none' });
+  }
+
+  /**
+   * One detached <img> proves a location logo off-screen before it is shown.
+   * The result is applied only if this preload is still the pending one and
+   * the generation and location it was started for are still current; a
+   * cancelled or superseded preload can only record what it learned about
+   * the URL (loaded), never write to the DOM (LOC-05, BRD-03).
+   */
+  function startLogoPreload(candidate) {
+    var current = state.branding.resolving;
+    if (current && current.src === candidate.src && current.gen === state.generation) return;
+    cancelLogoPreload();
+    var img = document.createElement('img');
+    var pending = {
+      gen: state.generation,
+      locationId: state.ctx.locationId,
+      src: candidate.src,
+      tier: candidate.tier,
+      img: img,
+      cancelled: false
+    };
+    img.setAttribute('referrerpolicy', 'no-referrer');
+    img.addEventListener('load', function () {
+      onPreloadLoad(pending);
+    });
+    img.addEventListener('error', function () {
+      onPreloadError(pending);
+    });
+    state.branding.resolving = pending;
+    log('logo-resolving', { generation: pending.gen, locationId: pending.locationId || 'none' });
+    img.setAttribute('src', candidate.src);
+  }
+
+  function onPreloadLoad(pending) {
+    // The bytes are in the browser cache now whichever context asked for them.
+    state.branding.loaded[pending.src] = true;
+    if (state.branding.resolving !== pending) {
+      log('logo-discarded', { generation: pending.gen });
+      return;
+    }
+    state.branding.resolving = null;
+    if (pending.gen === state.generation && pending.locationId === state.ctx.locationId) {
+      renderBranding('preloaded');
+    } else {
+      log('logo-discarded', { generation: pending.gen });
+    }
+  }
+
+  function onPreloadError(pending) {
+    // An aborted request is not a broken image: only a live preload may
+    // mark its URL failed for the session.
+    if (pending.cancelled) {
+      log('logo-discarded', { generation: pending.gen });
+      return;
+    }
+    state.branding.failed[pending.src] = true;
+    log('logo-failed', { tier: pending.tier, generation: pending.gen });
+    if (state.branding.resolving === pending) state.branding.resolving = null;
+    if (pending.gen === state.generation) renderBranding('preload-error');
+  }
+
+  function cancelLogoPreload() {
+    var pending = state.branding.resolving;
+    if (!pending) return;
+    state.branding.resolving = null;
+    pending.cancelled = true;
+    // Dropping src aborts the request; the listeners stay bound but check
+    // identity, so a late event from this element can no longer act.
+    pending.img.removeAttribute('src');
+  }
+
+  // The mount's own image failed to load while a non-native tier was showing
+  // (BRD-04): exclude that URL and walk the chain from the current context.
+  function onLogoError() {
+    var branding = state.branding;
+    var mount = branding.native ? branding.native.el : null;
+    if (!mount || branding.applied === null || branding.applied === 'native') return;
+    if (mount.getAttribute('src') !== branding.appliedSrc) return;
+    branding.failed[branding.appliedSrc] = true;
+    log('logo-failed', { tier: branding.applied, generation: state.generation });
+    renderBranding('mount-error');
+  }
+
+  /**
+   * Reconcile the logo mount with the current context. Safe to call from
+   * any path (render, preload result, mount error, re-render): every write
+   * is idempotent and the pending preload is reused when it already matches.
+   */
+  function renderBranding(reason) {
+    var branding = state.branding;
+    var mountName = resolveLogoMount(state.config);
+    var mount = adapter.findLogoMount(mountName);
+    branding.mountName = mountName;
+    if (!mount) {
+      // Missing mount: omit the customization and leave the native UI alone.
+      branding.native = null;
+      branding.applied = null;
+      branding.appliedSrc = null;
+      branding.appliedAlt = null;
+      if (branding.missingGen !== state.generation) {
+        branding.missingGen = state.generation;
+        log('logo-mount-missing', { mount: mountName, reason: reason });
+      }
+      return;
+    }
+    captureNativeLogo(mount);
+    var candidates = resolveBranding(state.config, state.ctx.locationId).filter(function (candidate) {
+      return !branding.failed[candidate.src];
+    });
+    var first = candidates[0] || null;
+    if (!first) {
+      cancelLogoPreload();
+      restoreNativeLogo(mount);
+      return;
+    }
+    if (first.tier === 'agency' || branding.loaded[first.src]) {
+      cancelLogoPreload();
+      applyLogo(mount, first);
+      return;
+    }
+    // A location logo not yet proven: show the interim tier now, prove the
+    // logo off-screen, and swap only once it has loaded (A-04).
+    var interim = null;
+    for (var i = 1; i < candidates.length; i++) {
+      if (candidates[i].tier === 'agency') {
+        interim = candidates[i];
+        break;
+      }
+    }
+    if (interim) applyLogo(mount, interim);
+    else restoreNativeLogo(mount);
+    startLogoPreload(first);
+  }
+
 // ==== observers ====
 
   function everyNode(list, predicate) {
@@ -1444,7 +1804,10 @@
       parseRoute: parseRoute,
       resolveButtons: resolveButtons,
       resolveAction: resolveAction,
+      resolveBranding: resolveBranding,
+      renderBranding: renderBranding,
       isSafeHttpsUrl: isSafeHttpsUrl,
+      isSafeImageUrl: isSafeImageUrl,
       isSafeLinkHref: isSafeLinkHref,
       handlers: handlers,
       verify: verify,

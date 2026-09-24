@@ -491,6 +491,12 @@ class Element extends Node {
     const old = this._attrs.has(key) ? this._attrs.get(key) : null;
     this._attrs.set(key, String(value));
     this._doc()._recordMutation({ type: 'attributes', target: this, attributeName: key, oldValue: old });
+    // Image stub: a src write on an <img> is an image request. The env decides
+    // how it settles (load, error, or held for the scenario to release).
+    if (key === 'src' && this.tagName === 'IMG') {
+      const env = this._env();
+      if (env && typeof env.onImageSrc === 'function') env.onImageSrc(this, String(value));
+    }
   }
   removeAttribute(name) {
     const key = this._norm(name);
@@ -805,6 +811,38 @@ export function createShim(options = {}) {
     await flush();
   };
 
+  // ---- images --------------------------------------------------------------
+  // Every src write on an <img> (mount or detached preload) is logged with the
+  // element and the virtual time. Outcome per URL: 'load' (default) or
+  // 'error' fire on the next timer turn; 'hold' parks the request until
+  // releaseImage settles it. No bytes are ever fetched.
+  const imageLog = [];
+  const heldImages = [];
+  const imageOutcomes = new Map();
+  env.onImageSrc = (el, src) => {
+    imageLog.push({ el, src, time: now });
+    const outcome = imageOutcomes.has(src) ? imageOutcomes.get(src) : 'load';
+    if (outcome === 'hold') {
+      heldImages.push({ el, src });
+      return;
+    }
+    fakeSetTimeout(() => el.dispatchEvent(new Event(outcome)), 0);
+  };
+  const setImageOutcome = (src, outcome) => {
+    if (!['load', 'error', 'hold'].includes(outcome)) throw new Error(`dom-shim: unknown image outcome "${outcome}"`);
+    imageOutcomes.set(src, outcome);
+  };
+  // Settles every held request for src with the given outcome, in request
+  // order, whether or not the element still carries that src (a late event
+  // from an abandoned request is exactly what the script must survive).
+  const releaseImage = (src, outcome) => {
+    if (!['load', 'error'].includes(outcome)) throw new Error(`dom-shim: unknown release outcome "${outcome}"`);
+    const matching = heldImages.filter((h) => h.src === src);
+    for (const h of matching) heldImages.splice(heldImages.indexOf(h), 1);
+    for (const h of matching) h.el.dispatchEvent(new Event(outcome));
+    return matching.length;
+  };
+
   // ---- fetch ---------------------------------------------------------------
   let fetchMode = 'ok';
   let configResponse = null;
@@ -951,9 +989,20 @@ export function createShim(options = {}) {
 
   let shell = null;
 
-  const buildShell = ({ sidebarMode = 'location', contact = null } = {}) => {
+  // The sidebar logo as HighLevel renders it: an img.agency-logo inside an
+  // anchor. `logo` may be false (no logo) or { src, alt, srcset } overrides.
+  const NATIVE_LOGO = { src: 'https://native.test/agency.png', alt: 'Native Agency', srcset: null };
+  const buildShell = ({ sidebarMode = 'location', contact = null, logo = true } = {}) => {
     while (doc.body.firstChild) doc.body.removeChild(doc.body.firstChild);
+    let logoEl = null;
+    let logoLink = null;
+    if (logo) {
+      const spec = { ...NATIVE_LOGO, ...(typeof logo === 'object' ? logo : {}) };
+      logoEl = el('img', { class: 'agency-logo', src: spec.src, alt: spec.alt, srcset: spec.srcset || false });
+      logoLink = el('a', { class: 'hx-logo-link', href: '/v2/agency/dashboard' }, [logoEl]);
+    }
     const sidebar = el('aside', { id: 'sidebar-v2', class: `sidebar-v2-${sidebarMode}` }, [
+      ...(logoLink ? [logoLink] : []),
       el('select', { id: 'location-switcher-sidbar-v2' }, [
         el('option', { value: 'locA' }, ['Location A']),
         el('option', { value: 'locB' }, ['Location B']),
@@ -973,7 +1022,7 @@ export function createShim(options = {}) {
     doc.body.appendChild(sidebar);
     doc.body.appendChild(header);
     doc.body.appendChild(main);
-    shell = { sidebar, header, headerControls, main, contactRegion };
+    shell = { sidebar, header, headerControls, main, contactRegion, logo: logoEl };
     return shell;
   };
 
@@ -1052,7 +1101,7 @@ export function createShim(options = {}) {
     return impl && typeof impl._listenerCount === 'function' ? impl._listenerCount(type) : 0;
   };
 
-  const observers = () => doc._mutationRegs.filter((r) => r.active).map((r) => ({ target: r.target, options: { ...r.options } }));
+  const observers = () => doc._mutationRegs.filter((r) => r.active).map((r) => ({ target: r.target, options: { ...r.options }, observer: r.observer }));
 
   return {
     window: win,
@@ -1071,6 +1120,10 @@ export function createShim(options = {}) {
       pending.forEach((resolve) => resolve(makeResponse({ ok: true, status: 200, type: 'cors', bodyText: '{"status":"ok"}' })));
     },
     setConfigResponse(response) { configResponse = response || null; },
+    imageLog,
+    heldImages,
+    setImageOutcome,
+    releaseImage,
     navigate,
     back() { win.history.back(); },
     forward() { win.history.forward(); },

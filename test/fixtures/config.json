@@ -4,19 +4,27 @@
   "agency": {
     "logoUrl": "",
     "logoAlt": "Test Agency",
+    "logoMount": "sidebar",
     "theme": {}
   },
   "locations": {
     "locA": {
       "name": "Location A",
+      "logoUrl": "./fixtures/logos/loc-a.svg",
+      "logoAlt": "Location A logo",
       "buttons": {}
     },
     "locB": {
       "name": "Location B",
+      "logoUrl": "./fixtures/logos/loc-b.svg",
       "buttons": {
         "sendInvite": false,
         "supportLink": { "label": "B Support" }
       }
+    },
+    "locC": {
+      "name": "Location C",
+      "logoUrl": "./fixtures/logos/missing.svg"
     }
   },
   "buttons": [

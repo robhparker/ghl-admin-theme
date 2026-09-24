@@ -53,6 +53,7 @@ const SECTION_MARKERS = [
   '// ==== config ====',
   '// ==== context ====',
   '// ==== buttons ====',
+  '// ==== branding ====',
   '// ==== observers ====',
   '// ==== verify ====',
   '// ==== boot ====',
@@ -117,7 +118,7 @@ check('static: source contains no forbidden tokens (HTML setters, eval, storage,
   }
 });
 
-check('static: eight section markers appear exactly once, in order', () => {
+check('static: nine section markers appear exactly once, in order', () => {
   let last = -1;
   for (const marker of SECTION_MARKERS) {
     const lines = src.split('\n').filter((l) => l === marker);
@@ -167,6 +168,8 @@ check('static: schema documentation, data-config attribute, constant fallback, r
   assert.ok(src.split('DEFAULT_CONFIG_URL').length - 1 >= 2);
   assert.equal(src.split('location-switcher-sidbar-v2').length - 1, 1);
   assert.ok(src.includes('sidebarLogo') && src.includes('headerLogo'));
+  assert.ok(src.includes('logoMount'), 'the logo mount is config-selectable');
+  assert.ok(src.includes('img.agency-logo'), 'logo selectors are narrowed to the verified class');
   assert.ok(src.includes('__GHLC_TEST__') && src.includes('__test'));
 });
 
@@ -1628,7 +1631,7 @@ scenario('verify: report shape and hygiene', async () => {
     headerMount: true,
     contactMount: true,
     contactRegion: true,
-    sidebarLogo: false,
+    sidebarLogo: true,
     headerLogo: false,
     locationSwitcher: true,
     backToAgency: true,
@@ -1693,6 +1696,138 @@ scenario('boot: window.GHLC is the only global the script adds', async () => {
   const added = Object.keys(shim.window).filter((k) => !before.has(k) && k !== '__GHLC_TEST__');
   assert.deepEqual(added, ['GHLC']);
   assert.deepEqual(Object.keys(GHLC).sort(), ['__test', 'ready', 'verify', 'version']);
+});
+
+// ---------------------------------------------------------------------------
+// Location logo switching (Phase 2, Plan 01)
+// Shell: img.agency-logo inside a.hx-logo-link in the sidebar (shell.logo).
+// Image loads are settled by the shim stub; no bytes are fetched.
+// ---------------------------------------------------------------------------
+
+const LOC_A_LOGO = './fixtures/logos/loc-a.svg';
+const LOC_B_LOGO = './fixtures/logos/loc-b.svg';
+const NATIVE_SRC = 'https://native.test/agency.png';
+const BRANDING_LEAKS = ['loc-a.svg', 'loc-b.svg', 'logos/', 'native.test', 'Location A', 'Location B'];
+
+// Boots at a location dashboard (debug on) with the fixture, or a config body
+// when given. `shell` options pass through to buildShell.
+async function bootBranding({ path = '/v2/location/locA/dashboard', config = null, shell: shellOpts = {} } = {}) {
+  const shim = createShim({ pathname: path, search: '?ghlc-debug=1', fixture: loadFixture() });
+  const shell = shim.buildShell({ sidebarMode: 'location', contact: null, ...shellOpts });
+  if (config) shim.setConfigResponse({ status: 200, body: config });
+  const GHLC = shim.run(src);
+  assert.equal(await GHLC.__test.boot(), true, 'boot resolves true');
+  await shim.flush();
+  return { shim, shell, GHLC };
+}
+
+const logoIs = (img, { src, alt, tier }) => {
+  assert.equal(img.getAttribute('src'), src);
+  assert.equal(img.getAttribute('alt'), alt);
+  if (tier) {
+    assert.equal(img.getAttribute('data-ghlc-logo'), tier);
+    assert.ok(img.classList.contains('ghlc-logo'), 'ghlc-logo class while branded');
+    assert.equal(img.getAttribute('referrerpolicy'), 'no-referrer');
+  } else {
+    assert.equal(img.getAttribute('data-ghlc-logo'), null, 'no tier marker on the native logo');
+    assert.ok(!img.classList.contains('ghlc-logo'), 'no ghlc-logo class on the native logo');
+    assert.equal(img.getAttribute('referrerpolicy'), null, 'no referrer policy on the native logo');
+  }
+};
+const mountWrites = (shim, shell) => shim.imageLog.filter((e) => e.el === shell.logo);
+const preloads = (shim, shell) => shim.imageLog.filter((e) => e.el !== shell.logo);
+
+check('unit: resolveBranding builds the location -> agency chain and ignores unsafe URLs', () => {
+  const api = throwawayApi();
+  const cfg = loadFixture();
+  const chain = (c, id) => plain(api.resolveBranding(c, id));
+  assert.deepEqual(chain(cfg, 'locA'), [{ tier: 'location', src: LOC_A_LOGO, alt: 'Location A logo' }]);
+  assert.deepEqual(chain(cfg, 'locB'), [{ tier: 'location', src: LOC_B_LOGO, alt: 'Location B' }]);
+  assert.deepEqual(chain(cfg, 'locZ'), [], 'unconfigured location has no candidate (agency.logoUrl is empty)');
+  assert.deepEqual(chain(cfg, null), [], 'agency route with no agency logo');
+  assert.deepEqual(chain(cfg, 'constructor'), [], 'prototype-named location IDs never resolve');
+
+  const withAgency = loadFixture();
+  withAgency.agency.logoUrl = 'https://cdn.test/agency.png';
+  withAgency.agency.logoAlt = 'Agency';
+  assert.deepEqual(chain(withAgency, 'locA'), [
+    { tier: 'location', src: LOC_A_LOGO, alt: 'Location A logo' },
+    { tier: 'agency', src: 'https://cdn.test/agency.png', alt: 'Agency' },
+  ]);
+  assert.deepEqual(chain(withAgency, null), [{ tier: 'agency', src: 'https://cdn.test/agency.png', alt: 'Agency' }]);
+  assert.deepEqual(chain(withAgency, 'locZ'), [{ tier: 'agency', src: 'https://cdn.test/agency.png', alt: 'Agency' }]);
+
+  // Alt chain when the location has no logoAlt and no name (A-07).
+  const bare = loadFixture();
+  bare.agency.logoAlt = 'Agency';
+  bare.locations.locQ = { logoUrl: 'https://cdn.test/q.png' };
+  assert.deepEqual(chain(bare, 'locQ'), [{ tier: 'location', src: 'https://cdn.test/q.png', alt: 'Agency' }]);
+  delete bare.agency.logoAlt;
+  assert.deepEqual(chain(bare, 'locQ'), [{ tier: 'location', src: 'https://cdn.test/q.png', alt: null }], 'null alt means keep the native alt');
+
+  for (const bad of ['javascript:alert(1)', 'http://plain.test/x.png', 'data:image/png;base64,AAAA', 'https://u:p@h.test/x.png', 42, '', null, {}]) {
+    const c = loadFixture();
+    c.locations.locA.logoUrl = bad;
+    c.agency.logoUrl = bad;
+    assert.deepEqual(chain(c, 'locA'), [], `unsafe logoUrl ${JSON.stringify(bad)} never produces a candidate`);
+  }
+});
+
+check('unit: isSafeImageUrl accepts https and same-origin, rejects the rest', () => {
+  const api = throwawayApi();
+  assert.equal(api.isSafeImageUrl('https://cdn.test/logo.png'), true);
+  assert.equal(api.isSafeImageUrl(LOC_A_LOGO), true, 'relative path resolves against the page (same-origin)');
+  assert.equal(api.isSafeImageUrl('/v2/location/locA/logo.png'), true);
+  // The rule as written (A-06), not a host allowlist: a protocol-relative URL
+  // resolves against the shim's https origin to a credential-free https URL.
+  assert.equal(api.isSafeImageUrl('//evil.test/x.png'), true);
+  for (const bad of ['javascript:alert(1)', 'http://plain.test/x.png', 'data:image/png;base64,AAAA', 'blob:https://app.test/x', 'https://u:p@h.test/x.png', 'ftp://f.test/x.png', 42, '', null, undefined, {}, []]) {
+    assert.equal(api.isSafeImageUrl(bad), false, `rejects ${JSON.stringify(bad)}`);
+  }
+});
+
+scenario('branding tracer: configured location swaps the sidebar logo in place after preload; agency route restores native', async () => {
+  const { shim, shell, GHLC } = await bootBranding();
+  assert.ok(shell.logo, 'shell carries the sidebar logo');
+  logoIs(shell.logo, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+
+  // Exactly one detached preload for loc-a, and it was requested before the mount write.
+  const pre = preloads(shim, shell).filter((e) => e.src === LOC_A_LOGO);
+  assert.equal(pre.length, 1, 'exactly one preload for the location logo');
+  assert.equal(pre[0].el.tagName, 'IMG');
+  assert.equal(pre[0].el.getAttribute('referrerpolicy'), 'no-referrer', 'preload carries the referrer policy');
+  assert.equal(pre[0].el.isConnected, false, 'preload element never enters the document');
+  const mountWrite = shim.imageLog.findIndex((e) => e.el === shell.logo && e.src === LOC_A_LOGO);
+  assert.ok(mountWrite !== -1, 'the mount was written');
+  assert.ok(shim.imageLog.indexOf(pre[0]) < mountWrite, 'preload precedes the mount write');
+  assert.equal(mountWrites(shim, shell).filter((e) => e.src === LOC_A_LOGO).length, 1, 'the mount was written once');
+
+  // Same element, same anchor, no behavior attached (A-03, BRD-02).
+  assert.equal(shim.document.querySelector('#sidebar-v2 img.agency-logo'), shell.logo, 'mount is the same node');
+  assert.equal(shim.document.querySelectorAll('img.agency-logo').length, 1, 'no duplicate logo');
+  assert.equal(shell.logo.parentNode.tagName, 'A');
+  assert.ok(shell.logo.parentNode.classList.contains('hx-logo-link'));
+  assert.equal(shell.logo.parentNode.getAttribute('href'), '/v2/agency/dashboard', 'anchor href untouched');
+  assert.equal(shim.listenerCount(shell.logo, 'click'), 0, 'no click listener on the logo');
+  assert.equal(shim.listenerCount(shell.logo.parentNode, 'click'), 0, 'no click listener on the anchor');
+  assert.equal(shell.logo.hasAttribute('srcset'), false);
+  assert.equal(GHLC.__test.getState().generation, 1);
+  assert.equal(logCount(shim, 'logo-resolving'), 1);
+  // Match the tier field, not the bare word: every branding line carries locationId.
+  assert.equal(logCount(shim, 'logo-applied', "tier: 'location'"), 1);
+  assert.equal(logCount(shim, 'logo-applied', "tier: 'native'"), 1, 'native was recorded as the interim tier before the preload');
+
+  shim.navigate('/v2/agency/dashboard', { via: 'pushState' });
+  shim.setSidebarMode('agency');
+  await shim.flush();
+  logoIs(shell.logo, { src: NATIVE_SRC, alt: 'Native Agency', tier: null });
+  assert.equal(shim.document.querySelector('#sidebar-v2 img.agency-logo'), shell.logo, 'still the same node after restore');
+  assert.equal(GHLC.__test.getState().generation, 2);
+  assert.equal(preloads(shim, shell).length, 1, 'no preload for the agency route');
+
+  assertNoLeak(shim.console.lines, ['loc-a.svg', 'logos/', 'native.test', 'Location A'], 'branding');
+  assert.ok(logCount(shim, '[ghlc]') > 0, 'diagnostics were produced');
+  assert.equal(shim.errors.length, 0);
 });
 
 // ---------------------------------------------------------------------------
