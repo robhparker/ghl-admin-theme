@@ -4,6 +4,7 @@
   "agency": {
     "logoUrl": "",
     "logoAlt": "Agency",
+    "logoMount": "sidebar",
     "theme": {}
   },
   "locations": {},

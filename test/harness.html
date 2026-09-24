@@ -4,6 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GHL Customizer — offline harness</title>
+  <!-- The fake router pushStates to /v2/location/... paths; without a base the
+       fixture's relative logo URLs (./fixtures/logos/*.svg) would resolve under
+       that fake path and 404. Served from the repo root by `npm run serve`. -->
+  <base href="/test/">
   <link rel="stylesheet" href="../src/ghl-customizer.css" data-ghlc-styles="1">
   <style>
     /* Fake HighLevel shell. Prefixed hx- so nothing collides with ghlc- or HighLevel names. */
@@ -14,6 +18,9 @@
     .hx-sidebar { background: #101828; color: #d0d5dd; padding: 16px; }
     .hx-sidebar select, .hx-sidebar button { display: block; width: 100%; margin-top: 8px; padding: 6px; }
     .hx-sidebar .hx-mode { margin-top: 12px; font-size: 12px; color: #98a2b3; }
+    /* The sidebar logo as HighLevel sizes it: a fixed height, natural width. */
+    .hx-sidebar .agency-logo { display: block; height: 40px; width: auto; margin-bottom: 8px; }
+    #sidebar-v2.hx-collapsed { width: 64px; overflow: hidden; }
     .hx-content { display: flex; flex-direction: column; }
     .hl_header { display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 16px; background: #ffffff; border-bottom: 1px solid #eaecf0; }
     .hl_header--controls { display: inline-flex; align-items: center; gap: 8px; }
@@ -42,10 +49,14 @@
     Offline HighLevel shell. From the repo root run <code>npm run serve</code> and open
     <code>http://localhost:5173/test/harness.html</code>. Navigation uses pushState, so if you reload
     on a fake route, reopen the harness URL. The webhook stub below never calls a real workflow.
+    The <strong>Sidebar logo</strong> controls mimic HighLevel re-rendering, resetting, collapsing,
+    and replacing the sidebar so the branding observer can be watched (open with
+    <code>?ghlc-debug=1</code> and inspect <code>GHLC.verify()</code>).
   </div>
 
   <div class="hx-layout">
     <aside id="sidebar-v2" class="sidebar-v2-location hx-sidebar">
+      <a class="hx-logo-link" href="/v2/agency/dashboard" id="hx-logo-link"><img class="agency-logo" src="./fixtures/logos/native.svg" alt="Native Agency"></a>
       <strong>Fake sidebar</strong>
       <select id="location-switcher-sidbar-v2" aria-label="Location switcher">
         <option value="locA">Location A</option>
@@ -71,6 +82,8 @@
             <button type="button" data-hx-go="/v2/location/locA/contacts/detail/cY">Location A · Contact Y</button>
             <button type="button" data-hx-go="/v2/location/locA/dashboard">Location A · Dashboard</button>
             <button type="button" data-hx-go="/v2/location/locB/contacts/detail/cZ">Location B · Contact Z</button>
+            <button type="button" data-hx-go="/v2/location/locC/dashboard">Location C · broken logo</button>
+            <button type="button" data-hx-go="/v2/location/locZ/dashboard">Location Z · unconfigured</button>
             <button type="button" data-hx-go="/v2/agency/dashboard">Agency dashboard</button>
             <button type="button" id="hx-back">Back</button>
             <button type="button" id="hx-forward">Forward</button>
@@ -83,6 +96,14 @@
             <button type="button" id="hx-rerender-contact">Re-render contact toolbar</button>
             <label><input type="checkbox" id="hx-late-fields"> Fill contact fields 1.5 s after render (live HighLevel behavior)</label>
             <button type="button" id="hx-route-event">Dispatch routeChangeEvent</button>
+          </div>
+
+          <h3>Sidebar logo</h3>
+          <div class="hx-row">
+            <button type="button" id="hx-rerender-logo">Re-render sidebar logo</button>
+            <button type="button" id="hx-reset-logo">HighLevel resets logo src</button>
+            <button type="button" id="hx-toggle-sidebar">Collapse/expand sidebar</button>
+            <button type="button" id="hx-replace-sidebar">Replace whole sidebar</button>
           </div>
 
           <h3>Webhook stub</h3>
@@ -174,9 +195,12 @@
       };
 
       var main = document.getElementById('hx-main');
-      var sidebar = document.getElementById('sidebar-v2');
-      var modeEl = document.getElementById('hx-mode');
-      var switcher = document.getElementById('location-switcher-sidbar-v2');
+      // The sidebar can be replaced wholesale by the "Replace whole sidebar"
+      // control, so it and its children are always looked up fresh, never cached.
+      var NATIVE_LOGO_SRC = './fixtures/logos/native.svg';
+      var NATIVE_LOGO_ALT = 'Native Agency';
+      function sidebarEl() { return document.getElementById('sidebar-v2'); }
+      function sidebarLogo() { return document.querySelector('#sidebar-v2 img.agency-logo'); }
 
       function el(tag, attrs, children) {
         var node = document.createElement(tag);
@@ -203,8 +227,45 @@
       }
 
       function setSidebarMode(mode) {
-        sidebar.className = 'sidebar-v2-' + mode + ' hx-sidebar';
-        modeEl.textContent = 'mode: ' + mode;
+        var sidebar = sidebarEl();
+        var collapsed = sidebar.classList.contains('hx-collapsed');
+        sidebar.className = 'sidebar-v2-' + mode + ' hx-sidebar' + (collapsed ? ' hx-collapsed' : '');
+        document.getElementById('hx-mode').textContent = 'mode: ' + mode;
+      }
+
+      function setSwitcher(locationId) {
+        document.getElementById('location-switcher-sidbar-v2').value = locationId;
+      }
+
+      // ---- sidebar logo builders (what HighLevel renders) ---------------------
+      function buildNativeLogo() {
+        return el('img', { 'class': 'agency-logo', src: NATIVE_LOGO_SRC, alt: NATIVE_LOGO_ALT });
+      }
+      function buildLogoLink() {
+        return el('a', { 'class': 'hx-logo-link', href: '/v2/agency/dashboard', id: 'hx-logo-link' }, [buildNativeLogo()]);
+      }
+      // A fresh aside with the same id, classes, and children as the markup above.
+      function buildSidebar() {
+        var old = sidebarEl();
+        var select = el('select', { id: 'location-switcher-sidbar-v2', 'aria-label': 'Location switcher' }, [
+          el('option', { value: 'locA' }, ['Location A']),
+          el('option', { value: 'locB' }, ['Location B'])
+        ]);
+        select.value = old.querySelector('#location-switcher-sidbar-v2').value;
+        return el('aside', { id: 'sidebar-v2', 'class': old.className }, [
+          buildLogoLink(),
+          el('strong', {}, ['Fake sidebar']),
+          select,
+          el('button', { id: 'backButtonv2', type: 'button' }, ['Back to agency']),
+          el('div', { 'class': 'hx-mode', id: 'hx-mode' }, [document.getElementById('hx-mode').textContent])
+        ]);
+      }
+      // Re-creates the logo img in place: HighLevel re-rendering the element.
+      function rerenderLogo() {
+        var old = sidebarLogo();
+        if (!old) return false;
+        old.replaceWith(buildNativeLogo());
+        return true;
       }
 
       function render() {
@@ -213,14 +274,14 @@
         var m = CONTACT_RE.exec(path);
         if (m) {
           setSidebarMode('location');
-          switcher.value = m[1];
+          setSwitcher(m[1]);
           main.appendChild(buildContactBlock(m[2]));
           return;
         }
         m = LOCATION_RE.exec(path);
         if (m) {
           setSidebarMode('location');
-          switcher.value = m[1];
+          setSwitcher(m[1]);
           main.appendChild(el('div', { 'class': 'hx-placeholder' }, ['Location dashboard: ' + m[1]]));
           return;
         }
@@ -239,8 +300,42 @@
       Array.prototype.forEach.call(document.querySelectorAll('[data-hx-go]'), function (btn) {
         btn.addEventListener('click', function () { go(btn.getAttribute('data-hx-go')); });
       });
-      switcher.addEventListener('change', function () { go('/v2/location/' + switcher.value + '/dashboard'); });
-      document.getElementById('backButtonv2').addEventListener('click', function () { go('/v2/agency/dashboard'); });
+      // Delegated, so the handlers survive a wholesale sidebar replacement.
+      document.addEventListener('click', function (evt) {
+        var target = evt.target && typeof evt.target.closest === 'function' ? evt.target : null;
+        if (!target) return;
+        if (target.closest('#hx-logo-link')) {
+          // The native logo links to the agency dashboard; route it without a full reload.
+          evt.preventDefault();
+          go('/v2/agency/dashboard');
+          hxLog({ time: new Date().toISOString(), harness: 'logo click routed to the agency dashboard' });
+          return;
+        }
+        if (target.closest('#backButtonv2')) go('/v2/agency/dashboard');
+      });
+      document.addEventListener('change', function (evt) {
+        if (evt.target && evt.target.id === 'location-switcher-sidbar-v2') go('/v2/location/' + evt.target.value + '/dashboard');
+      });
+      document.getElementById('hx-rerender-logo').addEventListener('click', function () {
+        var done = rerenderLogo();
+        hxLog({ time: new Date().toISOString(), harness: done ? 're-rendered sidebar logo (fresh native img in the same anchor)' : 'no sidebar logo to re-render' });
+      });
+      document.getElementById('hx-reset-logo').addEventListener('click', function () {
+        var img = sidebarLogo();
+        if (!img) { hxLog({ time: new Date().toISOString(), harness: 'no sidebar logo to reset' }); return; }
+        img.setAttribute('src', NATIVE_LOGO_SRC);
+        img.setAttribute('alt', NATIVE_LOGO_ALT);
+        hxLog({ time: new Date().toISOString(), harness: 'reset logo src/alt to native on the same element' });
+      });
+      document.getElementById('hx-toggle-sidebar').addEventListener('click', function () {
+        var collapsed = sidebarEl().classList.toggle('hx-collapsed');
+        rerenderLogo();
+        hxLog({ time: new Date().toISOString(), harness: (collapsed ? 'collapsed' : 'expanded') + ' sidebar (logo img re-created)' });
+      });
+      document.getElementById('hx-replace-sidebar').addEventListener('click', function () {
+        sidebarEl().replaceWith(buildSidebar());
+        hxLog({ time: new Date().toISOString(), harness: 'replaced whole sidebar (fresh aside with a native img)' });
+      });
       document.getElementById('hx-back').addEventListener('click', function () { history.back(); });
       document.getElementById('hx-forward').addEventListener('click', function () { history.forward(); });
       document.getElementById('hx-rerender-header').addEventListener('click', function () {

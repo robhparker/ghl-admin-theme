@@ -201,6 +201,14 @@ check('harness: test/harness.html carries the required HighLevel shell, router h
   for (const s of ['id="sidebar-v2"', 'hl_header--controls', 'id="location-switcher-sidbar-v2"', "id: 'record-details-lhs'", "id: 'delete-contact-trigger'", "id: 'contact.email'", 'data-config="./fixtures/config.json"', 'routeChangeEvent', 'no-cors']) {
     assert.ok(harness.includes(s), `harness must contain ${s}`);
   }
+  // Phase 2: the sidebar logo, its mutation controls, and the extra routes.
+  for (const s of ['class="agency-logo"', 'hx-logo-link', 'hx-rerender-logo', 'hx-reset-logo', 'hx-toggle-sidebar', 'hx-replace-sidebar', 'locC/dashboard', 'locZ/dashboard']) {
+    assert.ok(harness.includes(s), `harness must contain ${s}`);
+  }
+  for (const id of ['hx-rerender-logo', 'hx-reset-logo', 'hx-toggle-sidebar', 'hx-replace-sidebar']) {
+    assert.ok(harness.includes(`getElementById('${id}')`), `harness control #${id} must be wired`);
+  }
+  assert.ok(harness.includes('<base href="/test/">'), 'relative fixture logo URLs must resolve against /test/ after the router pushStates');
 });
 
 check('config: both JSON files parse, validate, use HTTPS webhooks, and carry no secret-like keys', () => {
@@ -223,6 +231,37 @@ check('config: both JSON files parse, validate, use HTTPS webhooks, and carry no
   assert.equal(invite.action.type, 'webhook');
   assert.ok(/^https:\/\/services\.leadconnectorhq\.com\/hooks\/[A-Za-z0-9]+\/webhook-trigger\/[0-9a-f-]{36}$/.test(invite.action.url) || invite.action.url.includes('REPLACE_ME'), 'sample config points at a HighLevel Inbound Webhook trigger URL (or the placeholder)');
   assert.ok(sample.buttons.some((b) => b.placement === 'header' && b.action.type === 'link'), 'sample must ship a header link button');
+
+  // Phase 2: the sample declares the sidebar mount and no logos (native fallback, A-02).
+  assert.equal(sample.agency.logoMount, 'sidebar');
+  assert.equal(sample.agency.logoUrl, '');
+  assert.equal(Object.keys(sample.locations).length, 0, 'sample ships no location logos (Phase 3 DLV-02 adds the demo overrides)');
+  // Every logoUrl in both files is https without credentials or a ./ relative path.
+  const logoUrls = (cfg) => [cfg.agency.logoUrl, ...Object.values(cfg.locations).map((l) => l.logoUrl)].filter((u) => u !== undefined && u !== '');
+  for (const [label, cfg] of [['sample', sample], ['fixture', fixture]]) {
+    for (const u of logoUrls(cfg)) {
+      assert.ok(typeof u === 'string' && (api.isSafeHttpsUrl(u) || u.startsWith('./')), `${label}: logoUrl "${u}" must be https without credentials or start with ./`);
+    }
+  }
+  assert.ok(logoUrls(fixture).length >= 3, 'fixture carries the location logos');
+  // The fixture SVGs exist, are plain SVG, and carry no script or external reference.
+  const logosDir = path.join(root, 'test', 'fixtures', 'logos');
+  for (const name of ['native.svg', 'agency.svg', 'loc-a.svg', 'loc-b.svg']) {
+    const file = path.join(logosDir, name);
+    assert.ok(fs.existsSync(file), `${name} exists`);
+    const svg = fs.readFileSync(file, 'utf8');
+    assert.ok(/^(?:<\?xml[^>]*\?>\s*)?<svg\b/.test(svg.trimStart()), `${name} starts with <svg (after an optional XML prolog)`);
+    assert.ok(!/<script/i.test(svg), `${name} carries no <script`);
+    assert.ok(!/<foreignObject/i.test(svg) && !/\bhref\s*=\s*["']https?:/i.test(svg), `${name} has no external references`);
+    assert.ok(svg.includes('viewBox="0 0 160 48"'), `${name} uses the shared viewBox`);
+  }
+  assert.ok(!fs.existsSync(path.join(logosDir, 'missing.svg')), 'missing.svg must not exist: Location C is the harness demonstration of BRD-04');
+  // Relative fixture URLs resolve against test/ (the harness base): present for A and B, absent for C.
+  for (const [id, entry] of Object.entries(fixture.locations)) {
+    if (typeof entry.logoUrl === 'string' && entry.logoUrl.startsWith('./')) {
+      assert.equal(fs.existsSync(path.join(root, 'test', entry.logoUrl)), id !== 'locC', `${id}: ${entry.logoUrl} must ${id === 'locC' ? 'be absent' : 'exist'}`);
+    }
+  }
 });
 
 check('unit: parseRoute resolves contact, location, and agency routes', () => {
