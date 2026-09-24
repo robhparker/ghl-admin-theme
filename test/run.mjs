@@ -240,8 +240,11 @@ check('unit: resolveButtons scopes by location and returns nothing at agency lev
   assert.deepEqual(plain(api.resolveButtons(cfg, null)), []);
   const idsA = api.resolveButtons(cfg, 'locA').map((b) => b.id);
   assert.ok(idsA.includes('sendInvite') && idsA.includes('locOnlyLink'));
+  // locB's override disables sendInvite (BTN-02) and locOnlyLink is scoped to locA.
   const idsB = api.resolveButtons(cfg, 'locB').map((b) => b.id);
-  assert.ok(idsB.includes('sendInvite') && !idsB.includes('locOnlyLink'));
+  assert.ok(!idsB.includes('sendInvite') && !idsB.includes('locOnlyLink') && idsB.includes('supportLink'));
+  const withoutOverride = { ...cfg, locations: {} };
+  assert.ok(api.resolveButtons(withoutOverride, 'locB').map((b) => b.id).includes('sendInvite'));
 });
 
 // ---------------------------------------------------------------------------
@@ -283,7 +286,7 @@ scenario('tracer: contact page renders Send Invite; click POSTs once and shows q
   assert.equal(badHandler.getAttribute('data-state'), 'unavailable');
   assert.ok(badHandler.disabled);
   assert.equal(badHandler.getAttribute('aria-disabled'), 'true');
-  assert.equal(shim.document.querySelectorAll('[data-ghlc-placement="header"]').length, 0, 'no header buttons in Plan 01');
+  assert.equal(shim.document.querySelectorAll('.ghlc-group[data-ghlc-placement="header"]').length, 1, 'one header group (Plan 03)');
   assert.ok(!shim.document.textContent.includes('alert(1)'), 'config code text never reaches the DOM');
 
   button.click();
@@ -392,8 +395,10 @@ scenario('BTN-04: location dashboard (no contact) renders no contact buttons', a
   const GHLC = shim.run(src);
   assert.equal(await GHLC.__test.boot(), true);
   await shim.flush();
-  assert.equal(shim.document.querySelectorAll('[data-ghlc-button-id]').length, 0);
-  assert.equal(shim.document.querySelectorAll('.ghlc-group').length, 0);
+  assert.equal(shim.document.querySelectorAll('[data-ghlc-button-id][data-ghlc-placement="contact"]').length, 0);
+  assert.equal(shim.document.querySelectorAll('.ghlc-group[data-ghlc-placement="contact"]').length, 0);
+  // Header buttons need only a location (Plan 03).
+  assert.equal(shim.document.querySelectorAll('.ghlc-group[data-ghlc-placement="header"]').length, 1);
   const state = GHLC.__test.getState();
   assert.equal(state.locationId, 'locA');
   assert.equal(state.contactId, null);
@@ -401,12 +406,14 @@ scenario('BTN-04: location dashboard (no contact) renders no contact buttons', a
 
 scenario('mount missing: contact route without a toolbar leaves the DOM untouched', async () => {
   const shim = createShim({ pathname: CONTACT_PATH, fixture: loadFixture() });
-  shim.buildShell({ sidebarMode: 'location', contact: null });
+  const shell = shim.buildShell({ sidebarMode: 'location', contact: null });
+  const mainBefore = shell.main.childNodes.slice();
   const GHLC = shim.run(src);
   assert.equal(await GHLC.__test.boot(), true);
   await shim.flush();
-  assert.equal(shim.document.querySelectorAll('[data-ghlc-button-id]').length, 0);
-  assert.equal(shim.document.querySelectorAll('.ghlc-group').length, 0);
+  assert.equal(shim.document.querySelectorAll('[data-ghlc-button-id][data-ghlc-placement="contact"]').length, 0);
+  assert.equal(shim.document.querySelectorAll('.ghlc-group[data-ghlc-placement="contact"]').length, 0);
+  assert.deepEqual(shell.main.childNodes, mainBefore, 'main content untouched');
 });
 
 scenario('FND-05: enabled:false, invalid schema, fetch failure, and parse failure all no-op', async () => {
@@ -561,11 +568,12 @@ scenario('nav: leaving the contact removes the button and clears pending timers'
   shim.navigate('/v2/location/locA/dashboard', { via: 'pushState' });
   shim.setContact(null);
   await shim.flush();
-  assert.equal(shim.document.querySelectorAll('[data-ghlc-button-id]').length, 0);
-  assert.equal(shim.document.querySelectorAll('.ghlc-group').length, 0);
-  assert.equal(GHLC.__test.getState().buttons.length, 0);
+  const contactButtons = () => shim.document.querySelectorAll('[data-ghlc-button-id][data-ghlc-placement="contact"]');
+  assert.equal(contactButtons().length, 0);
+  assert.equal(shim.document.querySelectorAll('.ghlc-group[data-ghlc-placement="contact"]').length, 0);
+  assert.equal(GHLC.__test.getState().buttons.filter((b) => b.placement === 'contact').length, 0);
   await shim.advanceTimers(10000);
-  assert.equal(shim.document.querySelectorAll('[data-ghlc-button-id]').length, 0, 'no timer resurrects a button');
+  assert.equal(contactButtons().length, 0, 'no timer resurrects a button');
   assert.equal(shim.fetchLog.length, 1);
   assert.equal(shim.errors.length, 0);
 });
@@ -883,6 +891,281 @@ scenario('logs: debug mode never prints URL, payload, email, or phone', async ()
     assert.ok(!text.includes(s), `console output must not contain "${s}"\n--- console ---\n${text}`);
   }
   assert.equal(shim.errors.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Header link buttons, overrides, action allowlist, handlers, icons, a11y
+// (Plan 03, Task 1)
+// ---------------------------------------------------------------------------
+
+const byId = (shim, id) => shim.document.querySelector(`[data-ghlc-button-id="${id}"]`);
+const headerGroup = (shim) => shim.document.querySelector('.hl_header--controls .ghlc-group[data-ghlc-placement="header"]');
+const contactGroup = (shim) => shim.document.querySelector('.ghlc-group[data-ghlc-placement="contact"]');
+const allElements = (node, out = []) => {
+  for (const child of node.childNodes) {
+    if (child.nodeType === 1) { out.push(child); allElements(child, out); }
+  }
+  return out;
+};
+const assertNoCodeText = (shim) => {
+  assert.ok(!shim.document.body.textContent.includes('alert(1)'), 'config code text never reaches the DOM');
+  for (const el of allElements(shim.document)) {
+    for (const { name, value } of el.attributes) {
+      assert.ok(!String(value).includes('alert(1)'), `attribute ${name} carries config code text`);
+    }
+  }
+};
+
+async function bootWithConfig(body, extra = {}) {
+  const shim = createShim({ pathname: CONTACT_PATH, search: '?ghlc-debug=1', fixture: loadFixture(), ...extra });
+  const shell = shim.buildShell({ sidebarMode: 'location', contact: JANE });
+  shim.setConfigResponse({ status: 200, body });
+  const GHLC = shim.run(src);
+  assert.equal(await GHLC.__test.boot(), true);
+  await shim.flush();
+  return { shim, shell, GHLC };
+}
+
+scenario('header: link buttons render once in the header mount for an in-scope location', async () => {
+  const { shim } = await bootContactPage();
+  const groups = shim.document.querySelectorAll('.ghlc-group[data-ghlc-placement="header"]');
+  assert.equal(groups.length, 1, 'exactly one header group');
+  const group = headerGroup(shim);
+  assert.ok(group, 'header group sits inside .hl_header--controls');
+  const buttons = group.querySelectorAll('[data-ghlc-button-id]');
+  assert.deepEqual(buttons.map((b) => b.getAttribute('data-ghlc-button-id')), ['supportLink', 'locOnlyLink', 'badTypeBtn']);
+
+  const support = byId(shim, 'supportLink');
+  assert.equal(support.tagName, 'A');
+  assert.equal(support.getAttribute('href'), 'https://example.test/support');
+  assert.equal(support.getAttribute('target'), '_blank');
+  assert.ok(support.getAttribute('rel').includes('noopener') && support.getAttribute('rel').includes('noreferrer'));
+  assert.equal(support.getAttribute('data-state'), 'ready');
+  assert.equal(support.className, 'ghlc-btn ghlc-btn--link');
+  assert.equal(label(support), 'Support');
+
+  const locOnly = byId(shim, 'locOnlyLink');
+  assert.equal(locOnly.tagName, 'A');
+  assert.equal(locOnly.getAttribute('href'), '/v2/location/locA/settings');
+  assert.equal(locOnly.getAttribute('target'), '_self');
+  assert.equal(locOnly.getAttribute('rel'), null);
+
+  const bad = byId(shim, 'badTypeBtn');
+  assert.equal(bad.tagName, 'BUTTON');
+  assert.equal(bad.getAttribute('data-state'), 'unavailable');
+  assert.ok(bad.disabled);
+  assert.equal(msg(bad), 'Action not available');
+  assertNoCodeText(shim);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('header: location overrides on locB relabel, disable, and scope out', async () => {
+  const shim = createShim({ pathname: '/v2/location/locB/contacts/detail/c7', fixture: loadFixture() });
+  shim.buildShell({ sidebarMode: 'location', contact: JANE });
+  const GHLC = shim.run(src);
+  assert.equal(await GHLC.__test.boot(), true);
+  await shim.flush();
+  const support = byId(shim, 'supportLink');
+  assert.ok(support && headerGroup(shim).contains(support));
+  assert.equal(label(support), 'B Support');
+  assert.equal(support.getAttribute('href'), 'https://example.test/support', 'action is not overridden');
+  assert.equal(byId(shim, 'locOnlyLink'), null, 'locA-only link is absent on locB');
+  assert.equal(byId(shim, 'sendInvite'), null, 'sendInvite is disabled by override');
+  const copy = byId(shim, 'copyIdBtn');
+  assert.ok(copy && contactGroup(shim).contains(copy));
+  assert.equal(copy.tagName, 'BUTTON');
+  assert.equal(copy.getAttribute('data-state'), 'ready');
+  assert.ok(copy.querySelector('.ghlc-btn__icon svg'), 'mail icon rendered');
+  const badHandler = byId(shim, 'badHandlerBtn');
+  assert.equal(badHandler.getAttribute('data-state'), 'unavailable');
+  assert.equal(GHLC.__test.getState().contactId, 'c7');
+});
+
+scenario('header: agency page renders no buttons at all', async () => {
+  const shim = createShim({ pathname: '/v2/agency/dashboard', search: '?ghlc-debug=1', fixture: loadFixture() });
+  shim.buildShell({ sidebarMode: 'agency', contact: null });
+  const GHLC = shim.run(src);
+  assert.equal(await GHLC.__test.boot(), true);
+  await shim.flush();
+  assert.equal(shim.document.querySelectorAll('[data-ghlc-button-id]').length, 0);
+  assert.equal(shim.document.querySelectorAll('.ghlc-group').length, 0);
+  assert.equal(GHLC.__test.getState().isAgency, true);
+});
+
+scenario('actions: unknown type and unknown handler never execute anything', async () => {
+  const { shim, GHLC } = await bootContactPage();
+  const bad = byId(shim, 'badTypeBtn');
+  const badHandler = byId(shim, 'badHandlerBtn');
+  assert.ok(bad.disabled && badHandler.disabled);
+  bad.click();
+  badHandler.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 0);
+  const api = GHLC.__test;
+  for (const button of loadFixture().buttons) {
+    const action = api.resolveAction(button);
+    if (button.id === 'badTypeBtn' || button.id === 'badHandlerBtn') {
+      assert.equal(action.kind, 'unavailable', `${button.id} must be unavailable`);
+      assert.equal(action.message, 'Action not available');
+    } else {
+      assert.notEqual(action.kind, 'unavailable', `${button.id} must resolve`);
+    }
+  }
+  assert.equal(api.resolveAction({ id: 'x', placement: 'header', action: { type: 'webhook', url: 'https://services.leadconnectorhq.com/hooks/x' } }).message, 'Requires an open contact');
+  assert.equal(api.resolveAction({ id: 'x', placement: 'contact', action: null }).kind, 'unavailable');
+  assert.equal(api.resolveAction({ id: 'x', placement: 'contact', action: { type: 'handler', handler: 42 } }).kind, 'unavailable');
+  assert.equal(shim.errors.length, 0, 'window.alert never threw');
+});
+
+scenario('actions: handler registry runs copyContactId and reports', async () => {
+  const shim = createShim({ pathname: CONTACT_PATH, search: '?ghlc-debug=1', fixture: loadFixture() });
+  shim.buildShell({ sidebarMode: 'location', contact: JANE });
+  const written = [];
+  shim.window.navigator.clipboard = { writeText: async (t) => { written.push(t); } };
+  const GHLC = shim.run(src);
+  assert.equal(await GHLC.__test.boot(), true);
+  await shim.flush();
+  const copy = byId(shim, 'copyIdBtn');
+  assert.equal(copy.getAttribute('data-state'), 'ready');
+  copy.click();
+  assert.equal(copy.getAttribute('data-state'), 'submitting');
+  await shim.flush();
+  assert.deepEqual(written, ['c1']);
+  assert.equal(copy.getAttribute('data-state'), 'ready');
+  assert.equal(msg(copy), 'Contact ID copied');
+  assert.equal(label(copy), 'Copy Contact ID');
+  assert.ok(!copy.disabled);
+  assert.ok(shim.console.lines.some((l) => l.includes('handler') && l.includes('copyIdBtn')));
+  assert.equal(shim.fetchLog.length, 0);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('actions: handler failure reports failed and re-enables', async () => {
+  const { shim } = await bootContactPage();
+  assert.equal(shim.window.navigator.clipboard, undefined);
+  const copy = byId(shim, 'copyIdBtn');
+  copy.click();
+  await shim.flush();
+  assert.equal(copy.getAttribute('data-state'), 'failed');
+  assert.equal(msg(copy), 'Clipboard unavailable');
+  assert.ok(!copy.disabled, 'failed handler buttons stay clickable');
+  // A handler that throws reports a generic failure.
+  copy.click();
+  await shim.flush();
+  assert.equal(copy.getAttribute('data-state'), 'failed');
+});
+
+scenario('actions: prototype-named handlers and override keys are ignored', async () => {
+  const fixture = loadFixture();
+  fixture.buttons.find((b) => b.id === 'badHandlerBtn').action.handler = 'constructor';
+  fixture.buttons.find((b) => b.id === 'copyIdBtn').action.handler = '__proto__';
+  // Build via JSON text so "__proto__" is an own key on the parsed object (an
+  // object literal would set the prototype instead).
+  const text = JSON.stringify(fixture).replace('"locA":{"name":"Location A","buttons":{}}',
+    '"locA":{"name":"Location A","buttons":{"__proto__":{"label":"Polluted"},"constructor":false}}');
+  assert.ok(text.includes('"__proto__"'), 'fixture variant carries an own __proto__ override key');
+  const { shim, GHLC } = await bootWithConfig(text);
+  assert.equal(byId(shim, 'badHandlerBtn').getAttribute('data-state'), 'unavailable');
+  assert.equal(byId(shim, 'copyIdBtn').getAttribute('data-state'), 'unavailable');
+  assert.equal(GHLC.__test.resolveAction({ id: 'x', placement: 'contact', action: { type: 'handler', handler: 'toString' } }).kind, 'unavailable');
+  assert.equal(GHLC.__test.resolveAction({ id: 'x', placement: 'contact', action: { type: 'handler', handler: 'hasOwnProperty' } }).kind, 'unavailable');
+  const parsed = JSON.parse(text);
+  const ids = plain(GHLC.__test.resolveButtons(parsed, 'locA').map((b) => b.id));
+  assert.deepEqual(ids, ['sendInvite', 'supportLink', 'locOnlyLink', 'badTypeBtn', 'badHandlerBtn', 'copyIdBtn']);
+  assert.equal(label(byId(shim, 'sendInvite')), 'Send Invite', 'no label was polluted');
+  assert.equal(Object.prototype.label, undefined, 'the host prototype is untouched');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('actions: unsafe link hrefs are unavailable, safe ones render anchors', async () => {
+  const fixture = loadFixture();
+  const link = (id, href, target) => ({ id, label: id, placement: 'header', scope: 'all', action: { type: 'link', href, ...(target ? { target } : {}) } });
+  const unsafe = {
+    js: 'javascript:alert(1)',
+    protoRel: '//evil.test/x',
+    http: 'http://plain.test/',
+    data: 'data:text/html,x',
+    ftp: 'ftp://f.test/',
+    creds: 'https://user:pw@ok.test/',
+    empty: '',
+  };
+  const safe = {
+    https: 'https://ok.test/',
+    path: '/v2/location/locA/x',
+    mailto: 'mailto:a@example.test',
+    tel: 'tel:+15555550100',
+  };
+  fixture.buttons = [
+    ...Object.entries(unsafe).map(([id, href]) => link(id, href)),
+    ...Object.entries(safe).map(([id, href]) => link(id, href)),
+    link('topTarget', 'https://ok.test/top', 'top'),
+    link('blankTarget', 'https://ok.test/blank', '_blank'),
+  ];
+  const { shim, GHLC } = await bootWithConfig(fixture);
+  for (const [id, href] of Object.entries(unsafe)) {
+    const el = byId(shim, id);
+    assert.equal(el.tagName, 'BUTTON', `${id} is a disabled button`);
+    assert.equal(el.getAttribute('data-state'), 'unavailable', `${id} is unavailable`);
+    assert.equal(msg(el), 'Link not allowed');
+    assert.equal(el.getAttribute('href'), null);
+    assert.equal(GHLC.__test.isSafeLinkHref(href), false);
+  }
+  for (const [id, href] of Object.entries(safe)) {
+    const el = byId(shim, id);
+    assert.equal(el.tagName, 'A', `${id} is an anchor`);
+    assert.equal(el.getAttribute('data-state'), 'ready');
+    assert.equal(el.getAttribute('href'), href);
+    assert.equal(GHLC.__test.isSafeLinkHref(href), true);
+  }
+  assert.equal(byId(shim, 'topTarget').getAttribute('target'), '_self', 'unknown target falls back to _self');
+  assert.equal(byId(shim, 'topTarget').getAttribute('rel'), null);
+  assert.equal(byId(shim, 'blankTarget').getAttribute('rel'), 'noopener noreferrer');
+  assertNoCodeText(shim);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('a11y: every rendered control is a native button or anchor', async () => {
+  const { shim } = await bootContactPage();
+  const controls = shim.document.querySelectorAll('[data-ghlc-button-id]');
+  assert.ok(controls.length >= 5, 'header and contact controls rendered');
+  for (const el of controls) {
+    assert.ok(['BUTTON', 'A'].includes(el.tagName), `${el.getAttribute('data-ghlc-button-id')} is native`);
+    if (el.tagName === 'A') assert.ok(el.getAttribute('href'), 'anchors carry an href');
+    if (el.tagName === 'BUTTON') assert.equal(el.getAttribute('type'), 'button');
+    assert.equal(el.getAttribute('role'), null, 'no role on a native control');
+    assert.equal(el.getAttribute('tabindex'), null, 'no tabindex on a native control');
+    for (const child of allElements(el)) {
+      assert.equal(child.getAttribute('tabindex'), null, 'no tabindex inside a control');
+      if (child.classList.contains('ghlc-btn__msg')) assert.equal(child.getAttribute('role'), 'status');
+      else assert.equal(child.getAttribute('role'), null);
+    }
+  }
+  for (const m of shim.document.querySelectorAll('.ghlc-btn__msg')) assert.equal(m.getAttribute('role'), 'status');
+  for (const g of shim.document.querySelectorAll('.ghlc-group')) assert.equal(g.getAttribute('role'), null);
+});
+
+scenario('icons: known icon renders an svg, unknown renders none', async () => {
+  const { shim, GHLC } = await bootContactPage();
+  const svg = byId(shim, 'sendInvite').querySelector('.ghlc-btn__icon svg');
+  assert.ok(svg, 'send icon rendered');
+  assert.equal(svg.getAttribute('aria-hidden'), 'true');
+  assert.equal(svg.getAttribute('focusable'), 'false');
+  assert.equal(svg.getAttribute('viewBox'), '0 0 24 24');
+  assert.ok(svg.querySelectorAll('path').length >= 1);
+  for (const p of svg.querySelectorAll('path')) {
+    assert.equal(p.getAttribute('fill'), 'none');
+    assert.equal(p.getAttribute('stroke'), 'currentColor');
+  }
+  assert.equal(byId(shim, 'badTypeBtn').querySelector('.ghlc-btn__icon').childNodes.length, 0, 'no icon key -> empty span');
+  assert.ok(Object.isFrozen(GHLC.__test.handlers), 'handlers registry is frozen');
+
+  const fixture = loadFixture();
+  fixture.buttons.find((b) => b.id === 'sendInvite').icon = 'bogus';
+  fixture.buttons.find((b) => b.id === 'supportLink').icon = 'constructor';
+  const second = await bootWithConfig(fixture);
+  assert.equal(byId(second.shim, 'sendInvite').querySelector('.ghlc-btn__icon').childNodes.length, 0, 'unknown icon -> empty span');
+  assert.equal(byId(second.shim, 'supportLink').querySelector('.ghlc-btn__icon').childNodes.length, 0, 'prototype-named icon -> empty span');
+  assert.equal(byId(second.shim, 'sendInvite').getAttribute('data-state'), 'ready', 'unknown icon does not affect the action');
 });
 
 // ---------------------------------------------------------------------------

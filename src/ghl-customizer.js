@@ -41,6 +41,30 @@
   var DEFAULT_COOLDOWN_MS = 10000;
   var ACTION_TYPES = Object.freeze(['link', 'webhook', 'handler']);
   var STATES = Object.freeze(['ready', 'submitting', 'queued', 'unavailable', 'failed']);
+  // Link buttons may only navigate to these schemes or to a same-origin path (BTN-09).
+  var SAFE_LINK_SCHEMES = Object.freeze(['https:', 'mailto:', 'tel:']);
+  var SAFE_TARGETS = Object.freeze(['_self', '_blank']);
+  // Bounded wait for a mount that appears shortly after navigation: at most
+  // MOUNT_WAIT_MAX_MS / MOUNT_WAIT_INTERVAL_MS querySelector passes per route change.
+  var MOUNT_WAIT_INTERVAL_MS = 250;
+  var MOUNT_WAIT_MAX_MS = 15000;
+
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+
+  // Approved icon set: name -> stroke paths on a 24x24 grid. This is the only
+  // place icon markup is defined; unknown keys render no icon.
+  var ICONS = Object.freeze({
+    send: ['M21 3L10.5 13.5', 'M21 3L14 21L10.5 13.5L3 10L21 3Z'],
+    mail: ['M3 6h18v12H3z', 'M3 7l9 6l9-6'],
+    link: ['M9.5 14.5L14.5 9.5', 'M13 7l2-2a3.5 3.5 0 0 1 5 5l-2 2', 'M11 17l-2 2a3.5 3.5 0 0 1-5-5l2-2'],
+    external: ['M14 4h6v6', 'M20 4L11 13', 'M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5']
+  });
+
+  // Own-property lookup for every config-keyed read (locations, overrides,
+  // handlers, icons) so prototype names in config can never resolve.
+  function hasOwn(obj, key) {
+    return obj !== null && obj !== undefined && Object.prototype.hasOwnProperty.call(obj, key);
+  }
 
   // Selectors for elements this script owns (never HighLevel's).
   var OWN = Object.freeze({
@@ -350,17 +374,44 @@
     });
   }
 
+  // A location override may replace label, icon, and action (whole object);
+  // id, placement, and scope are never overridable.
+  function applyOverride(button, override) {
+    var merged = {};
+    Object.keys(button).forEach(function (key) {
+      merged[key] = button[key];
+    });
+    if (typeof override.label === 'string' && override.label.length >= 1 && override.label.length <= 80) {
+      merged.label = override.label;
+    }
+    if (typeof override.icon === 'string') merged.icon = override.icon;
+    if (isPlainObject(override.action)) merged.action = override.action;
+    return merged;
+  }
+
   /**
-   * Buttons visible for a location. Agency-level pages (locationId null) get
-   * no buttons; buttons are a location-scoped feature.
+   * Buttons visible for a location (BTN-02). Agency-level pages (locationId
+   * null) get no buttons; buttons are a location-scoped feature.
+   * config.locations[locationId].buttons[buttonId]: false disables, true
+   * enables (even out of scope), an object enables and merges label/icon/action.
+   * Every lookup is an own-property lookup so prototype-named keys are ignored.
    */
   function resolveButtons(config, locationId) {
     if (!config || !Array.isArray(config.buttons) || !locationId) return [];
-    // Plan 03 merges config.locations[locationId].buttons overrides (BTN-02) here.
-    return config.buttons.filter(function (button) {
-      return button.scope === 'all' ||
+    var locations = isPlainObject(config.locations) ? config.locations : {};
+    var entry = hasOwn(locations, locationId) ? locations[locationId] : null;
+    var overrides = isPlainObject(entry) && isPlainObject(entry.buttons) ? entry.buttons : {};
+    var out = [];
+    config.buttons.forEach(function (button) {
+      var override = hasOwn(overrides, button.id) ? overrides[button.id] : undefined;
+      if (override === false) return;
+      var inScope = button.scope === 'all' ||
         (Array.isArray(button.scope) && button.scope.indexOf(locationId) !== -1);
+      if (override === true) out.push(button);
+      else if (isPlainObject(override)) out.push(applyOverride(button, override));
+      else if (override === undefined && inScope) out.push(button);
     });
+    return out;
   }
 
 // ==== context ====
@@ -464,18 +515,8 @@
 
 // ==== buttons ====
 
-  var SVG_NS = 'http://www.w3.org/2000/svg';
-
-  // Approved icon set: name -> stroke paths on a 24x24 grid. Unknown keys render no icon.
-  var ICONS = Object.freeze({
-    send: ['M21 3L10.5 13.5', 'M21 3L14 21L10.5 13.5L3 10L21 3Z'],
-    mail: ['M3 6h18v12H3z', 'M3 7l9 6l9-6'],
-    link: ['M9.5 14.5L14.5 9.5', 'M13 7l2-2a3.5 3.5 0 0 1 5 5l-2 2', 'M11 17l-2 2a3.5 3.5 0 0 1-5-5l2-2'],
-    external: ['M14 4h6v6', 'M20 4L11 13', 'M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5']
-  });
-
-  function createIcon(name) {
-    if (typeof name !== 'string' || !Object.prototype.hasOwnProperty.call(ICONS, name)) return null;
+  function makeIcon(name) {
+    if (typeof name !== 'string' || !hasOwn(ICONS, name)) return null;
     var svg = document.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('viewBox', '0 0 24 24');
     svg.setAttribute('focusable', 'false');
@@ -483,6 +524,8 @@
     ICONS[name].forEach(function (d) {
       var path = document.createElementNS(SVG_NS, 'path');
       path.setAttribute('d', d);
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', 'currentColor');
       path.setAttribute('stroke-linecap', 'round');
       path.setAttribute('stroke-linejoin', 'round');
       svg.appendChild(path);
@@ -490,19 +533,67 @@
     return svg;
   }
 
+  /**
+   * Handler registry (BTN-09). Config may name a handler by string; the name
+   * resolves against this frozen object via own-property lookup only, so
+   * prototype names (constructor, __proto__, ...) never resolve. Adding a
+   * handler means editing this object; config can never supply code.
+   * Signature: (ctx: { locationId, contactId, buttonId }, el)
+   *   -> { ok: boolean, message?: string } | Promise<same> | undefined
+   */
+  var handlers = Object.freeze({
+    copyContactId: function (ctx) {
+      if (!ctx || !ctx.contactId) return { ok: false, message: 'No contact open' };
+      var clipboard = typeof navigator !== 'undefined' && navigator ? navigator.clipboard : null;
+      if (!clipboard || typeof clipboard.writeText !== 'function') {
+        return { ok: false, message: 'Clipboard unavailable' };
+      }
+      return clipboard.writeText(ctx.contactId).then(function () {
+        return { ok: true, message: 'Contact ID copied' };
+      });
+    }
+  });
+
+  // A single-slash same-origin path, or an absolute URL whose scheme is in
+  // SAFE_LINK_SCHEMES (no credentials). Everything else, including any other
+  // scheme, protocol-relative URLs, and parse failures, is refused.
+  function isSafeLinkHref(href) {
+    if (typeof href !== 'string' || !href) return false;
+    if (href.charAt(0) === '/') return href.charAt(1) !== '/';
+    try {
+      var url = new URL(href);
+      return SAFE_LINK_SCHEMES.indexOf(url.protocol) !== -1 && url.username === '' && url.password === '';
+    } catch (e) {
+      return false;
+    }
+  }
+
   function ctxKey() {
     return (state.ctx.locationId || '') + '|' + (state.ctx.contactId || '');
   }
 
+  function unavailable(message) {
+    return { kind: 'unavailable', message: message };
+  }
+
+  /**
+   * Action allowlist (BTN-09). Only link, webhook, and handler are honored and
+   * only the fields named here are ever read from the action object; nothing
+   * from config is evaluated or inserted as markup.
+   */
   function resolveAction(button) {
     var action = button.action;
-    if (!isPlainObject(action) || ACTION_TYPES.indexOf(action.type) === -1) {
-      return { kind: 'unavailable', message: 'Action not available' };
+    if (!isPlainObject(action) || typeof action.type !== 'string' || ACTION_TYPES.indexOf(action.type) === -1) {
+      return unavailable('Action not available');
+    }
+    if (action.type === 'link') {
+      if (!isSafeLinkHref(action.href)) return unavailable('Link not allowed');
+      var target = SAFE_TARGETS.indexOf(action.target) !== -1 ? action.target : '_self';
+      return { kind: 'link', href: action.href, target: target };
     }
     if (action.type === 'webhook') {
-      if (!isSafeHttpsUrl(action.url)) {
-        return { kind: 'unavailable', message: 'Webhook URL must use HTTPS' };
-      }
+      if (button.placement !== 'contact') return unavailable('Requires an open contact');
+      if (!isSafeHttpsUrl(action.url)) return unavailable('Webhook URL must use HTTPS');
       return {
         kind: 'webhook',
         url: action.url,
@@ -512,8 +603,14 @@
           : DEFAULT_COOLDOWN_MS
       };
     }
-    // Plan 03 resolves link and handler actions here.
-    return { kind: 'unavailable', message: 'Action not available' };
+    if (action.type === 'handler') {
+      var name = action.handler;
+      if (typeof name === 'string' && hasOwn(handlers, name) && typeof handlers[name] === 'function') {
+        return { kind: 'handler', run: handlers[name] };
+      }
+      return unavailable('Action not available');
+    }
+    return unavailable('Action not available');
   }
 
   function setState(el, next, opts) {
@@ -545,10 +642,23 @@
     else el.removeAttribute('title');
   }
 
+  // Every control is a native <a href> or <button> (BTN-08): keyboard
+  // activation and focus come from the element itself, never from ARIA
+  // role or focus-order attributes bolted onto a generic element.
   function createButtonEl(button) {
-    var el = document.createElement('button');
-    el.setAttribute('type', 'button');
-    el.setAttribute('class', NS + '-btn');
+    var action = resolveAction(button);
+    var el;
+    if (action.kind === 'link') {
+      el = document.createElement('a');
+      el.setAttribute('class', NS + '-btn ' + NS + '-btn--link');
+      el.setAttribute('href', action.href);
+      el.setAttribute('target', action.target);
+      if (action.target === '_blank') el.setAttribute('rel', 'noopener noreferrer');
+    } else {
+      el = document.createElement('button');
+      el.setAttribute('type', 'button');
+      el.setAttribute('class', NS + '-btn');
+    }
     el.setAttribute('data-' + NS + '-button-id', button.id);
     el.setAttribute('data-' + NS + '-placement', button.placement);
     el.setAttribute('data-' + NS + '-ctx', ctxKey());
@@ -558,7 +668,7 @@
     var iconEl = document.createElement('span');
     iconEl.setAttribute('class', NS + '-btn__icon');
     iconEl.setAttribute('aria-hidden', 'true');
-    var svg = createIcon(button.icon);
+    var svg = makeIcon(button.icon);
     if (svg) iconEl.appendChild(svg);
 
     var labelEl = document.createElement('span');
@@ -574,9 +684,11 @@
     el.appendChild(labelEl);
     el.appendChild(msgEl);
 
-    var action = resolveAction(button);
     if (action.kind === 'unavailable') {
       setState(el, 'unavailable', { message: action.message });
+    } else if (action.kind === 'link') {
+      // Native anchor: no click listener, the browser navigates.
+      setState(el, 'ready');
     } else if (action.kind === 'webhook' && button.placement === 'contact' && !contactFieldsReadable()) {
       // D-02: HighLevel may render the toolbar before the email field. Render
       // unavailable now; a later renderPlacement recovers it (recoverNoContactFields).
@@ -673,8 +785,8 @@
   }
 
   function renderAll() {
+    renderPlacement('header');
     renderPlacement('contact');
-    // Plan 03 adds renderPlacement('header').
   }
 
   function uuid() {
@@ -863,11 +975,41 @@
     });
   }
 
+  // Runs a registry handler with the same stale-click and generation guards
+  // as a webhook; the handler's own result decides ready vs failed.
+  function runHandler(button, action, el) {
+    if (refuseStaleClick(button, el)) return Promise.resolve();
+    var gen = state.generation;
+    setState(el, 'submitting');
+    return Promise.resolve().then(function () {
+      return action.run({
+        locationId: state.ctx.locationId,
+        contactId: state.ctx.contactId,
+        buttonId: button.id
+      }, el);
+    }).then(null, function () {
+      return { ok: false, message: 'Action failed' };
+    }).then(function (result) {
+      if (gen !== state.generation || !el.isConnected) {
+        log('handler-discarded', { buttonId: button.id, generation: gen });
+        return;
+      }
+      var ok = !(result && result.ok === false);
+      if (!ok) {
+        setState(el, 'failed', { message: result.message || 'Action failed' });
+      } else {
+        setState(el, 'ready', { message: (result && typeof result.message === 'string') ? result.message : '' });
+      }
+      log('handler', { buttonId: button.id, ok: ok });
+    });
+  }
+
   function onButtonClick(button, el) {
     var current = el.getAttribute('data-state');
     if (current !== 'ready' && current !== 'failed') return;
     var action = resolveAction(button);
     if (action.kind === 'webhook') runWebhook(button, action, el);
+    else if (action.kind === 'handler') runHandler(button, action, el);
   }
 
 // ==== observers ====
@@ -947,7 +1089,11 @@
     window.GHLC.__test = {
       parseRoute: parseRoute,
       resolveButtons: resolveButtons,
+      resolveAction: resolveAction,
       isSafeHttpsUrl: isSafeHttpsUrl,
+      isSafeLinkHref: isSafeLinkHref,
+      handlers: handlers,
+      verify: verify,
       validateConfig: validateConfig,
       boot: boot,
       getState: getState,
