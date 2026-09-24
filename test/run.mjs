@@ -218,7 +218,7 @@ check('config: both JSON files parse, validate, use HTTPS webhooks, and carry no
   assert.ok(invite, 'sample must ship a sendInvite button');
   assert.equal(invite.placement, 'contact');
   assert.equal(invite.action.type, 'webhook');
-  assert.ok(invite.action.url.includes('REPLACE_ME'));
+  assert.ok(/^https:\/\/services\.leadconnectorhq\.com\/hooks\/[A-Za-z0-9]+\/webhook-trigger\/[0-9a-f-]{36}$/.test(invite.action.url) || invite.action.url.includes('REPLACE_ME'), 'sample config points at a HighLevel Inbound Webhook trigger URL (or the placeholder)');
   assert.ok(sample.buttons.some((b) => b.placement === 'header' && b.action.type === 'link'), 'sample must ship a header link button');
 });
 

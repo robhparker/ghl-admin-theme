@@ -38,3 +38,15 @@ Script, stylesheet, and config served from HTTPS webhook.site tokens (temporary,
 | Full page navigation | injected script is gone after a real reload (expected: HighLevel re-injects Custom JS on each load) | n/a |
 
 Visual note for Phase 3: the name row is narrow; Send Invite pushes the contact name to "(Ex…". A compact/icon-only variant for the contact placement, or mounting on the "Contact Details ‹ ›" row instead, is worth considering.
+
+## Real Inbound Webhook trigger (2026-09-24, later)
+
+Rob supplied the workflow's Inbound Webhook trigger URL (location `Cp2XxBsRoyKS2CUf1Hwi`).
+
+| Step | Observed | Verdict |
+|---|---|---|
+| curl OPTIONS preflight with `Origin: https://app.gohighlevel.com` | 204, `access-control-allow-origin: *`, methods include POST, headers `*` | ✓ CORS supported |
+| curl POST mapping sample (script's exact payload shape: contactId, locationId, buttonId, requestId, sentAt, email, phone, source) | 200 `{"status":"Success: test request received"}` — HighLevel now has the field mapping reference | ✓ |
+| Live contact record, config pointed at the real trigger, press Send Invite | ready → queued "Workflow triggered" (confirmed 2xx CORS path, not the no-cors fallback) in ~60 ms; repeat click sends nothing | ✓ |
+
+The `Sent (unconfirmed)` no-cors fallback is therefore not needed for HighLevel's own trigger endpoint; it stays as a safety net.

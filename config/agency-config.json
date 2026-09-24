@@ -16,8 +16,11 @@
       "scope": "all",
       "action": {
         "type": "webhook",
-        "url": "https://services.leadconnectorhq.com/hooks/REPLACE_ME",
-        "cooldownMs": 10000
+        "url": "https://services.leadconnectorhq.com/hooks/Cp2XxBsRoyKS2CUf1Hwi/webhook-trigger/bde416ab-a074-4946-bf99-7266eb1b0f4e",
+        "cooldownMs": 10000,
+        "extraFields": {
+          "source": "ghl-customizer"
+        }
       }
     },
     {

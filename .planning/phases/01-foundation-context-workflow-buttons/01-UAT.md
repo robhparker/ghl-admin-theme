@@ -3,7 +3,7 @@ status: complete
 phase: 01-foundation-context-workflow-buttons
 source: [01-VERIFICATION.md]
 started: 2026-09-24T17:11:01Z
-updated: 2026-09-24T20:08:09Z
+updated: 2026-09-24T20:54:05Z
 ---
 
 ## Current Test
@@ -24,7 +24,7 @@ result: pass — orchestrator ran GHLC.verify() live on 2026-09-24 (Dummy Clinic
 
 ### 3. Live Inbound Webhook delivery and CORS
 expected: With a real Inbound Webhook trigger URL in config (replacing hooks/REPLACE_ME), pressing Send Invite on a designated test contact produces exactly one workflow execution carrying contactId, locationId, email/phone, and requestId. The button label reads "Workflow triggered" if the endpoint returns CORS headers, or "Sent (unconfirmed)" if it does not.
-result: pass (listener) — Send Invite on the live contact record POSTed exactly one JSON body {contactId, locationId, buttonId, requestId, sentAt, email, source} to an HTTPS webhook.site listener with CORS enabled; a CORS preflight OPTIONS preceded it; button went ready → submitting → queued "Workflow triggered"; repeat click sent nothing. NOT yet run against a real HighLevel Inbound Webhook trigger URL (needs Rob\'s workflow); if that endpoint omits CORS headers the no-cors fallback shows "Sent (unconfirmed)".
+result: pass — 2026-09-24: (a) HTTPS webhook.site listener received exactly one POST with the full payload from the live contact record; (b) Rob's real Inbound Webhook trigger (location Cp2XxBsRoyKS2CUf1Hwi) accepted a curl mapping sample (`Success: test request received`) and answers preflight + POST with `access-control-allow-origin: *`; (c) pressing Send Invite on the live sample contact against that real trigger went ready → queued "Workflow triggered" in ~60 ms, repeat click blocked. Real trigger URL now lives in config/agency-config.json.
 
 ## Summary
 
