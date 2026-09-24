@@ -720,7 +720,29 @@
     };
   }
 
+  // Injects the companion stylesheet once: data-css wins, else the script's own
+  // src with .js swapped for .css. OWN.styleLinkSel matches data-ghlc-styles so a
+  // pre-existing link (or a second boot) never adds a duplicate.
+  function ensureStyles() {
+    if (document.querySelector(OWN.styleLinkSel)) return;
+    var href = currentScript && typeof currentScript.getAttribute === 'function'
+      ? currentScript.getAttribute('data-css')
+      : null;
+    if (!href) {
+      var src = currentScript && currentScript.src ? String(currentScript.src) : '';
+      if (!src || !/\.js$/.test(src)) return;
+      href = src.slice(0, -3) + '.css';
+    }
+    if (!isAllowedConfigUrl(href) || !document.head) return;
+    var link = document.createElement('link');
+    link.setAttribute('rel', 'stylesheet');
+    link.setAttribute('data-' + NS + '-styles', '1');
+    link.setAttribute('href', href);
+    document.head.appendChild(link);
+  }
+
   function boot() {
+    ensureStyles();
     state.ready = loadConfig().then(function (cfg) {
       if (!cfg || cfg.enabled !== true) {
         log('disabled', { reason: cfg ? 'enabled-false' : 'no-config' });

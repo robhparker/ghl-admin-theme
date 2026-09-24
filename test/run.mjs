@@ -428,6 +428,17 @@ scenario('FND-05: non-https, cross-origin config URL is rejected before fetch', 
   assert.ok(shim.console.lines.join('\n').includes('config-url-rejected'));
 });
 
+scenario('styles: boot injects one stylesheet link derived from the script src, never twice', async () => {
+  const { shim, GHLC } = await bootContactPage();
+  const links = shim.document.head.querySelectorAll('link[data-ghlc-styles]');
+  assert.equal(links.length, 1, 'exactly one stylesheet link');
+  assert.equal(links[0].getAttribute('rel'), 'stylesheet');
+  assert.equal(links[0].getAttribute('href'), 'https://cdn.test/ghl-customizer.css');
+  await GHLC.__test.boot();
+  await shim.flush();
+  assert.equal(shim.document.head.querySelectorAll('link[data-ghlc-styles]').length, 1, 'second boot adds no link');
+});
+
 scenario('production mode: no __test surface, window.GHLC exposes version/ready/verify', async () => {
   const shim = createShim({ pathname: CONTACT_PATH, fixture: loadFixture() });
   shim.buildShell({ sidebarMode: 'location', contact: JANE });

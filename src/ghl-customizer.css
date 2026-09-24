@@ -1,0 +1,139 @@
+/*!
+ * GHL Customizer (admin-theme) — scoped stylesheet, version 0.1.0
+ * Every rule is prefixed .ghlc- so nothing bleeds into HighLevel's native UI.
+ * Tokens live on .ghlc-group; Phase 3 overrides them per location.
+ */
+
+.ghlc-group {
+  --ghlc-primary: #155eef;
+  --ghlc-primary-text: #ffffff;
+  --ghlc-focus: #155eef;
+  --ghlc-danger: #d92d20;
+  --ghlc-success: #12b76a;
+  --ghlc-muted: #98a2b3;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: 8px;
+}
+
+.ghlc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: var(--ghlc-primary);
+  color: var(--ghlc-primary-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  position: relative;
+}
+
+.ghlc-btn:hover {
+  filter: brightness(0.95);
+}
+
+.ghlc-btn:focus-visible {
+  outline: 2px solid var(--ghlc-focus);
+  outline-offset: 2px;
+}
+
+.ghlc-btn[disabled],
+.ghlc-btn[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.ghlc-btn[data-state="submitting"] {
+  opacity: 0.8;
+  cursor: progress;
+}
+
+.ghlc-btn[data-state="queued"] {
+  background: var(--ghlc-success);
+  color: var(--ghlc-primary-text);
+}
+
+.ghlc-btn[data-state="failed"] {
+  background: #ffffff;
+  color: var(--ghlc-danger);
+  border-color: var(--ghlc-danger);
+}
+
+.ghlc-btn[data-state="unavailable"] {
+  background: var(--ghlc-muted);
+  color: #ffffff;
+}
+
+.ghlc-btn--link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: var(--ghlc-primary);
+  color: var(--ghlc-primary-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.ghlc-btn--link:hover {
+  filter: brightness(0.95);
+  text-decoration: none;
+}
+
+.ghlc-btn--link:focus-visible {
+  outline: 2px solid var(--ghlc-focus);
+  outline-offset: 2px;
+}
+
+.ghlc-btn__icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.ghlc-btn__icon svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.ghlc-btn__label {
+  display: inline-block;
+}
+
+.ghlc-btn__msg {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ghlc-btn,
+  .ghlc-btn--link {
+    transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+  }
+}
