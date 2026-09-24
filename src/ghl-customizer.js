@@ -375,10 +375,17 @@
     return attr ? attr : DEFAULT_CONFIG_URL;
   }
 
+  // The base the browser resolves src, href and fetch() against: a <base>
+  // element moves it away from location.href, and a safety check must judge
+  // the URL that will actually load, not a same-origin reading of it.
+  function documentBase() {
+    return document.baseURI || location.href;
+  }
+
   // https anywhere, or same-origin (lets the localhost harness load a relative config).
   function isAllowedConfigUrl(raw) {
     try {
-      var url = new URL(raw, location.href);
+      var url = new URL(raw, documentBase());
       return url.protocol === 'https:' || url.origin === location.origin;
     } catch (e) {
       return false;
@@ -397,8 +404,8 @@
 
   /**
    * Image sources a config may point the logo at (T-02-01): a string that
-   * resolves against the page to https without credentials, or to the page's
-   * own origin (so the offline harness can serve relative files). data:,
+   * resolves against the document base to https without credentials, or to
+   * the page's own origin (so the offline harness can serve relative files). data:,
    * blob:, javascript:, cross-origin http:, credentialed URLs, non-strings,
    * and parse failures are absent, never written. The raw config string is
    * what reaches src; no normalization, so equality is raw-string equality.
@@ -406,7 +413,7 @@
   function isSafeImageUrl(value) {
     if (typeof value !== 'string' || !value) return false;
     try {
-      var url = new URL(value, location.href);
+      var url = new URL(value, documentBase());
       if (url.protocol === 'https:' && url.username === '' && url.password === '') return true;
       return url.origin === location.origin;
     } catch (e) {
@@ -801,10 +808,10 @@
   function isSafeLinkHref(href) {
     if (typeof href !== 'string' || !href) return false;
     try {
-      // Resolve against the page origin so a path that the URL parser would
-      // treat as an authority (e.g. a backslash right after the slash) is
-      // caught by an origin comparison rather than a character check.
-      var url = new URL(href, location.origin);
+      // Resolve as the browser will (document base) so a path that the URL
+      // parser would treat as an authority (e.g. a backslash right after the
+      // slash) is caught by an origin comparison rather than a character check.
+      var url = new URL(href, documentBase());
       if (href.charAt(0) === '/') return url.origin === location.origin;
       return SAFE_LINK_SCHEMES.indexOf(url.protocol) !== -1 && url.username === '' && url.password === '';
     } catch (e) {

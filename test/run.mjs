@@ -1862,6 +1862,31 @@ check('unit: isSafeImageUrl accepts https and same-origin, rejects the rest', ()
   }
 });
 
+check('review WR-02: URL safety checks resolve against document.baseURI, the base the browser loads from', () => {
+  // A <base> pointing off-origin: a relative logoUrl validated against
+  // location.href would read as same-origin while loading cross-origin http.
+  const shim = createShim({ fixture: loadFixture() });
+  shim.document.baseURI = 'http://plain.test/base/';
+  const api = shim.run(src).__test;
+  assert.equal(api.isSafeImageUrl('logo.png'), false, 'relative logo resolves through the base, not location.href');
+  assert.equal(api.isSafeImageUrl('/logo.png'), false, 'root-relative logo resolves through the base too');
+  assert.equal(api.isSafeImageUrl('https://cdn.test/logo.png'), true, 'absolute https is unaffected');
+  assert.equal(api.isSafeLinkHref('/contacts'), false, 'root-relative link resolves through the base');
+  assert.equal(api.isSafeLinkHref('https://cdn.test/x'), true);
+
+  // A same-origin <base> (the harness) keeps relative files allowed.
+  const same = createShim({ fixture: loadFixture() });
+  same.document.baseURI = same.window.location.origin + '/test/';
+  const sameApi = same.run(src).__test;
+  assert.equal(sameApi.isSafeImageUrl('fixtures/logos/loc-a.svg'), true);
+  assert.equal(sameApi.isSafeLinkHref('/contacts'), true);
+
+  // No <base>: behaves exactly as before, against the page URL.
+  const bare = throwawayApi();
+  assert.equal(bare.isSafeImageUrl(LOC_A_LOGO), true);
+  assert.equal(bare.isSafeImageUrl('/v2/location/locA/logo.png'), true);
+});
+
 scenario('branding tracer: configured location swaps the sidebar logo in place after preload; agency route restores native', async () => {
   const { shim, shell, GHLC } = await bootBranding();
   assert.ok(shell.logo, 'shell carries the sidebar logo');
