@@ -42,7 +42,7 @@ From an open contact record, a staff member can press one button and reliably tr
 ## Context
 
 - **Product owner:** Rob Parker. PRD v0.1 (2026-09-24) at `docs/GHL_Customizer_PRD_v0_1.docx`.
-- **Environment:** One agency, multiple locations, HighLevel desktop web app. Script is injected via Agency Settings → Company → Custom JavaScript/CSS. HighLevel warns custom JS/CSS is unsupported and may break on UI updates.
+- **Environment:** One agency, multiple locations, HighLevel desktop web app. Staff use the white-label domain `365.clinx.net` (same app and DOM as app.gohighlevel.com; the script keys off the URL path, never the host). The Send Invite workflow is "WEBHOOK TEST Send Hint JOIN LINK & Reminders" in location `Cp2XxBsRoyKS2CUf1Hwi` (workflow id 3dff9d94-403f-41ae-8496-c47320fc0ea6). Script is injected via Agency Settings → Company → Custom JavaScript/CSS. HighLevel warns custom JS/CSS is unsupported and may break on UI updates.
 - **Reference project:** https://github.com/dachi-khelashvili/ghl-customizer at commit `ff7c8e49f5e2f2db96cae3db16142642ccc5a6e7` (2025-11-11). **It has no LICENSE file**, so it is all-rights-reserved by default and no code may be copied. It is 108 lines, fires `alert()` on load, hardcodes a config URL to a different GitHub user, and uses selectors (`.hl-header-logo`, `.hl-header-nav`, `.hl-user-menu`) that do not match the current HighLevel DOM. Treated as an idea reference only; recorded in `NOTICE.md`.
 - **Spark GHL Hub** (https://github.com/pedropoleza/spark-ghl-hub) is a future reference, not a dependency.
 - **Candidate HighLevel selectors** (from community CSS guides, to be verified live in Phase 1):
