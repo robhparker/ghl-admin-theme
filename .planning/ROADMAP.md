@@ -63,7 +63,7 @@ Plans:
   4. Rapidly switching A → B → A leaves A's logo showing even when B's image or config resolves late; a slow response from an earlier location never overwrites the current one.
   5. When HighLevel re-renders the logo element (route change, sidebar collapse/expand), the client logo is restored without duplicate images, and verify mode reports a single branding observer.
 
-**Plans**: 1/2 plans executed
+**Plans**: 2/2 plans executed
 **UI hint**: yes
 
 Plans:
@@ -73,7 +73,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02-02-PLAN.md — Single branding MutationObserver (img replaced, sidebar replaced, foreign src/alt writes), verify() branding report, harness sidebar logo + mutation controls, SVG fixture logos, sample-config logoMount, end-of-phase harness + live HighLevel check
+- [x] 02-02-PLAN.md — Single branding MutationObserver (img replaced, sidebar replaced, foreign src/alt writes), verify() branding report, harness sidebar logo + mutation controls, SVG fixture logos, sample-config logoMount, end-of-phase harness + live HighLevel check
 
 ### Phase 3: Accent Colors & Delivery
 
@@ -99,5 +99,5 @@ Phases execute in numeric order: 1 → 2 → 3
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation, Context & Workflow Buttons | 3/3 | Complete    | 2026-09-24 |
-| 2. Location Logo Switching | 1/2 | In Progress|  |
+| 2. Location Logo Switching | 2/2 | In Progress|  |
 | 3. Accent Colors & Delivery | 0/TBD | Not started | - |
