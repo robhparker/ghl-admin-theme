@@ -843,6 +843,7 @@
     el.removeAttribute('data-' + NS + '-reason');
     bindClick(button, el);
     setState(el, 'ready');
+    cancelContactFieldsWait();
   }
 
   function findGroups(placement) {
