@@ -236,31 +236,37 @@ Expected on Location A with the shipped fixture: `branding: { mount: 'sidebar', 
 
 ## Harness walkthrough
 
-**Not run by this executor.** This agent context had no browser tool (the Chrome skill loaded but its tools are outside this executor's tool set), so steps (a)-(h) are handed to the end-of-phase verifier. Everything automatable was done: `python3 -m http.server 5173` served `/test/harness.html`, `/test/fixtures/config.json`, `/src/ghl-customizer.js`, `/src/ghl-customizer.css`, and all four logo SVGs with 200 (`missing.svg` 404 as intended); the harness inline script passes `node --check`; and every step has a headless equivalent that passes (table below). Open `http://localhost:5173/test/harness.html?ghlc-debug=1` after `npm run serve`.
+**Run 2026-09-24 by the orchestrator in Chrome (Claude-in-Chrome) against `npm run serve` at `http://localhost:5173/test/harness.html?ghlc-debug=1`, on the post-review tree (fixes 94fbc02, 2915adb, 9bb4afa; suite PASS 101/101).** Every step observed as planned; state read through `GHLC.verify()` plus a MutationObserver on the sidebar that recorded every src the mount took.
 
-| Step | Expected in the browser | Headless equivalent (run.mjs) | Status |
-|---|---|---|---|
-| (a) Agency dashboard on load | grey Native pill; `GHLC.verify().branding.applied === 'native'`, `observers.branding === false` | `observers: native branding keeps no observer ...` (agency route -> false, 0 registrations) | pending human |
-| (b) Location A · Contact X | green Location A pill, alt "Location A logo", `data-ghlc-logo="location"`, `observers.branding === true` | `branding tracer ...`; `verify: branding report shape ...` | pending human |
-| (c) Location B · Contact Z | Native for an instant, then orange Location B; A never visible | `branding: with no agency logo the interim is the native logo` | pending human |
-| (d) Location C · broken logo | console `logo-failed`; Native shows; no broken-image icon | `branding: broken location logo falls back ...`; D2 sub-case (failed preload -> native, no observer) | pending human |
-| (e) Location Z · unconfigured | Native | `branding: unconfigured location and agency route ...` | pending human |
-| (f) Back to A, then each of the four controls | exactly one Location A pill, one `rebrand` per press, `observers.branding` stays true on one instance | scenarios 1, 2, 4, 5 of the `observers:` group (img swap, src/alt reset, whole-sidebar swap, unrelated churn) | pending human |
-| (g) Click the logo | routes to the agency dashboard; logo returns to Native | tracer (agency route restores native; anchor href untouched; zero click listeners) | pending human |
-| (h) Tab to the logo link | focus lands on the anchor; nothing the customizer added is focusable | tracer (no listener, no attribute beyond src/alt/referrerpolicy/class/data attr) | pending human |
+| Step | Observed | Status |
+|---|---|---|
+| (a) Agency dashboard on load | grey Native pill; `branding.applied: 'native'`, `observers.branding: false`, one `img.agency-logo` | ✓ |
+| (b) Location A · Contact X | green Location A pill within the navigation flush; alt "Location A logo", `data-ghlc-logo="location"`, class `agency-logo ghlc-logo`, `referrerpolicy=no-referrer`, `observers.branding: true`; console: observer-attached ×2, branding-observer-attached, logo-resolving, logo-applied | ✓ |
+| (c) Location B · Contact Z | src sequence on the mount: loc-a → native (interim) → loc-b; loc-a never reappeared after the interim; final alt "Location B", `loaded: 2` | ✓ |
+| (d) Location C · broken logo | console `logo-failed {tier:location}`; mount stayed Native throughout (the preload is detached, so no broken-image icon); `failed: 1`, `observers.branding: false` | ✓ |
+| (e) Location Z · unconfigured | Native; `applied: 'native'`, `observers.branding: false` | ✓ |
+| (f) Back to A, then Re-render sidebar logo / HighLevel resets logo src / Collapse-expand sidebar / Replace whole sidebar | after each press: exactly one `img.agency-logo` (visible), src loc-a, exactly one `rebrand` and one `logo-applied` in the console, `observers.branding: true`, `applied: 'location'` | ✓ |
+| (g) Click the logo | anchor href `/v2/agency/dashboard`; harness routed there; logo back to Native, `observers.branding: false` | ✓ |
+| (h) Focus | `link.focus()` lands on the anchor (`document.activeElement.tagName === 'A'`); zero `[tabindex]` elements inside `#sidebar-v2`; the img carries no tabindex | ✓ |
 
-Note for step (f): "HighLevel resets logo src" also proves the `logo-native-updated` path — after pressing it, navigating to the agency dashboard shows the harness's native SVG (unchanged here because the control resets to the same native URL).
+Log hygiene during the whole walkthrough (debug on): every `[ghlc]` entry carried only tiers, generations, reasons, and location IDs; a filter for the fixture URLs, alt texts, and location names matched 0 entries.
 
 ## Live-account branding verification
 
-**Not run: requires Rob's logged-in HighLevel session and a temporary config on an HTTPS test host (A-13).** The executor cannot open that session. To run it exactly as planned:
+**Run 2026-09-24 in Rob's logged-in Chrome session on `app.gohighlevel.com`, Dummy Clinic (`iDPNGKoFsjvf9wUCrk3V`), by the orchestrator via Claude-in-Chrome.** Hosting note: the Phase 1 HTTPS tokens were not recorded and `http://127.0.0.1:5173` is blocked as mixed content on the https page, so the script was evaluated in the page verbatim with `document.currentScript` shimmed to a script element carrying `data-config` and `data-css` that point at same-origin `blob:` URLs (temporary config = production config + `agency.logoMount: "sidebar"` + the Dummy Clinic entry with the Wikimedia transparency-demo PNG + `sendInvite.action.url` → `https://example.invalid/hooks/disabled`). No CSP is served on the page (checked header and meta). Nothing was hosted or published; closing the tab removed everything.
 
-1. Temporary config = `config/agency-config.json` with `locations.iDPNGKoFsjvf9wUCrk3V: { "name": "Dummy Clinic", "logoUrl": "<HTTPS PNG with alpha, e.g. https://upload.wikimedia.org/wikipedia/commons/4/47/PNG_transparency_demonstration_1.png>", "logoAlt": "Dummy Clinic" }` and `sendInvite.action.url` replaced by `https://example.invalid/hooks/disabled`. Serve script, stylesheet, and this config from the HTTPS test host used in Phase 1; inject with `<script src data-config data-css>` per `01-HARNESS-WALKTHROUGH.md`.
-2. On Dummy Clinic, `GHLC.verify()` should report `mounts.sidebarLogo: true` and `branding: { mount: 'sidebar', found: true, applied: 'location', resolving: false, failed: 0, loaded: 1 }`, `observers.branding: true`. Record the object and a screenshot here.
-3. Steps (k)-(n): native click navigation, collapse/expand persistence with exactly one logo image, native restore on an unconfigured location and the agency dashboard (`applied: 'native'`, `observers.branding: false`), and a console free of the PNG URL / "Dummy Clinic" / alt text.
-4. Step (o): if the live img carries `srcset`, sits in a wrapper the adapter did not anticipate, or `mounts.sidebarLogo` is false, correct `selectors.sidebarLogo` / `adapter.findLogoRoot`, re-run `node test/run.mjs`, and note the commit.
+Pre-injection facts (step (o) input): the mount is `#sidebar-v2 img.agency-logo` (class `object-contain agency-logo`, inline `max-width: 80%; height: 40px`), no `srcset`, parent `div.agency-logo-container`, **no wrapping anchor**, and clicking it does nothing (no navigation, cursor `auto`). `selectors.sidebarLogo` and `adapter.findLogoRoot` need no correction.
 
-Live `verify().branding` object captured on Dummy Clinic: **not captured (live check not run; see above).**
+| Step | Observed | Status |
+|---|---|---|
+| (j) Open Dummy Clinic | PNG (800×600) rendered at 53×40 — HighLevel's own 40 px height, 4:3 aspect preserved, `object-fit: contain`; transparent areas show the sidebar background (dice over white, no box); alt "Dummy Clinic"; `referrerpolicy=no-referrer`; class `object-contain agency-logo ghlc-logo`; one `img.agency-logo`; `mounts.sidebarLogo: true`; Help Center button present in the header | ✓ |
+| (k) Click the logo | same as pre-injection: no navigation, still branded | ✓ |
+| (l) HighLevel collapse / expand (green chevron) | collapsed `w-14`: one image, 38×40, branded, `observers.branding: true`; expanded `w-56`: 53×40, branded; no rebrand needed (HighLevel resizes the same element) | ✓ |
+| (m) Unconfigured location, then agency route, then back | driven with `history.pushState` (the channel HighLevel's router uses; the customizer hooks it) and `history.back()` ×2 for real popstate. Unconfigured and agency: exact native src (`companyPhotos/64e677c4….png`) and alt "agency logo" restored, no `data-ghlc-logo`, no `ghlc-logo` class, no `referrerpolicy`, `applied: 'native'`, `observers.branding: false`. Back on Dummy Clinic: PNG re-applied instantly from the session cache (`loaded: 1`), `observers.branding: true`. The HighLevel sub-account picker itself was not driven (its menu closed under automation), so HighLevel's own view did not re-render for the other locations. | ✓ |
+| (n) Console hygiene | filter for the PNG URL, "Dummy Clinic", the native URL, and alt text over every captured `console.info` entry: 0 matches (debug was off on the live URL, so only `verify` reports were emitted; the harness run above covers the debug log) | ✓ |
+| (o) Selector / wrapper mismatch | none (see pre-injection facts) | ✓ |
+
+Live `verify().branding` object captured on Dummy Clinic: `{ mount: 'sidebar', found: true, applied: 'location', resolving: false, failed: 0, loaded: 1 }`; `observers: { header: true, contact: false, branding: true }`; `mounts.sidebarLogo: true`, `mounts.headerLogo: false`.
 
 ## Files Created/Modified
 

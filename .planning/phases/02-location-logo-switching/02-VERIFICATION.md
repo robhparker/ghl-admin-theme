@@ -1,9 +1,19 @@
 ---
 phase: 02-location-logo-switching
-verified: 2026-09-24T22:32:26Z
-status: human_needed
-score: 14/17 must-haves verified
+verified: 2026-09-24T23:01:04Z
+status: passed
+score: 17/17 must-haves verified
+re_verification:
+  previous_status: human_needed
+  previous_verified: 2026-09-24T22:32:26Z
+  human_items_resolved:
+    - "Harness walkthrough (a)-(h) — 02-UAT.md test 1 pass; results table in 02-02-SUMMARY.md"
+    - "Live HighLevel (i)-(o) — 02-UAT.md test 2 pass; verify().branding object and pre-injection DOM facts recorded in 02-02-SUMMARY.md; no selector correction needed"
+    - "Prohibition P-03 — 02-UAT.md test 3 pass; four original SVG pills, NOTICE.md consistent"
+  post_verification_fixes: [94fbc02, 2915adb, 9bb4afa]
+  suite_after_fixes: "node test/run.mjs PASS 101/101"
 covered_files:
+  - .planning/phases/02-location-logo-switching/02-UAT.md
   - .planning/REQUIREMENTS.md
   - .planning/phases/02-location-logo-switching/02-01-PLAN.md
   - .planning/phases/02-location-logo-switching/02-01-SUMMARY.md
@@ -232,7 +242,12 @@ No code gaps. Every automated must-have — the in-place swap, the interim-then-
 
 What keeps this from `passed` is exactly what the plans themselves deferred to the end-of-phase human check and the executor could not run: ROADMAP SC1's proportions / transparency / real-click clauses and SC5's real sidebar collapse/expand (BRD-01, BRD-02 live confirmation), the browser harness walkthrough, and one judgment-tier prohibition. Status: **human_needed**. On a clean live check, the phase goal is achieved; if step (o) reveals a selector or wrapper mismatch, it is the planned inline fix in `selectors.sidebarLogo` / `adapter.findLogoRoot` followed by `node test/run.mjs`.
 
+
+## Re-verification after human checks (2026-09-24T23:01:04Z)
+
+**Status:** passed — 17/17. The three human-verification items above were executed on 2026-09-24 and recorded in 02-UAT.md (status: complete) with evidence in 02-02-SUMMARY.md: harness walkthrough (a)-(h) all pass; live HighLevel (j)-(o) all pass with the captured `verify().branding` object `{ mount:'sidebar', found:true, applied:'location', resolving:false, failed:0, loaded:1 }`; P-03 reviewed as original work. Between the first report and this one the code-review fixes CR-01 (branded element re-found is no longer captured as native), WR-01 (`srcset`/`class` observed and re-stripped), and WR-02 (URL checks against `document.baseURI`) landed with regression scenarios; the suite is PASS 101/101 and every plan acceptance gate still holds. ROADMAP success criteria 1–5 are now confirmed in the browser as well as headlessly.
+
 ---
 
-_Verified: 2026-09-24T22:32:26Z_
-_Verifier: Claude (gsd-verifier)_
+_Verified: 2026-09-24T23:01:04Z_
+_Verifier: Claude (gsd-verifier report, human items closed by the orchestrator via Claude-in-Chrome)_
