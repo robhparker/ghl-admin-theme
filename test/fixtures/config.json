@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "enabled": true,
+  "agency": {
+    "logoUrl": "",
+    "logoAlt": "Test Agency",
+    "theme": {}
+  },
+  "locations": {
+    "locA": {
+      "name": "Location A",
+      "buttons": {}
+    },
+    "locB": {
+      "name": "Location B",
+      "buttons": {
+        "sendInvite": false,
+        "supportLink": { "label": "B Support" }
+      }
+    }
+  },
+  "buttons": [
+    {
+      "id": "sendInvite",
+      "label": "Send Invite",
+      "icon": "send",
+      "placement": "contact",
+      "scope": "all",
+      "action": {
+        "type": "webhook",
+        "url": "https://services.leadconnectorhq.com/hooks/TEST-HOOK",
+        "extraFields": {
+          "source": "ghlc-harness",
+          "contactId": "SHOULD-NOT-WIN"
+        },
+        "cooldownMs": 3000
+      }
+    },
+    {
+      "id": "supportLink",
+      "label": "Support",
+      "icon": "external",
+      "placement": "header",
+      "scope": "all",
+      "action": {
+        "type": "link",
+        "href": "https://example.test/support",
+        "target": "_blank"
+      }
+    },
+    {
+      "id": "locOnlyLink",
+      "label": "Location Settings",
+      "icon": "link",
+      "placement": "header",
+      "scope": ["locA"],
+      "action": {
+        "type": "link",
+        "href": "/v2/location/locA/settings"
+      }
+    },
+    {
+      "id": "badTypeBtn",
+      "label": "Bad Type",
+      "placement": "header",
+      "scope": "all",
+      "action": {
+        "type": "script",
+        "code": "alert(1)"
+      }
+    },
+    {
+      "id": "badHandlerBtn",
+      "label": "Bad Handler",
+      "placement": "contact",
+      "scope": "all",
+      "action": {
+        "type": "handler",
+        "handler": "nope"
+      }
+    },
+    {
+      "id": "copyIdBtn",
+      "label": "Copy Contact ID",
+      "icon": "mail",
+      "placement": "contact",
+      "scope": "all",
+      "action": {
+        "type": "handler",
+        "handler": "copyContactId"
+      }
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "enabled": true,
+  "agency": {
+    "logoUrl": "",
+    "logoAlt": "Agency",
+    "theme": {}
+  },
+  "locations": {},
+  "buttons": [
+    {
+      "id": "sendInvite",
+      "label": "Send Invite",
+      "icon": "send",
+      "placement": "contact",
+      "scope": "all",
+      "action": {
+        "type": "webhook",
+        "url": "https://services.leadconnectorhq.com/hooks/REPLACE_ME",
+        "cooldownMs": 10000
+      }
+    },
+    {
+      "id": "helpCenter",
+      "label": "Help Center",
+      "icon": "external",
+      "placement": "header",
+      "scope": "all",
+      "action": {
+        "type": "link",
+        "href": "https://help.gohighlevel.com/",
+        "target": "_blank"
+      }
+    }
+  ]
+}
