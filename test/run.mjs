@@ -1211,15 +1211,28 @@ scenario('icons: known icon renders an svg, unknown renders none', async () => {
 const logCount = (shim, ...needles) => shim.console.lines.filter((l) => needles.every((n) => l.includes(n))).length;
 const headerButtons = (shim) => shim.document.querySelectorAll('[data-ghlc-button-id][data-ghlc-placement="header"]');
 const freshHeader = (shim) => shim.el('header', { class: 'hl_header' }, [shim.el('span', {}, ['Re-rendered']), shim.el('div', { class: 'hl_header--controls' })]);
+// Registrations belonging to the branding observer (Phase 2): the one
+// instance registered on the logo img with attributes. Placement observer
+// sets never observe attributes, so this identifies the instance exactly.
+const brandingRegs = (shim) => {
+  const imgReg = shim.observers().find((o) => o.options.attributes && o.target.tagName === 'IMG');
+  return imgReg ? shim.observers().filter((o) => o.observer === imgReg.observer) : [];
+};
 
 scenario('observers: wholesale header replacement restores header buttons once and swaps the observer set', async () => {
-  const { shim, GHLC } = await bootContactPage();
-  const before = shim.observers().length;
+  const { shim, shell: page, GHLC } = await bootContactPage();
+  // The shipped fixture brands locA, so the single branding observer (Phase 2)
+  // holds three registrations; the placement sets are everything else.
+  const brandingMo = shim.observers().find((o) => o.target === page.logo).observer;
+  const placementRegs = () => shim.observers().filter((o) => o.observer !== brandingMo);
+  const before = placementRegs().length;
   assert.equal(before, 4, 'root + anchor observer for each of header and contact');
+  assert.equal(shim.observers().filter((o) => o.observer === brandingMo).length, 3, 'three branding registrations on one instance');
   assert.equal(logCount(shim, 'observer-attached', 'header'), 1);
   let oldHeader = shim.document.querySelector('.hl_header');
-  assert.ok(shim.observers().some((o) => o.target === oldHeader && o.options.subtree === true), 'root observer on the header');
-  assert.ok(shim.observers().some((o) => o.target === shim.document.body && o.options.subtree === false), 'shallow anchor observer on the header parent');
+  assert.ok(placementRegs().some((o) => o.target === oldHeader && o.options.subtree === true), 'root observer on the header');
+  assert.ok(placementRegs().some((o) => o.target === shim.document.body && o.options.subtree === false), 'shallow anchor observer on the header parent');
+  // Also proves the branding root is the sidebar, not body.
   assert.ok(!shim.observers().some((o) => o.target === shim.document.body && o.options.subtree === true), 'never a page-wide subtree observer');
 
   for (let round = 1; round <= 2; round++) {
@@ -1232,8 +1245,9 @@ scenario('observers: wholesale header replacement restores header buttons once a
     assert.equal(headerButtons(shim).length, 3, `round ${round}: three header buttons in the document`);
     const stale = oldHeader.querySelector('.ghlc-group');
     assert.ok(stale === null || !stale.isConnected, 'old group is gone or disconnected');
-    assert.equal(shim.observers().length, before, `round ${round}: observer set swapped, not accumulated`);
-    assert.ok(shim.observers().some((o) => o.target === newHeader), 'root observer follows the new header');
+    assert.equal(placementRegs().length, before, `round ${round}: observer set swapped, not accumulated`);
+    assert.equal(shim.observers().filter((o) => o.observer === brandingMo).length, 3, `round ${round}: branding registrations untouched`);
+    assert.ok(placementRegs().some((o) => o.target === newHeader), 'root observer follows the new header');
     assert.ok(shim.observers().every((o) => o.target !== oldHeader && o.target.isConnected), 'no observer targets the old header');
     assert.equal(GHLC.verify().observers.header, true);
     assert.equal(logCount(shim, 'rerender', 'header'), round, `round ${round}: exactly one rerender per replacement`);
@@ -1241,6 +1255,10 @@ scenario('observers: wholesale header replacement restores header buttons once a
     oldHeader = newHeader;
   }
   assert.equal(logCount(shim, 'rerender', 'contact'), 0, 'contact placement never re-rendered');
+  // The header is a sibling of the sidebar, so each body-level swap wakes the
+  // shallow branding anchor once: one coalesced no-op rebrand per round.
+  assert.equal(logCount(shim, 'rebrand'), 2, 'one no-op rebrand per header swap');
+  logoIs(page.logo, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
   assert.equal(shim.errors.length, 0);
 
   // Variant: the header sits inside an extra wrapper, so the anchor must be
@@ -1253,15 +1271,22 @@ scenario('observers: wholesale header replacement restores header buttons once a
   const W = wrapped.run(src);
   assert.equal(await W.__test.boot(), true);
   await wrapped.flush();
-  assert.ok(wrapped.observers().some((o) => o.target === wrap && o.options.subtree === false), 'anchor is the wrapper');
-  assert.ok(!wrapped.observers().some((o) => o.target === wrapped.document.body), 'body is not observed');
+  const wrappedBrandingMo = wrapped.observers().find((o) => o.target === shell.logo).observer;
+  const wrappedPlacementRegs = () => wrapped.observers().filter((o) => o.observer !== wrappedBrandingMo);
+  assert.ok(wrappedPlacementRegs().some((o) => o.target === wrap && o.options.subtree === false), 'anchor is the wrapper');
+  // The branding anchor legitimately targets body (the sidebar's parent); no
+  // placement registration may, and nothing may observe body with subtree.
+  assert.ok(!wrappedPlacementRegs().some((o) => o.target === wrapped.document.body), 'no placement registration targets body');
+  assert.ok(!wrapped.observers().some((o) => o.target === wrapped.document.body && o.options.subtree === true), 'never a page-wide subtree observer');
   const replacement = freshHeader(wrapped);
   wrap.replaceChild(replacement, shell.header);
   await wrapped.flush();
   assert.equal(replacement.querySelectorAll('[data-ghlc-button-id]').length, 3, 'buttons restored inside the wrapper');
   assert.equal(headerButtons(wrapped).length, 3);
-  assert.equal(wrapped.observers().length, 4);
-  assert.ok(wrapped.observers().some((o) => o.target === replacement));
+  assert.equal(wrappedPlacementRegs().length, 4);
+  assert.equal(wrapped.observers().filter((o) => o.observer === wrappedBrandingMo).length, 3);
+  assert.ok(wrappedPlacementRegs().some((o) => o.target === replacement));
+  assert.equal(logCount(wrapped, 'rebrand'), 0, 'a swap inside the wrapper is invisible to the sidebar anchor');
   assert.equal(logCount(wrapped, 'rerender', 'header'), 1);
   assert.equal(wrapped.errors.length, 0);
 });
@@ -1310,7 +1335,8 @@ scenario('observers: contact toolbar re-render keeps one button bound to the cur
   assert.equal(GHLC.verify().observers.contact, true);
   assert.ok(shim.observers().some((o) => o.target === newRegion), 'root observer follows the new region');
   assert.ok(!shim.observers().some((o) => o.target === oldRegion), 'nothing targets the old region');
-  assert.equal(shim.observers().length, 4);
+  assert.equal(shim.observers().length, 7, 'two placement sets plus three branding registrations');
+  assert.equal(brandingRegs(shim).length, 3, 'the branding registrations belong to one instance');
   assert.equal(GHLC.__test.getState().generation, 1, 'no generation bump on a same-context re-render');
   assert.equal(logCount(shim, 'rerender', 'contact'), 1);
   button.click();
@@ -1441,7 +1467,9 @@ scenario('observers: own writes do not cause render loops', async () => {
   await shim.advanceTimers(3050);
   assert.equal(button.getAttribute('data-state'), 'ready');
   assert.equal(logCount(shim, 'rerender'), 0, 'setState label/message swaps are self-inflicted');
-  assert.equal(shim.observers().length, 4);
+  assert.equal(logCount(shim, 'rebrand'), 0, 'branding writes never schedule a rebrand');
+  assert.equal(shim.observers().length, 7);
+  assert.equal(brandingRegs(shim).length, 3);
   assert.equal(shim.errors.length, 0);
 });
 
@@ -1472,7 +1500,8 @@ scenario('observers: mount appearing after navigation is picked up by the bounde
   assert.equal(button.getAttribute('data-state'), 'ready');
   assert.equal(GHLC.verify().waiting.contact, false);
   assert.equal(GHLC.verify().observers.contact, true);
-  assert.equal(shim.observers().length, 4);
+  assert.equal(shim.observers().length, 7);
+  assert.equal(brandingRegs(shim).length, 3);
   assert.equal(shim.errors.length, 0);
 });
 
@@ -1502,14 +1531,15 @@ scenario('observers: context change cancels the wait and leaving to agency disco
   shim.navigate('/v2/location/locA/contacts/detail/c4', { via: 'pushState' });
   await shim.flush();
   assert.equal(GHLC.verify().waiting.contact, true);
-  assert.equal(shim.observers().length, 2, 'header set only while waiting for the contact mount');
+  assert.equal(shim.observers().length, 5, 'header set plus the branding registrations while waiting for the contact mount');
+  assert.equal(brandingRegs(shim).length, 3, 'branding registrations belong to one instance');
   shim.navigate('/v2/agency/dashboard', { via: 'pushState' });
   shim.setSidebarMode('agency');
   shim.setContact(null);
   await shim.flush();
   const r = GHLC.verify();
   assert.deepEqual(plain(r.waiting), { header: false, contact: false, contactFields: false, branding: false });
-  assert.deepEqual(plain(r.observers), { header: false, contact: false });
+  assert.deepEqual(plain(r.observers), { header: false, contact: false, branding: false });
   assert.equal(shim.observers().length, 0, 'agency pages end with zero observers');
   assert.equal(shim.document.querySelectorAll('[data-ghlc-button-id]').length, 0);
   assert.equal(shim.document.querySelectorAll('.ghlc-group').length, 0);
@@ -1547,6 +1577,7 @@ function assertNoFootprint(shim, GHLC, label) {
   assert.equal(shim.document.querySelectorAll('[data-ghlc-button-id]').length, 0, `${label}: no buttons`);
   assert.equal(shim.document.querySelectorAll('.ghlc-group').length, 0, `${label}: no groups`);
   assert.equal(shim.observers().length, 0, `${label}: no observers`);
+  assert.equal(GHLC.verify().observers.branding, false, `${label}: no branding observer`);
   assert.equal(shim.listenerCount(shim.window, 'popstate'), 0, `${label}: no popstate listener`);
   assert.equal(shim.listenerCount(shim.window, 'routeChangeEvent'), 0, `${label}: no route listener`);
   assert.equal(shim.listenerCount(shim.window, 'ghlc:navigate'), 0, `${label}: no navigate listener`);
@@ -1570,7 +1601,8 @@ scenario('disable: enabled false is a complete no-op', async () => {
   assert.equal(r.config.loaded, false);
   assert.equal(r.config.schemaVersion, 1);
   assert.deepEqual(plain(r.config.buttonIds), []);
-  assert.deepEqual(plain(r.observers), { header: false, contact: false });
+  assert.deepEqual(plain(r.observers), { header: false, contact: false, branding: false });
+  assert.deepEqual(plain(r.branding), { mount: 'sidebar', found: true, applied: null, resolving: false, failed: 0, loaded: 0 }, 'disabled: the mount is probed, nothing was applied');
   assert.ok(r.mounts.headerMount && r.mounts.contactMount, 'verify still probes mounts while disabled');
   await shim.advanceTimers(16000);
   assertNoFootprint(shim, GHLC, 'enabled false after 16 s');
@@ -1640,8 +1672,9 @@ scenario('verify: report shape and hygiene', async () => {
     contactPhoneField: false,
   });
   assert.deepEqual(plain(r.contactFields), { email: true, phone: true, emailCandidates: 1, phoneCandidates: 1 });
-  assert.deepEqual(plain(r.observers), { header: true, contact: true });
+  assert.deepEqual(plain(r.observers), { header: true, contact: true, branding: true });
   assert.deepEqual(plain(r.waiting), { header: false, contact: false, contactFields: false, branding: false });
+  assert.deepEqual(plain(r.branding), { mount: 'sidebar', found: true, applied: 'location', resolving: false, failed: 0, loaded: 1 });
   assert.ok(Array.isArray(r.buttons) && r.buttons.length === 6);
   assert.ok(r.buttons.some((b) => b.id === 'sendInvite' && b.placement === 'contact' && b.state === 'ready'));
   assert.ok(r.buttons.every((b) => Object.keys(b).length === 3), 'buttons carry id, placement, state only');
@@ -1673,7 +1706,9 @@ scenario('verify: missing mounts are reported false and native DOM stays untouch
   assert.equal(r.mounts.locationSwitcher, true);
   assert.equal(r.mounts.backToAgency, false);
   assert.deepEqual(plain(r.contactFields), { email: false, phone: false, emailCandidates: 0, phoneCandidates: 0 });
-  assert.deepEqual(plain(r.observers), { header: false, contact: false });
+  assert.deepEqual(plain(r.observers), { header: false, contact: false, branding: false });
+  assert.deepEqual(plain(r.branding), { mount: 'sidebar', found: false, applied: null, resolving: false, failed: 0, loaded: 0 });
+  assert.equal(r.waiting.branding, true, 'locA has a logo to show, so a bounded wait runs for the missing mount');
   assert.equal(r.waiting.header, true, 'the route expects a header, so a bounded wait runs');
   assert.equal(r.waiting.contact, false, 'no contact in the URL, no contact wait');
   assert.equal(doc.querySelectorAll('.ghlc-group').length, 0);
@@ -2074,6 +2109,258 @@ scenario('logs: branding diagnostics never contain logo URLs, alt text, or locat
   assert.ok(logCount(shim, 'logo-failed') >= 2 && logCount(shim, 'logo-resolving') >= 2);
   assertNoLeak(shim.console.lines, ['cdn.test', 'logos/', '.svg', '.png', 'Location A', 'Location B', 'Agency logo', 'native.test', 'Native Agency', 'Test Agency'], 'branding DLV-04');
   assert.equal(shim.errors.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Single branding observer and verify() branding report (Phase 2, Plan 02)
+// ---------------------------------------------------------------------------
+
+const freshNativeImg = (shim) => shim.el('img', { class: 'agency-logo', src: NATIVE_SRC, alt: 'Native Agency' });
+const assertOneBrandingInstance = (regs) => {
+  assert.equal(regs.length, 3, 'root + anchor + img registrations');
+  assert.equal(new Set(regs.map((r) => r.observer)).size, 1, 'single branding observer');
+  assert.ok(regs.every((r) => r.target.isConnected), 'every branding registration targets a connected node');
+};
+
+scenario('observers: replacing the sidebar logo img re-brands once through a single branding observer instance', async () => {
+  const { shim, shell, GHLC } = await bootBranding();
+  logoIs(shell.logo, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+  let regs = brandingRegs(shim);
+  assertOneBrandingInstance(regs);
+  const rootReg = regs.find((r) => r.target === shell.sidebar);
+  assert.ok(rootReg && rootReg.options.childList === true && rootReg.options.subtree === true, 'root: the sidebar, childList + subtree');
+  const anchorReg = regs.find((r) => r.target === shell.sidebar.parentNode);
+  assert.ok(anchorReg && anchorReg.options.childList === true && anchorReg.options.subtree === false, 'anchor: the sidebar parent, shallow');
+  const imgReg = regs.find((r) => r.target === shell.logo);
+  assert.ok(imgReg && imgReg.options.attributes === true && imgReg.options.childList === false, 'img: attributes only');
+  assert.deepEqual(plain(imgReg.options.attributeFilter), ['src', 'alt']);
+  assert.equal(logCount(shim, 'branding-observer-attached'), 1);
+  assert.equal(logCount(shim, 'rebrand'), 0, 'boot writes never schedule a rebrand');
+
+  const oldImg = shell.logo;
+  const link = oldImg.parentNode;
+  const freshImg = freshNativeImg(shim);
+  link.replaceChild(freshImg, oldImg);
+  await shim.flush();
+  logoIs(freshImg, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+  assert.equal(oldImg.isConnected, false);
+  assert.equal(freshImg.parentNode, link, 'the replacement img stays where HighLevel put it');
+  assert.equal(shim.document.querySelectorAll('img.agency-logo').length, 1, 'exactly one logo in the document');
+  assert.equal(logCount(shim, 'rebrand'), 1);
+  assert.equal(logCount(shim, 'logo-applied', "tier: 'location'"), 2);
+  assert.equal(logCount(shim, 'logo-resolving'), 1, 'a loaded URL is re-applied without a second preload');
+  regs = brandingRegs(shim);
+  assertOneBrandingInstance(regs);
+  assert.ok(regs.some((r) => r.target === freshImg && r.options.attributes), 'img registration follows the new img');
+  assert.ok(regs.some((r) => r.target === shell.sidebar && r.options.subtree), 'root registration unchanged');
+  assert.ok(!shim.observers().some((r) => r.target === oldImg), 'nothing targets the old img');
+  assert.equal(logCount(shim, 'branding-observer-attached'), 2);
+  assert.equal(logCount(shim, 'branding-observer-detached'), 1);
+  assert.equal(GHLC.verify().observers.branding, true);
+  assert.equal(shim.listenerCount(oldImg, 'error'), 0, 'error listener unbound from the old img');
+  assert.equal(shim.listenerCount(freshImg, 'error'), 1, 'error listener bound once on the new img');
+  assert.equal(shim.listenerCount(freshImg, 'click'), 0);
+  await shim.advanceTimers(50);
+  assert.equal(logCount(shim, 'rebrand'), 1, 'the rebrand settled in one pass');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('observers: HighLevel rewriting the logo src on the same element is re-branded and the new native value is remembered', async () => {
+  const { shim, shell, GHLC } = await bootBranding();
+  const NEW_NATIVE_SRC = 'https://native.test/new-agency.png';
+  shell.logo.setAttribute('src', NEW_NATIVE_SRC);
+  await shim.flush();
+  logoIs(shell.logo, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+  assert.equal(logCount(shim, 'logo-native-updated'), 1);
+  assert.equal(logCount(shim, 'rebrand'), 1);
+  assert.equal(mountWrites(shim, shell).filter((e) => e.src === LOC_A_LOGO).length, 2, 'A written back exactly once');
+  assert.equal(logCount(shim, 'logo-resolving'), 1, 'no second preload for a loaded URL');
+  assert.equal(logCount(shim, 'branding-observer-attached'), 1, 'same img: registrations kept');
+  assert.equal(brandingRegs(shim).length, 3);
+
+  // The same rule for alt: re-branded, and the write costs no image request.
+  shell.logo.setAttribute('alt', 'HighLevel wrote this');
+  await shim.flush();
+  assert.equal(shell.logo.getAttribute('alt'), 'Location A logo');
+  assert.equal(logCount(shim, 'logo-native-updated'), 2);
+  assert.equal(logCount(shim, 'rebrand'), 2);
+  assert.equal(mountWrites(shim, shell).filter((e) => e.src === LOC_A_LOGO).length, 2, 'an alt-only rebrand never rewrites src');
+
+  await go(shim, '/v2/agency/dashboard');
+  logoIs(shell.logo, { src: NEW_NATIVE_SRC, alt: 'HighLevel wrote this', tier: null });
+  const r = GHLC.verify();
+  assert.equal(r.observers.branding, false);
+  assert.equal(r.branding.applied, 'native');
+  assert.equal(brandingRegs(shim).length, 0);
+  assert.equal(shim.observers().length, 0, 'agency route: no observers of any kind');
+  assert.equal(logCount(shim, 'branding-observer-detached'), 1);
+  assertNoLeak(shim.console.lines, [...BRANDING_LEAKS, 'new-agency', 'HighLevel wrote'], 'branding DLV-04');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('observers: own src and alt writes never schedule a rebrand', async () => {
+  const { shim, shell } = await bootBranding();
+  await go(shim, '/v2/location/locB/dashboard');
+  await go(shim, '/v2/location/locA/dashboard');
+  await go(shim, '/v2/location/locB/dashboard');
+  logoIs(shell.logo, { src: LOC_B_LOGO, alt: 'Location B', tier: 'location' });
+  await go(shim, '/v2/location/locA/dashboard');
+  logoIs(shell.logo, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+  await shim.advanceTimers(50);
+  assert.equal(logCount(shim, 'rebrand'), 0);
+  assert.equal(logCount(shim, 'logo-native-updated'), 0);
+  // Every mount write is a tier change (the first is the shell building the
+  // native img; the native interim shows once, on the first unproven B).
+  assert.deepEqual(mountWrites(shim, shell).map((e) => e.src), [NATIVE_SRC, LOC_A_LOGO, NATIVE_SRC, LOC_B_LOGO, LOC_A_LOGO, LOC_B_LOGO, LOC_A_LOGO]);
+  assert.equal(logCount(shim, 'logo-resolving'), 2, 'A and B each preloaded once');
+  assert.equal(logCount(shim, 'branding-observer-attached'), 1, 'the same img stays watched across switches');
+  assert.equal(brandingRegs(shim).length, 3);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('observers: wholesale sidebar replacement re-brands and swaps registrations', async () => {
+  const { shim, shell, GHLC } = await bootBranding();
+  const oldAside = shell.sidebar;
+  const oldImg = shell.logo;
+  const freshImg = freshNativeImg(shim);
+  const freshAside = shim.el('aside', { id: 'sidebar-v2', class: 'sidebar-v2-location' }, [
+    shim.el('a', { class: 'hx-logo-link', href: '/v2/agency/dashboard' }, [freshImg]),
+    shim.el('select', { id: 'location-switcher-sidbar-v2' }),
+  ]);
+  shim.document.body.replaceChild(freshAside, oldAside);
+  await shim.flush();
+  assert.equal(shim.document.querySelector('#sidebar-v2'), freshAside);
+  logoIs(freshImg, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+  assert.equal(oldAside.isConnected, false);
+  assert.equal(shim.document.querySelectorAll('img.agency-logo').length, 1);
+  const regs = brandingRegs(shim);
+  assertOneBrandingInstance(regs);
+  assert.ok(regs.some((r) => r.target === freshAside && r.options.subtree === true), 'root follows the new sidebar');
+  assert.ok(regs.some((r) => r.target === shim.document.body && r.options.subtree === false), 'anchor is still the sidebar parent');
+  assert.ok(regs.some((r) => r.target === freshImg && r.options.attributes), 'img registration follows the new img');
+  assert.ok(!shim.observers().some((r) => r.target === oldAside || r.target === oldImg), 'nothing targets the old sidebar or img');
+  assert.equal(logCount(shim, 'rebrand'), 1);
+  assert.equal(logCount(shim, 'branding-observer-attached'), 2);
+  assert.equal(logCount(shim, 'branding-observer-detached'), 1);
+  assert.equal(GHLC.verify().observers.branding, true);
+  assert.equal(shim.listenerCount(oldImg, 'error'), 0);
+  assert.equal(shim.listenerCount(freshImg, 'error'), 1);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('observers: unrelated sidebar mutations cost one coalesced no-op rebrand', async () => {
+  const { shim, shell } = await bootBranding();
+  const writes = mountWrites(shim, shell).length;
+  const applied = logCount(shim, 'logo-applied');
+  for (let i = 0; i < 5; i++) shell.sidebar.appendChild(shim.el('div', { class: 'hx-nav-item' }));
+  await shim.flush();
+  assert.equal(logCount(shim, 'rebrand'), 1, 'five mutations, one rebrand');
+  assert.equal(mountWrites(shim, shell).length, writes, 'the no-op rebrand wrote nothing');
+  assert.equal(logCount(shim, 'logo-applied'), applied, 'and logged no apply');
+  assert.equal(logCount(shim, 'branding-observer-attached'), 1, 'watch was a no-op: same img, same root');
+  logoIs(shell.logo, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+  await shim.advanceTimers(50);
+  assert.equal(logCount(shim, 'rebrand'), 1, 'nothing re-triggered');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('observers: native branding keeps no observer; an agency logo keeps one on agency routes', async () => {
+  const { shim, GHLC } = await bootBranding({ path: '/v2/location/locZ/dashboard' });
+  assert.equal(GHLC.verify().observers.branding, false);
+  assert.equal(GHLC.verify().branding.applied, 'native');
+  assert.equal(brandingRegs(shim).length, 0);
+  assert.equal(logCount(shim, 'branding-observer-attached'), 0);
+  await go(shim, '/v2/location/locA/dashboard');
+  assert.equal(GHLC.verify().observers.branding, true);
+  assert.equal(brandingRegs(shim).length, 3);
+  await go(shim, '/v2/agency/dashboard');
+  assert.equal(GHLC.verify().observers.branding, false);
+  assert.equal(brandingRegs(shim).length, 0);
+  assert.equal(shim.observers().length, 0);
+  assert.equal(shim.errors.length, 0);
+
+  // A configured agency logo is a non-native tier on agency routes too.
+  const agency = await bootBranding({ path: '/v2/agency/dashboard', config: withAgencyLogo(), shell: { sidebarMode: 'agency' } });
+  const ar = agency.GHLC.verify();
+  assert.equal(ar.observers.branding, true);
+  assert.equal(ar.branding.applied, 'agency');
+  assert.equal(brandingRegs(agency.shim).length, 3);
+  assert.equal(agency.shim.observers().length, 3, 'the branding observer is the only one on an agency page');
+  assert.equal(agency.shim.errors.length, 0);
+
+  // Resolving counts as branded: the observer is up while the preload is out.
+  const held = await bootBranding({ before: (s) => s.setImageOutcome(LOC_A_LOGO, 'hold') });
+  logoIs(held.shell.logo, { src: NATIVE_SRC, alt: 'Native Agency', tier: null });
+  let hr = held.GHLC.verify();
+  assert.deepEqual(plain(hr.branding), { mount: 'sidebar', found: true, applied: 'native', resolving: true, failed: 0, loaded: 0 });
+  assert.equal(hr.observers.branding, true);
+  assert.equal(brandingRegs(held.shim).length, 3);
+  held.shim.releaseImage(LOC_A_LOGO, 'load');
+  await held.shim.flush();
+  hr = held.GHLC.verify();
+  assert.deepEqual(plain(hr.branding), { mount: 'sidebar', found: true, applied: 'location', resolving: false, failed: 0, loaded: 1 });
+  assert.equal(hr.observers.branding, true);
+  assert.equal(held.shim.errors.length, 0);
+
+  // A failed preload with nothing else to show ends at native with no observer.
+  const broken = await bootBranding({ path: '/v2/location/locC/dashboard', before: (s) => s.setImageOutcome('./fixtures/logos/missing.svg', 'error') });
+  logoIs(broken.shell.logo, { src: NATIVE_SRC, alt: 'Native Agency', tier: null });
+  const br = broken.GHLC.verify();
+  assert.deepEqual(plain(br.branding), { mount: 'sidebar', found: true, applied: 'native', resolving: false, failed: 1, loaded: 0 });
+  assert.equal(br.observers.branding, false);
+  assert.equal(brandingRegs(broken.shim).length, 0);
+  assert.equal(logCount(broken.shim, 'branding-observer-attached'), 1, 'watched while resolving');
+  assert.equal(logCount(broken.shim, 'branding-observer-detached'), 1, 'released once native was final');
+  assert.equal(broken.shim.errors.length, 0);
+});
+
+scenario('verify: branding report shape, header mount, and hygiene', async () => {
+  const { shim, GHLC } = await bootBranding();
+  const r = GHLC.verify();
+  assert.deepEqual(plain(r.branding), { mount: 'sidebar', found: true, applied: 'location', resolving: false, failed: 0, loaded: 1 });
+  assert.deepEqual(plain(r.observers), { header: true, contact: false, branding: true });
+  assert.equal(r.waiting.branding, false);
+  const text = JSON.stringify(r);
+  for (const s of ['loc-a.svg', 'logos/', 'native.test', 'Location A', 'Test Agency']) {
+    assert.ok(!text.includes(s), `verify report must not contain "${s}"`);
+  }
+  // Counters follow the session memory.
+  shim.setImageOutcome('./fixtures/logos/missing.svg', 'error');
+  await go(shim, '/v2/location/locC/dashboard');
+  assert.deepEqual(plain(GHLC.verify().branding), { mount: 'sidebar', found: true, applied: 'native', resolving: false, failed: 1, loaded: 1 });
+  assert.ok(!JSON.stringify(GHLC.verify()).includes('missing.svg'));
+  assert.equal(shim.errors.length, 0);
+
+  // Header mount: agency.logoMount = 'header' brands the header img and leaves the sidebar img native.
+  const headerCfg = loadFixture();
+  headerCfg.agency.logoMount = 'header';
+  const h = await bootBranding({
+    config: headerCfg,
+    before: (s) => s.document.querySelector('.hl_header').appendChild(s.el('img', { class: 'agency-logo', src: 'https://native.test/header.png', alt: 'Header logo' })),
+  });
+  const hr = h.GHLC.verify();
+  assert.equal(hr.branding.mount, 'header');
+  assert.equal(hr.branding.found, true);
+  assert.equal(hr.branding.applied, 'location');
+  assert.equal(hr.mounts.headerLogo, true);
+  assert.equal(hr.observers.branding, true);
+  const headerImg = h.shim.document.querySelector('.hl_header img.agency-logo');
+  logoIs(headerImg, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+  logoIs(h.shell.logo, { src: NATIVE_SRC, alt: 'Native Agency', tier: null });
+  const hRegs = brandingRegs(h.shim);
+  assertOneBrandingInstance(hRegs);
+  assert.ok(hRegs.some((x) => x.target === h.shell.header && x.options.subtree === true), 'root is the header for the header mount');
+  assert.ok(hRegs.some((x) => x.target === headerImg && x.options.attributes), 'img registration is the header img');
+  assert.ok(!h.shim.observers().some((x) => x.target === h.shell.logo), 'the sidebar img is not observed');
+  assert.equal(h.shim.errors.length, 0);
+
+  // An unknown mount name falls back to the adapter default.
+  const bogusCfg = loadFixture();
+  bogusCfg.agency.logoMount = 'bogus';
+  const b = await bootBranding({ config: bogusCfg });
+  assert.equal(b.GHLC.verify().branding.mount, 'sidebar');
+  logoIs(b.shell.logo, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+  assert.equal(b.shim.errors.length, 0);
 });
 
 // ---------------------------------------------------------------------------

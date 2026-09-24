@@ -616,6 +616,10 @@
     navTimer: null,
     // Observers section: one bounded observer set per placement, or null.
     watch: { header: null, contact: null },
+    // Observers section: the single MutationObserver instance that keeps the
+    // logo mount branded across HighLevel re-renders, or null while native
+    // shows (BRD-05). { mo, img, root, anchor }.
+    brandingWatch: null,
     renderTimers: { header: null, contact: null },
     mountWaits: { header: null, contact: null, branding: null },
     // D-02: bounded poll for contact fields that populate after the toolbar
@@ -685,10 +689,9 @@
     // A logo still resolving for the old location must never land on the new
     // one (BRD-03): the preload dies with the generation that started it.
     cancelLogoPreload();
-    if (state.branding.timer !== null) {
-      clearTimeout(state.branding.timer);
-      state.branding.timer = null;
-    }
+    // A rebrand queued by the old route's observer is moot: renderAll below
+    // reconciles the mount for the new route.
+    cancelScheduledBranding();
     renderAll();
     log('nav', { reason: reason, generation: state.generation });
     log('context', {
@@ -1335,7 +1338,17 @@
 
   function captureNativeLogo(mount) {
     var branding = state.branding;
-    if (branding.native && branding.native.el === mount) return;
+    if (branding.native && branding.native.el === mount) {
+      // While nothing of ours is on the element, whatever it carries is
+      // native by definition. Re-read it so a HighLevel rewrite made while
+      // native was showing (no observer then, A-11) is what restore puts back.
+      if (!mount.hasAttribute(OWN.logoAttr)) {
+        branding.native.src = mount.getAttribute('src');
+        branding.native.alt = mount.getAttribute('alt');
+        branding.native.srcset = mount.getAttribute('srcset');
+      }
+      return;
+    }
     branding.native = {
       el: mount,
       src: mount.getAttribute('src'),
@@ -1379,9 +1392,11 @@
     // srcset would let the browser pick a native variant over our src.
     if (mount.hasAttribute('srcset')) mount.removeAttribute('srcset');
     // Policy before src, so the request the src write starts carries it (P-01).
+    // Only attributes that differ are written: a rebrand after HighLevel
+    // reset the alt alone must not start a second image request.
     mount.setAttribute('referrerpolicy', 'no-referrer');
-    mount.setAttribute('alt', alt);
-    mount.setAttribute('src', candidate.src);
+    if (mount.getAttribute('alt') !== alt) mount.setAttribute('alt', alt);
+    if (mount.getAttribute('src') !== candidate.src) mount.setAttribute('src', candidate.src);
     mount.setAttribute(OWN.logoAttr, candidate.tier);
     mount.classList.add(OWN.logoClass);
     recordApplied(candidate.tier, candidate.src, alt);
@@ -1521,6 +1536,8 @@
       }
       if (resolveBranding(state.config, state.ctx.locationId).length) waitForMount('branding');
       else cancelMountWait('branding');
+      // Nothing to keep branded; the bounded wait, not an observer, finds the mount.
+      unwatchBranding();
       return;
     }
     cancelMountWait('branding');
@@ -1530,10 +1547,19 @@
     });
     var first = candidates[0] || null;
     if (!first) {
+      // Native is the resting state: no tier to defend, so no observer (A-11).
+      // Detach before the restore so its writes are never even delivered.
       cancelLogoPreload();
+      unwatchBranding();
       restoreNativeLogo(mount);
       return;
     }
+    // A non-native tier is about to be applied or resolved: watch before
+    // writing (BRD-05). Every write below records appliedSrc/appliedAlt
+    // synchronously, and mutation records arrive in a microtask, so the
+    // observer sees only self-inflicted records for them. A no-op while the
+    // same img is still watched; a new img or root swaps the registrations.
+    watchBranding(mountName, mount);
     if (first.tier === 'agency' || branding.loaded[first.src]) {
       cancelLogoPreload();
       applyLogo(mount, first);
@@ -1664,6 +1690,96 @@
   }
 
   /**
+   * Branding observer (BRD-05, A-11): exactly ONE MutationObserver instance
+   * keeps the logo mount branded while a non-native tier is applied or
+   * resolving. It is registered on three targets, all scoped to the area the
+   * logo lives in, never the whole page:
+   *   root    the sidebar (or header) container, { childList, subtree }: the
+   *           img replaced anywhere inside it.
+   *   anchor  the root's parent, { childList } only: the whole container
+   *           replaced, which nothing inside it can see.
+   *   img     the mount itself, { attributes, attributeFilter: [src, alt] }:
+   *           HighLevel resetting the logo on the same element.
+   * Native showing means no observer at all: an agency page without an agency
+   * logo carries no branding footprint. A new img or root swaps the
+   * registrations; they never accumulate.
+   */
+  function watchBranding(mountName, img) {
+    var slot = state.brandingWatch;
+    if (slot && slot.img === img && slot.anchor.isConnected && anchorFor(slot.root) === slot.anchor) return;
+    unwatchBranding();
+    var root = adapter.findLogoRoot(mountName, img);
+    var anchor = anchorFor(root);
+    var mo = new MutationObserver(onBrandingMutation);
+    mo.observe(root, { childList: true, subtree: true });
+    mo.observe(anchor, { childList: true, subtree: false });
+    mo.observe(img, { attributes: true, attributeFilter: ['src', 'alt'] });
+    state.brandingWatch = { mo: mo, img: img, root: root, anchor: anchor };
+    log('branding-observer-attached', { mount: mountName });
+  }
+
+  function unwatchBranding() {
+    var slot = state.brandingWatch;
+    if (!slot) return;
+    slot.mo.disconnect();
+    state.brandingWatch = null;
+    log('branding-observer-detached', { mount: state.branding.mountName || 'none' });
+  }
+
+  /**
+   * A-12: an attribute record on the img is self-inflicted when the attribute
+   * now holds what this script last wrote (appliedSrc / appliedAlt); anything
+   * else is HighLevel's write, so the native capture learns the new value
+   * before the tier is put back. childList records are always HighLevel's
+   * (branding adds no nodes). Any foreign record schedules ONE coalesced
+   * rebrand; the rebrand is an idempotent reconcile, so a burst of unrelated
+   * sidebar mutations costs a single no-op pass (T-02-04).
+   */
+  function onBrandingMutation(records) {
+    var slot = state.brandingWatch;
+    if (!slot) return;
+    var branding = state.branding;
+    var foreign = false;
+    for (var i = 0; i < records.length; i++) {
+      var record = records[i];
+      if (record.type === 'attributes') {
+        if (record.target !== slot.img) continue;
+        var name = record.attributeName;
+        var value = slot.img.getAttribute(name);
+        var own = name === 'src' ? branding.appliedSrc : branding.appliedAlt;
+        if (value === own) continue;
+        if (branding.native && branding.native.el === slot.img) {
+          if (name === 'src') branding.native.src = value;
+          else branding.native.alt = value;
+        }
+        foreign = true;
+        log('logo-native-updated', { attribute: name, generation: state.generation });
+      } else if (record.type === 'childList') {
+        foreign = true;
+      }
+    }
+    if (foreign) scheduleBranding('mutation');
+  }
+
+  // Coalesces a burst of native mutations into one branding reconcile on the
+  // next tick, mirroring scheduleRender. state.branding.timer is the slot;
+  // applyContext cancels it because the new route reconciles anyway.
+  function scheduleBranding(reason) {
+    cancelScheduledBranding();
+    state.branding.timer = setTimeout(function () {
+      state.branding.timer = null;
+      renderBranding('rebrand');
+      log('rebrand', { reason: reason });
+    }, 0);
+  }
+
+  function cancelScheduledBranding() {
+    if (state.branding.timer === null) return;
+    clearTimeout(state.branding.timer);
+    state.branding.timer = null;
+  }
+
+  /**
    * Bounded, route-scoped retry for a mount that appears shortly after
    * navigation: one querySelector pass every MOUNT_WAIT_INTERVAL_MS for at
    * most MOUNT_WAIT_MAX_MS (60 passes), then give up and leave the native UI
@@ -1712,6 +1828,9 @@
    */
   function verify() {
     var region = adapter.findContactRegion();
+    // Branding is reported as mount name, tier, booleans, and counts only:
+    // no logo URL, alt text, or location name (T-02-06).
+    var logoMountName = state.branding.mountName || resolveLogoMount(state.config);
     var report = {
       version: VERSION,
       route: computeContext(),
@@ -1731,7 +1850,15 @@
         phoneCandidates: adapter.countMatches(region, selectors.contactPhone[0]) + adapter.countMatches(region, selectors.contactPhone[1])
       },
       buttons: getState().buttons,
-      observers: { header: !!state.watch.header, contact: !!state.watch.contact },
+      branding: {
+        mount: logoMountName,
+        found: !!adapter.findLogoMount(logoMountName),
+        applied: state.branding.applied,
+        resolving: !!state.branding.resolving,
+        failed: Object.keys(state.branding.failed).length,
+        loaded: Object.keys(state.branding.loaded).length
+      },
+      observers: { header: !!state.watch.header, contact: !!state.watch.contact, branding: !!state.brandingWatch },
       waiting: {
         header: !!state.mountWaits.header,
         contact: !!state.mountWaits.contact,
