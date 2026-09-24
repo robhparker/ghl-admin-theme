@@ -1349,6 +1349,14 @@
       }
       return;
     }
+    if (mount.hasAttribute(OWN.logoAttr)) {
+      // Our marks on an element this script holds no capture for (a path the
+      // missing-mount restore is meant to make unreachable): strip them
+      // rather than record our own logo as native (T-02-03).
+      mount.removeAttribute(OWN.logoAttr);
+      mount.removeAttribute('referrerpolicy');
+      mount.classList.remove(OWN.logoClass);
+    }
     branding.native = {
       el: mount,
       src: mount.getAttribute('src'),
@@ -1526,6 +1534,21 @@
     if (!mount) {
       // Missing mount: omit the customization, leave the native UI alone, and
       // wait a bounded time for it only when this context has a logo to show.
+      // Nothing to keep branded; the bounded wait, not an observer, finds the
+      // mount. Detach first so the restore below is never delivered.
+      unwatchBranding();
+      if (branding.native) {
+        // The element slipped out of the selector's reach (class rewrite,
+        // detach and re-attach, container re-keyed) still wearing our tier.
+        // Put HighLevel's values back before forgetting it, so an element
+        // found again is captured as native and never as the previous
+        // client's logo (T-02-03). The listener goes with the capture.
+        restoreNativeLogo(branding.native.el);
+        if (branding.errorBound === branding.native.el) {
+          branding.native.el.removeEventListener('error', onLogoError);
+          branding.errorBound = null;
+        }
+      }
       branding.native = null;
       branding.applied = null;
       branding.appliedSrc = null;
@@ -1536,8 +1559,6 @@
       }
       if (resolveBranding(state.config, state.ctx.locationId).length) waitForMount('branding');
       else cancelMountWait('branding');
-      // Nothing to keep branded; the bounded wait, not an observer, finds the mount.
-      unwatchBranding();
       return;
     }
     cancelMountWait('branding');

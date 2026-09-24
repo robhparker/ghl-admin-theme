@@ -2353,6 +2353,44 @@ scenario('observers: native branding keeps no observer; an agency logo keeps one
   assert.equal(broken.shim.errors.length, 0);
 });
 
+scenario('review CR-01: a branded img that stops matching the mount selector is restored, and once re-found is captured as native, never as the previous client logo', async () => {
+  const { shim, shell, GHLC } = await bootBranding();
+  logoIs(shell.logo, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+  assert.equal(shim.listenerCount(shell.logo, 'error'), 1);
+
+  // HighLevel rewrites the img class through a framework binding: the same
+  // element stays in the sidebar wearing our tier but no longer matches the
+  // mount selector. It must not be left branded out of sight.
+  shell.logo.setAttribute('class', 'logo-v3');
+  GHLC.__test.renderAll();
+  await shim.flush();
+  logoIs(shell.logo, { src: NATIVE_SRC, alt: 'Native Agency', tier: null });
+  assert.equal(shell.logo.getAttribute('class'), 'logo-v3', 'the HighLevel class is left alone');
+  assert.equal(shim.listenerCount(shell.logo, 'error'), 0, 'error listener unbound with the capture');
+  assert.equal(brandingRegs(shim).length, 0, 'no observer without a mount');
+  assert.equal(logCount(shim, 'logo-mount-missing'), 1);
+
+  // The binding settles: the same element matches again and is captured
+  // fresh. What it carries now is HighLevel's logo, so the capture is right.
+  shell.logo.setAttribute('class', 'agency-logo');
+  GHLC.__test.renderAll();
+  await shim.flush();
+  logoIs(shell.logo, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
+  assert.equal(logCount(shim, 'logo-resolving'), 1, 'a loaded URL is re-applied without a second preload');
+  assert.equal(shim.listenerCount(shell.logo, 'error'), 1, 'error listener bound once on the re-found img');
+  assertOneBrandingInstance(brandingRegs(shim));
+
+  // Every native restore from here shows HighLevel's logo, never Location A's.
+  await go(shim, '/v2/agency/dashboard');
+  logoIs(shell.logo, { src: NATIVE_SRC, alt: 'Native Agency', tier: null });
+  assert.equal(GHLC.verify().branding.applied, 'native');
+  await go(shim, '/v2/location/locZ/dashboard');
+  logoIs(shell.logo, { src: NATIVE_SRC, alt: 'Native Agency', tier: null });
+  assert.equal(brandingRegs(shim).length, 0, 'native resting state keeps no branding observer');
+  assertNoLeak(shim.console.lines, BRANDING_LEAKS, 'branding DLV-04');
+  assert.equal(shim.errors.length, 0);
+});
+
 scenario('verify: branding report shape, header mount, and hygiene', async () => {
   const { shim, GHLC } = await bootBranding();
   const r = GHLC.verify();
