@@ -384,8 +384,10 @@
     return [];
   }
 
-  // Boolean presence of every mount selector, for verify mode (FND-04). No
-  // element or value leaves the adapter, only true/false.
+  // Presence of every mount selector, for verify mode (FND-04), plus the name
+  // of the contact-mount strategy that resolved ('toolbar-anchor', 'selector',
+  // or null). No element or config value leaves the adapter: only booleans
+  // and that strategy name.
   function probe() {
     return {
       sidebar: !!document.querySelector(selectors.sidebar),

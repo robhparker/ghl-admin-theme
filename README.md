@@ -155,7 +155,7 @@ The shipped sample, `config/agency-config.json`, demonstrates agency defaults, t
 
 Append `?ghlc-debug=1` to any HighLevel URL, or run `GHLC.verify()` in the browser console. The report contains:
 
-- `mounts`: a boolean per adapter selector (`sidebar`, `header`, `headerMount`, `contactMount`, `contactRegion`, `contactEmailField`, `contactPhoneField`, `sidebarLogo`, `headerLogo`, `locationSwitcher`, `backToAgency`, `sidebarNavActive`).
+- `mounts`: a boolean per adapter selector (`sidebar`, `header`, `headerMount`, `contactMount`, `contactRegion`, `contactEmailField`, `contactPhoneField`, `sidebarLogo`, `headerLogo`, `locationSwitcher`, `backToAgency`, `sidebarNavActive`), plus `contactMountVia`: a string naming the contact-mount strategy that resolved (`toolbar-anchor` or `selector`), or `null` when neither did.
 - `branding`: which mount is in use, whether it was found, and which tier (`location`, `agency`, or `native`) is currently applied.
 - `theme`: whether the sidebar root was found, which token names are applied, how many nav items are marked, how many tokens were ignored, and whether the text fell back.
 - `observers` and `waiting`: which mutation observers are attached and which mounts are being waited for.
