@@ -11,8 +11,8 @@ HighLevel does not support custom JavaScript or CSS and can change its interface
 Open **Agency Settings -> Company** (the whitelabel and company settings area) and find the **Custom JavaScript** field. Paste the script tag below and save. The field takes HTML: HighLevel inserts its contents into every page, and a `<script>` tag is what makes the browser load the pinned release from jsDelivr. The `data-config` attribute tells the script where its config lives. The stylesheet is loaded automatically from the same folder as the script (`src/ghl-customizer.css`); a `data-css` attribute on the script element overrides that location.
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.1/src/ghl-customizer.js"
-        data-config="https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.1/config/agency-config.json"
+<script src="https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.2/src/ghl-customizer.js"
+        data-config="https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.2/config/agency-config.json"
         defer></script>
 ```
 
@@ -21,8 +21,8 @@ Do not paste raw JavaScript into this field. Verified on 2026-09-25: HighLevel r
 ```js
 (function () {
   var s = document.createElement('script');
-  s.src = 'https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.1/src/ghl-customizer.js';
-  s.setAttribute('data-config', 'https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.1/config/agency-config.json');
+  s.src = 'https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.2/src/ghl-customizer.js';
+  s.setAttribute('data-config', 'https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.2/config/agency-config.json');
   s.defer = true;
   document.head.appendChild(s);
 })();
@@ -32,7 +32,7 @@ Then save, reload HighLevel, open a location that has an entry in the config, an
 
 ## Hosting on jsDelivr
 
-jsDelivr serves files straight from a public GitHub repository. Each URL has four parts after the `/gh/` prefix on the `cdn.jsdelivr.net` host: the repository owner, the repository name, an `@` followed by a git tag, and the file path. The install URLs above are that pattern filled in with this repository and the `v0.1.1` tag.
+jsDelivr serves files straight from a public GitHub repository. Each URL has four parts after the `/gh/` prefix on the `cdn.jsdelivr.net` host: the repository owner, the repository name, an `@` followed by a git tag, and the file path. The install URLs above are that pattern filled in with this repository and the `v0.1.2` tag.
 
 Rules that make this safe:
 
@@ -126,7 +126,7 @@ HighLevel's Inbound Webhook trigger matches the contact on `email` or `phone` in
 ```json
 "iDPNGKoFsjvf9wUCrk3V": {
   "name": "Dummy Clinic",
-  "logoUrl": "https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.1/test/fixtures/logos/loc-a.svg",
+  "logoUrl": "https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.2/test/fixtures/logos/loc-a.svg",
   "logoAlt": "Dummy Clinic",
   "theme": {
     "primary": "#0f766e",

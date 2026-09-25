@@ -1,5 +1,5 @@
 /*!
- * GHL Customizer (admin-theme) — scoped stylesheet, version 0.1.1
+ * GHL Customizer (admin-theme) — scoped stylesheet, version 0.1.2
  * Every selector carries a ghlc marker (a .ghlc- class or a data-ghlc- attribute
  * the script writes) so nothing bleeds into HighLevel's native UI.
  * Button tokens live on .ghlc-group; a location or agency theme overrides them
