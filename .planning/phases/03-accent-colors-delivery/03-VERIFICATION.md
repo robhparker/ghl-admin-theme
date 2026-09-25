@@ -1,11 +1,10 @@
 ---
 phase: 03-accent-colors-delivery
-verified: 2026-09-25T12:47:01Z
+verified: 2026-09-25T12:52:57Z
 status: passed
 score: 17/17 must-haves verified
 covered_files:
   - .planning/REQUIREMENTS.md
-  - .planning/ROADMAP.md
   - .planning/phases/03-accent-colors-delivery/03-01-PLAN.md
   - .planning/phases/03-accent-colors-delivery/03-01-SUMMARY.md
   - .planning/phases/03-accent-colors-delivery/03-02-PLAN.md
@@ -25,6 +24,7 @@ covered_files:
   - test/fixtures/logos/loc-b.svg
   - test/harness.html
   - test/run.mjs
+covered_digest: 
 covered_digest: "v1:sha256:b27d2945a3cb32d7ce52d8ae517ea609dbce607f8da3b1fb2cf6fa99f88d6c8f"
 behavior_unverified: 0
 overrides_applied: 0
@@ -271,3 +271,7 @@ No gaps. All four roadmap Success Criteria are implemented, wired, exercised by 
 
 _Verified: 2026-09-25T12:47:01Z_
 _Verifier: Claude (gsd-verifier)_
+
+## Orchestrator amendment (2026-09-25)
+
+W-01 (the CSS-scoping gate in `test/run.mjs` accepted the `:not(#ghlc-boost)` substring as a marker) was fixed as this report recommended, in commit 79d8c50: the gate now strips the boost and requires `.ghlc-` or `[data-ghlc-`. `npm test` passes 119/119 after the change. No implementation file changed. `.planning/ROADMAP.md` was removed from `covered_files` because the phase transition edits it by design. The fingerprint above was computed over the remaining covered files at this commit.
