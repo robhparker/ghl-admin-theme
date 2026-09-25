@@ -144,3 +144,11 @@
 [data-ghlc-theme~="nav-active"]:not(#ghlc-boost):not(#ghlc-boost) {
   background-color: var(--ghlc-nav-active);
 }
+
+/* HighLevel gives a hovered nav item the same light background as its active
+   item, which the themed pale text cannot be read on. While the sidebar text is
+   themed, a hovered item takes the navActive color when the theme sets one and
+   no highlight otherwise; HighLevel's own opacity change still marks the hover. */
+[data-ghlc-theme~="sidebar-text"]:not(#ghlc-boost):not(#ghlc-boost) a:hover {
+  background-color: var(--ghlc-nav-active, transparent);
+}
