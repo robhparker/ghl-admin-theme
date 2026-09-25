@@ -226,7 +226,9 @@ check('static: every stylesheet selector is ghlc-scoped and nothing is marked im
     if (prelude.startsWith('@')) continue;
     for (const selector of prelude.split(',').map((s) => s.trim()).filter(Boolean)) {
       checked += 1;
-      assert.ok(selector.includes('ghlc'), `selector "${selector}" carries no ghlc marker`);
+      // The marker must be a real class or data-attribute hook the script writes; the
+      // :not(#ghlc-boost) specificity boost also contains 'ghlc' and must not count.
+      assert.ok(/\.ghlc-|\[data-ghlc-/.test(selector.replace(/:not\(#ghlc-boost\)/g, '')), `selector "${selector}" carries no ghlc marker`);
     }
   }
   assert.ok(checked >= 15, `selectors were checked (${checked})`);
