@@ -1,18 +1,14 @@
 ---
-status: testing
+status: partial
 phase: 03-accent-colors-delivery
 source: [03-VERIFICATION.md]
 started: 2026-09-25T02:15:52Z
-updated: 2026-09-25T02:15:52Z
+updated: 2026-09-25T02:39:37Z
 ---
 
 ## Current Test
 
-number: 1
-name: Live install / snippet form
-expected: |
-  The customizer loads; GHLC.verify() in the console reports config.loaded true, config.schemaVersion 1. Record which form the field accepted; if only the script-tag form works, update README 'Install in HighLevel' and ship as v0.1.1.
-awaiting: user response
+[testing paused — 7 items outstanding: tests 1-6 need Rob's logged-in HighLevel session (Chrome extension was not connected this session; tests 1, 5, 6 also need the snippet pasted into Agency Settings), test 9 is Rob's release call]
 
 ## Tests
 
@@ -49,12 +45,17 @@ result: [pending]
 ### 7. Harness walkthrough (a)-(g)
 test: Harness walkthrough (03-01 human-check): npm run serve; open http://localhost:5173/test/harness.html?ghlc-debug=1 and step (a) Agency dashboard, (b) Location A Dashboard, (c) Location A Contact X, (d) Location B Contact Z, (e) Location Z / Agency, (f) back on A press Toggle active nav item / Replace whole sidebar / Collapse-expand, (g) inspect the harness's own controls.
 expected: (a) native dark sidebar, no marker, theme.applied ['primary'], observers.theme false. (b) sidebar #1f2937 / #f9fafb, Dashboard item #374151, orange #c2410c buttons with white text, theme.applied all four, theme.navActive 1. (c) Contacts item highlighted, Dashboard not; Send Invite orange. (d) sidebar white with #101828 text (fallback), active item #e5e7eb, teal #0f766e buttons; theme.fallback true, theme.ignored 1. (e) native sidebar, no marker. (f) after each press exactly one highlighted item, colors kept, exactly one 'retheme' log per press. (g) webhook stub radios, log, banner keep native harness colors.
-result: [pending]
+result: pass
+source: automated
+verified: 2026-09-25 via Playwright against http://localhost:5173/test/harness.html?ghlc-debug=1. (a) route null, theme.applied ['primary'], observers.theme false, no marker. (b) sidebar rgb(31,41,55)/rgb(249,250,251), Dashboard item rgb(55,65,81), buttons rgb(194,65,12) on white, applied all four, navActive 1. (c) Contacts marked, Dashboard not, Send Invite orange. (d) sidebar white / rgb(16,24,40), active rgb(229,231,235), buttons rgb(15,118,110), fallback true, ignored 1. (e) native, marker null. (f) toggle nav / replace sidebar / collapse / expand: exactly one marked item each time, colors kept, exactly one 'retheme' log per press. (g) log, radios, banner and controls keep native colors, no ghlc marker.
+note: First pass showed the sidebar container's computed colors unchanged in (b) and (d) although the marker and --ghlc-* properties were set. Cause: the harness linked the customizer stylesheet BEFORE its own <style>, so .hx-sidebar (same specificity, later in source) won the tie. Harness-only artifact (the script appends its link at runtime after HighLevel's sheets). Fixed inline in 35c9f08, suite 119/119, re-verified; see Gaps G-03-7 (resolved).
 
 ### 8. D-06 originality judgment (README vs reference repo)
 test: D-06 judgment prohibition (DLV-01): skim README.md against the reference project's README (https://github.com/dachi-khelashvili/ghl-customizer, revision ff7c8e4).
 expected: No copied prose, installation steps, or configuration examples; the reference is named only in NOTICE.md.
-result: [pending]
+result: pass
+source: automated
+verified: 2026-09-25. Fetched the reference README at ff7c8e4 (137 lines). Only three shared 6-word sequences exist and all are the generic 'script src https cdn jsdelivr net gh' URL pattern; no shared prose, install steps, or config examples. None of the reference's config keys (branding, headerButtons, userMenu, widgets, dashboardCustomizer, featureToggles, primaryColor, dashboardTitle) or selectors (hl-header-*, hl-sidebar, hl-user-menu) appear in README.md. The reference repo is named only in NOTICE.md. Reference tree at ff7c8e4 = README.md, agency-config.json, ghl-customizer.js (no LICENSE file, as NOTICE.md states), although its README's last section claims 'MIT License'; nothing was copied so this does not change the originality finding.
 
 ### 9. Release decision: tag v0.1.1 for WR-01 drift
 test: Release decision (WR-01 drift): decide whether to tag v0.1.1 from HEAD 6d357f1 so the served script matches the README.
@@ -64,10 +65,25 @@ result: [pending]
 ## Summary
 
 total: 9
-passed: 0
+passed: 2
 issues: 0
-pending: 9
+pending: 7
 skipped: 0
 blocked: 0
 
 ## Gaps
+
+- gap_id: G-03-7
+  truth: "Harness walkthrough (b) shows sidebar #1f2937 / #f9fafb and (d) white / #101828"
+  status: resolved
+  reason: "Automated run: sidebar container computed colors stayed native (#101828 / #d0d5dd) in (b) and (d) while marker and custom properties were set"
+  severity: minor
+  test: 7
+  root_cause: "test/harness.html linked src/ghl-customizer.css before its own <style>; the harness .hx-sidebar rule has the same specificity as [data-ghlc-theme~=sidebar-bg] and, being later in source, won the cascade. Harness-only: the script appends its link at runtime after the app stylesheets in HighLevel."
+  artifacts:
+    - path: "test/harness.html"
+      issue: "customizer <link> placed before the harness <style>"
+  missing:
+    - "Move the customizer <link> after the harness <style> so the harness mirrors HighLevel's load order"
+  resolved_by: "commit 35c9f08 (inline fix during UAT, suite 119/119, re-verified in Playwright)"
+  resolved_at: 2026-09-25
