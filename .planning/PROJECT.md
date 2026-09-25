@@ -12,22 +12,22 @@ From an open contact record, a staff member can press one button and reliably tr
 
 ### Validated
 
-(None yet — ship to validate)
+- ✓ Resolve the active location ID on initial load, in-app navigation, back/forward, and location switching — Phase 1
+- ✓ Configurable link buttons in a global header placement, scoped by location — Phase 1
+- ✓ Contact action button on the individual contact record that POSTs contact and location IDs to a HighLevel Inbound Webhook workflow trigger (Send Invite) — Phase 1
+- ✓ Button states: ready, submitting, queued, unavailable, failed; keyboard accessible; no duplicate clicks — Phase 1
+- ✓ Reapply on native re-render without duplicating buttons, listeners, or observers — Phase 1
+- ✓ HighLevel selectors and route parsing isolated in a small adapter with a debug/verify mode — Phase 1
+- ✓ Original code with a NOTICE file recording the reference project, its revision, and that no code was copied — Phase 1
+- ✓ Replace the agency logo with the configured client logo for the active location, in one agreed position (sidebar) — Phase 2
+- ✓ Fall back to the agency logo, then the native HighLevel appearance, when a location is unknown or its logo fails — Phase 2
+- ✓ Immediately clear the previous location's branding on switch; late responses from a previous location never overwrite the current one — Phase 2
+- ✓ Optional accent colors (primary, sidebar background, sidebar text, active nav) applied only to verified surfaces, with contrast-safe fallbacks — Phase 3 (live-verified on Dummy Clinic, v0.1.1)
+- ✓ Global `enabled` flag; disabling or removing the script restores native UI after reload — Phase 3 (kill switch and rollback rehearsed live)
 
 ### Active
 
-- [ ] Resolve the active location ID on initial load, in-app navigation, back/forward, and location switching
-- [ ] Replace the agency logo with the configured client logo for the active location, in one agreed position
-- [ ] Fall back to the agency logo, then the native HighLevel appearance, when a location is unknown or its logo fails
-- [ ] Immediately clear the previous location's branding on switch; late responses from a previous location never overwrite the current one
-- [ ] Optional accent colors (primary, sidebar background, sidebar text, active nav) applied only to verified surfaces, with contrast-safe fallbacks
-- [ ] Configurable link buttons in a global header placement, scoped by location
-- [ ] Contact action button on the individual contact record that POSTs contact and location IDs to a HighLevel Inbound Webhook workflow trigger (Send Invite)
-- [ ] Button states: ready, submitting, queued, unavailable, failed; keyboard accessible; no duplicate clicks
-- [ ] Reapply on native re-render without duplicating buttons, listeners, or observers
-- [ ] HighLevel selectors and route parsing isolated in a small adapter with a debug/verify mode
-- [ ] Global `enabled` flag; disabling or removing the script restores native UI after reload
-- [ ] Original code with a NOTICE file recording the reference project, its revision, and that no code was copied
+- [ ] Per-client onboarding path: add a location entry (logo URL from HighLevel's own Business Profile, theme) and release a new tag — first candidate Xcelsior Health (`Cp2XxBsRoyKS2CUf1Hwi`)
 
 ### Out of Scope
 
@@ -55,7 +55,7 @@ From an open contact record, a staff member can press one button and reliably tr
   - Agency views under `/v2/agency/...` or `/agency_dashboard/...`
   - Window event `routeChangeEvent` fires on in-app navigation (unofficial)
 - **Live verification done 2026-09-24** in Rob's account (agency Park Health Systems, location Dummy Clinic, sample contacts). Sidebar/header/switcher candidates were right; every class-based contact-record candidate was wrong. Real structure: `#record-details-lhs` panel, name row containing `#delete-contact-trigger` (button mount), stateful fields with element ids `contact.email` / `contact.phone`. `#backButtonv2` does not exist. Send Invite delivered one POST end to end to an HTTPS listener with CORS; Rob's real Inbound Webhook trigger (location Cp2XxBsRoyKS2CUf1Hwi) is now in `config/agency-config.json`; it accepted the mapping sample and serves CORS `*`, so the browser gets the confirmed "Workflow triggered" path.
-- **Logo position** is undecided until live inspection; the adapter supports both sidebar and header mount points.
+- **Logo position:** sidebar (`#sidebar-v2 img.agency-logo`), decided in Phase 2 after live inspection; the adapter still supports the header mount.
 - **Hosting:** GitHub repo under Rob's account, served via jsDelivr pinned to a version tag. Rollback = change the tag in the HighLevel snippet.
 - Different browser tabs must keep independent active-location state (no shared storage for location).
 
@@ -73,14 +73,17 @@ From an open contact record, a staff member can press one button and reliably tr
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Write original code; no copying from reference | Reference repo has no LICENSE (all rights reserved) | — Pending |
-| Location detection primarily from URL `/v2/location/{id}/` plus `popstate` and `routeChangeEvent`, with a lightweight `history` patch as backup | Stable ID, works across load/nav/back/forward; reference provides no context API | — Pending |
-| Adapter supports sidebar and header logo mounts; choice deferred to live inspection | Rob chose to decide after seeing the live DOM | — Pending |
-| GitHub + jsDelivr with pinned tag for hosting | Zero infra, trivial rollback | — Pending |
-| Send Invite fires a HighLevel Inbound Webhook workflow trigger directly from the browser | Rob wants a working workflow trigger in Phase 1 without a server; webhook URL lives in public config, accepted trade-off for a staff-only tool | — Pending |
-| Phase order: buttons + webhook first, logo switching second | Rob rated workflow trigger as more important than branding | — Pending |
-| Skip GSD research | PRD is detailed; selectors gathered during questioning | — Pending |
-| Keep existing `.planning/config.json` | Preferences already set by Rob before kickoff | — Pending |
+| Write original code; no copying from reference | Reference repo has no LICENSE (all rights reserved) | ✓ Held through v0.1.1; D-06 originality check passed (Phase 3 UAT) |
+| Location detection primarily from URL `/v2/location/{id}/` plus `popstate` and `routeChangeEvent`, with a lightweight `history` patch as backup | Stable ID, works across load/nav/back/forward; reference provides no context API | ✓ Works live across location switches and contact records |
+| Adapter supports sidebar and header logo mounts; choice deferred to live inspection | Rob chose to decide after seeing the live DOM | ✓ Sidebar (`#sidebar-v2 img.agency-logo`) chosen in Phase 2 |
+| GitHub + jsDelivr with pinned tag for hosting | Zero infra, trivial rollback | ✓ robhparker/ghl-admin-theme, tags v0.1.0 and v0.1.1; rollback and kill switch rehearsed live |
+| Send Invite fires a HighLevel Inbound Webhook workflow trigger directly from the browser | Rob wants a working workflow trigger in Phase 1 without a server; webhook URL lives in public config, accepted trade-off for a staff-only tool | ✓ Shipped; exposure accepted as AR-03-01 in 03-SECURITY.md |
+| Phase order: buttons + webhook first, logo switching second | Rob rated workflow trigger as more important than branding | ✓ Followed |
+| Skip GSD research | PRD is detailed; selectors gathered during questioning | ✓ Live verification replaced research where guides were wrong |
+| Keep existing `.planning/config.json` | Preferences already set by Rob before kickoff | ✓ Kept |
+| Theme rules win on specificity with two `:not(#ghlc-boost)` pseudo-classes, never `!important` | HighLevel paints the sidebar with id+4-class rules; the suite forbids importance overrides so native UI can always out-rank the customizer where it matters | ✓ v0.1.1; live sidebar themed, badges and toasts untouched |
+| Active nav item detected by Vue Router's `active` / `exact-active` classes | The three guessed selectors matched nothing live | ✓ v0.1.1; `mounts.sidebarNavActive` true live |
+| Install snippet is the `<script>` tag form | HighLevel's Custom JavaScript field takes HTML; raw JS is rendered as inert text | ✓ Installed in the agency 2026-09-25; README updated |
 
 ## Evolution
 
@@ -100,4 +103,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-24 after Phase 1 live verification in HighLevel*
+*Last updated: 2026-09-25 after Phase 3 (milestone v0.1.0 complete; v0.1.1 installed in the agency)*
