@@ -195,6 +195,8 @@ check('static: DEFAULT_CONFIG_URL slug and tag match package.json and VERSION', 
   assert.equal(TAG, `v${pkgVersion}`, 'the pinned tag is v + package.json version');
   assert.ok(src.includes(`VERSION = '${pkgVersion}'`), 'the VERSION constant matches package.json');
   assert.ok(src.includes(`Version ${pkgVersion}`), 'the head comment Version line matches package.json');
+  const cssHead = fs.readFileSync(path.join(root, 'src', 'ghl-customizer.css'), 'utf8').slice(0, 400);
+  assert.ok(cssHead.includes(`version ${pkgVersion}`), 'the stylesheet head comment version matches package.json');
   assert.ok(!src.includes('Provisional slug'), 'the provisional-slug comment was replaced when the slug was published');
 });
 
@@ -324,22 +326,32 @@ check('config: both JSON files parse, validate, use HTTPS webhooks, and carry no
   // Phase 2: the sample declares the sidebar mount and no agency logo (native fallback, A-02).
   assert.equal(sample.agency.logoMount, 'sidebar');
   assert.equal(sample.agency.logoUrl, '');
-  // Phase 3 (DLV-02, B-03, B-04): agency defaults plus exactly two location
-  // entries, both pointing at the repository's own SVG fixtures on the
-  // published slug and tag; Dummy Clinic carries a full theme that never
-  // exercises the fallback path, the placeholder carries a logo only.
+  // Phase 3 (DLV-02, B-03, B-04) + quick 260925-cf3: agency defaults plus
+  // exactly two location entries. Dummy Clinic points at a repository SVG
+  // fixture on the published slug and tag and carries a full theme that never
+  // exercises the fallback path; Xcelsior Health points at the logo HighLevel
+  // hosts for the location and carries a `primary` accent only.
   assert.equal(Object.keys(sample.locations).length, 2, 'sample ships exactly two location entries');
   const dummy = sample.locations.iDPNGKoFsjvf9wUCrk3V;
-  const placeholder = sample.locations.REPLACE_WITH_LOCATION_ID;
+  const xcelsior = sample.locations.Cp2XxBsRoyKS2CUf1Hwi;
   assert.ok(dummy, 'the Dummy Clinic entry exists');
   assert.equal(dummy.name, 'Dummy Clinic');
-  assert.ok(placeholder, 'the REPLACE_WITH_LOCATION_ID placeholder entry exists');
+  assert.ok(xcelsior, 'the Xcelsior Health entry exists');
+  assert.equal(xcelsior.name, 'Xcelsior Health');
+  assert.equal(xcelsior.logoAlt, 'Xcelsior Health');
+  // Rule A (Dummy Clinic only): the logo is a repository fixture pinned at the published slug and tag.
   const SAMPLE_LOGO_RE = new RegExp(`^${escapeRe(CDN)}test/fixtures/logos/(loc-a|loc-b)\\.svg$`);
+  const dummyLogo = SAMPLE_LOGO_RE.exec(dummy.logoUrl);
+  assert.ok(dummyLogo, `iDPNGKoFsjvf9wUCrk3V: logoUrl "${dummy.logoUrl}" must be a repository fixture on the published slug and tag`);
+  assert.ok(fs.existsSync(path.join(root, 'test', 'fixtures', 'logos', `${dummyLogo[1]}.svg`)), 'iDPNGKoFsjvf9wUCrk3V: the referenced fixture exists');
+  // Rule B (every location): https without credentials, and any jsDelivr reference is pinned at TAG.
   for (const [id, entry] of Object.entries(sample.locations)) {
-    const m = SAMPLE_LOGO_RE.exec(entry.logoUrl);
-    assert.ok(m, `${id}: logoUrl "${entry.logoUrl}" must be a repository fixture on the published slug and tag`);
-    assert.ok(fs.existsSync(path.join(root, 'test', 'fixtures', 'logos', `${m[1]}.svg`)), `${id}: the referenced fixture exists`);
+    assert.ok(api.isSafeHttpsUrl(entry.logoUrl), `${id}: logoUrl "${entry.logoUrl}" must be https without credentials`);
+    if (entry.logoUrl.startsWith('https://cdn.jsdelivr.net/gh/')) {
+      assert.ok(entry.logoUrl.startsWith(CDN), `${id}: jsDelivr logoUrl "${entry.logoUrl}" must be pinned to the published slug at ${TAG}, never a floating reference`);
+    }
   }
+  assert.ok(xcelsior.logoUrl.startsWith('https://msgsndr-private.storage.googleapis.com/'), 'Cp2XxBsRoyKS2CUf1Hwi: the logo is the one HighLevel hosts in its own bucket');
   assert.ok(api.parseColor(sample.agency.theme.primary), 'agency theme.primary parses');
   for (const token of ['primary', 'sidebarBg', 'sidebarText', 'navActive']) {
     assert.ok(api.parseColor(dummy.theme[token]), `Dummy Clinic theme.${token} parses`);
@@ -347,8 +359,12 @@ check('config: both JSON files parse, validate, use HTTPS webhooks, and carry no
   const dummyTheme = api.resolveTheme(sample, 'iDPNGKoFsjvf9wUCrk3V');
   assert.equal(dummyTheme.fallback, false, 'the sample theme never exercises the contrast fallback');
   assert.deepEqual(plain(dummyTheme.ignored), [], 'the sample theme has no ignored token');
-  assert.equal(placeholder.theme, undefined, 'the placeholder entry is a logo override only');
-  assert.equal(placeholder.buttons, undefined, 'the placeholder entry has no button overrides');
+  assert.deepEqual(Object.keys(xcelsior.theme), ['primary'], 'Xcelsior Health: the logo is opaque, so only primary is set and the native sidebar stays');
+  assert.ok(api.parseColor(xcelsior.theme.primary), 'Xcelsior Health theme.primary parses');
+  assert.equal(xcelsior.buttons, undefined, 'the Xcelsior Health entry has no button overrides');
+  const xcelsiorTheme = api.resolveTheme(sample, 'Cp2XxBsRoyKS2CUf1Hwi');
+  assert.equal(xcelsiorTheme.fallback, false, 'the Xcelsior Health theme never exercises the contrast fallback');
+  assert.deepEqual(plain(xcelsiorTheme.ignored), [], 'the Xcelsior Health theme has no ignored token');
   // Every logoUrl in both files is https without credentials or a ./ relative path.
   const logoUrls = (cfg) => [cfg.agency.logoUrl, ...Object.values(cfg.locations).map((l) => l.logoUrl)].filter((u) => u !== undefined && u !== '');
   for (const [label, cfg] of [['sample', sample], ['fixture', fixture]]) {
@@ -3221,13 +3237,13 @@ scenario('logs: theme diagnostics never contain color values or the sidebar sele
 // ---------------------------------------------------------------------------
 
 const SAMPLE_LOC = 'iDPNGKoFsjvf9wUCrk3V';
-const SAMPLE_PLACEHOLDER = 'REPLACE_WITH_LOCATION_ID';
+const SAMPLE_XCELSIOR = 'Cp2XxBsRoyKS2CUf1Hwi';
 const SAMPLE_CONTACT_PATH = `/v2/location/${SAMPLE_LOC}/contacts/detail/c1`;
 const SAMPLE_LOC_A = `${CDN}test/fixtures/logos/loc-a.svg`;
-const SAMPLE_LOC_B = `${CDN}test/fixtures/logos/loc-b.svg`;
+const SAMPLE_XCELSIOR_LOGO = 'https://msgsndr-private.storage.googleapis.com/locationPhotos/096434c9-83e6-42da-9644-8a93aed64980.png';
 const SAMPLE_PRIMARY = '#0f766e';
-const SAMPLE_AGENCY_PRIMARY = '#155eef';
-const SAMPLE_LEAKS = ['leadconnectorhq', 'hooks/', 'jsdelivr', 'Dummy Clinic', '#0f766e', '#0b3b3a'];
+const SAMPLE_XCELSIOR_PRIMARY = '#2d3e50';
+const SAMPLE_LEAKS = ['leadconnectorhq', 'hooks/', 'jsdelivr', 'Dummy Clinic', '#0f766e', '#0b3b3a', 'Xcelsior', '#2d3e50', 'msgsndr', 'googleapis', 'locationPhotos'];
 
 scenario('sample: the shipped config boots at Dummy Clinic with its logo override, theme, header link, and Send Invite', async () => {
   const sample = JSON.parse(sampleText);
@@ -3267,14 +3283,16 @@ scenario('sample: the shipped config boots at Dummy Clinic with its logo overrid
   assert.equal(report.config.schemaVersion, 1);
   assert.equal(report.branding.applied, 'location');
 
-  // The placeholder location: logo override only, agency default primary, no sidebar theme.
-  await go(shim, `/v2/location/${SAMPLE_PLACEHOLDER}/dashboard`);
-  logoIs(shell.logo, { src: SAMPLE_LOC_B, alt: 'Example Clinic', tier: 'location' });
+  // The Xcelsior Health location: HighLevel-hosted logo, `primary` only (overriding the agency #155eef), native sidebar stays.
+  await go(shim, `/v2/location/${SAMPLE_XCELSIOR}/dashboard`);
+  logoIs(shell.logo, { src: SAMPLE_XCELSIOR_LOGO, alt: 'Xcelsior Health', tier: 'location' });
   const dashGroups = groupsOf(shim);
-  assert.ok(dashGroups.length >= 1, 'the header group renders on the placeholder dashboard');
-  for (const group of dashGroups) assert.equal(varOf(group, '--ghlc-primary'), SAMPLE_AGENCY_PRIMARY);
+  assert.ok(dashGroups.length >= 1, 'the header group renders on the Xcelsior Health dashboard');
+  for (const group of dashGroups) assert.equal(varOf(group, '--ghlc-primary'), SAMPLE_XCELSIOR_PRIMARY);
   assert.equal(shell.sidebar.getAttribute('data-ghlc-theme'), null, 'no sidebar theme marker for a location without sidebar tokens');
   assert.equal(shell.sidebar.style.cssText.includes('--ghlc-'), false, 'no sidebar custom properties for a location without sidebar tokens');
+  assert.deepEqual(plain(GHLC.verify().theme), { root: true, applied: ['primary'], navActive: 0, ignored: 0, fallback: false });
+  assert.equal(GHLC.verify().branding.applied, 'location');
 
   // The agency route: native logo, no markers, no groups.
   await go(shim, '/v2/agency/dashboard');

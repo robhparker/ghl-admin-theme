@@ -21,10 +21,13 @@
         "navActive": "#115e59"
       }
     },
-    "REPLACE_WITH_LOCATION_ID": {
-      "name": "Example Clinic",
-      "logoUrl": "https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.1/test/fixtures/logos/loc-b.svg",
-      "logoAlt": "Example Clinic"
+    "Cp2XxBsRoyKS2CUf1Hwi": {
+      "name": "Xcelsior Health",
+      "logoUrl": "https://msgsndr-private.storage.googleapis.com/locationPhotos/096434c9-83e6-42da-9644-8a93aed64980.png",
+      "logoAlt": "Xcelsior Health",
+      "theme": {
+        "primary": "#2d3e50"
+      }
     }
   },
   "buttons": [

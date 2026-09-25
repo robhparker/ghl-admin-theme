@@ -43,7 +43,7 @@ Rules that make this safe:
 ## Releasing a new version
 
 1. Edit the source or the config and run `npm test`.
-2. Bump the version everywhere it appears so they all agree: `"version"` in `package.json`; in `src/ghl-customizer.js` the `VERSION` constant, the `Version` line in the head comment, and the tag in `DEFAULT_CONFIG_URL`; the tag in both logo URLs in `config/agency-config.json`; and the tag in every jsDelivr URL in this README (the install snippets and the example location entry). `grep -rn 'ghl-admin-theme@v' README.md config src` lists every URL that carries the tag. `npm test` checks all of these against `package.json`, so a missed spot fails the suite instead of shipping a mismatched release.
+2. Bump the version everywhere it appears so they all agree: `"version"` in `package.json`; in `src/ghl-customizer.js` the `VERSION` constant, the `Version` line in the head comment, and the tag in `DEFAULT_CONFIG_URL`; the version in the head comment of `src/ghl-customizer.css`; the tag in the Dummy Clinic logo URL in `config/agency-config.json` (the Xcelsior Health logo is hosted by HighLevel and carries no tag); and the tag in every jsDelivr URL in this README (the install snippets and the example location entry). `grep -rn 'ghl-admin-theme@v' README.md config src` lists every URL that carries the tag. `npm test` checks all of these against `package.json`, so a missed spot fails the suite instead of shipping a mismatched release.
 3. Commit, then create an annotated tag and push it together with the branch:
 
    ```sh
@@ -77,7 +77,7 @@ The config is a JSON document with `schemaVersion` `1`. Field names below are th
 | `agency.theme` | object | no | Agency-level accent colors; see the theme table. |
 | `locations` | object | yes | Keyed by HighLevel location ID, the segment after `/v2/location/` in the URL. Each value is a location entry. |
 | `locations[id].name` | string | no | Display name; used as the logo alt text when `logoAlt` is absent. |
-| `locations[id].logoUrl` | string | no | `https` URL of this location's logo. Shown while this location is active; falls back to the agency logo, then the native logo, if it fails to load. |
+| `locations[id].logoUrl` | string | no | `https` URL of this location's logo. Shown while this location is active; falls back to the agency logo, then the native logo, if it fails to load. Any `https` image URL works, including the logo HighLevel already hosts for the location's Business Profile (the sample's Xcelsior Health entry); if that logo is re-uploaded in HighLevel, confirm the URL still resolves. |
 | `locations[id].logoAlt` | string | no | Alt text for this location's logo. |
 | `locations[id].theme` | object | no | Accent colors for this location; each key overrides the agency value for that key only. |
 | `locations[id].buttons` | object | no | Per-button overrides keyed by button `id`: `false` disables the button here, `true` enables it here even if it is out of scope, an object enables it and overrides `label`, `icon`, or `action`. `id`, `placement`, and `scope` are never overridable. |
@@ -140,7 +140,7 @@ HighLevel's Inbound Webhook trigger matches the contact on `email` or `phone` in
 }
 ```
 
-The shipped sample, `config/agency-config.json`, demonstrates agency defaults, two location entries (Dummy Clinic with a full theme, and a `REPLACE_WITH_LOCATION_ID` placeholder with a logo only), the `helpCenter` header link, and the `sendInvite` webhook button.
+The shipped sample, `config/agency-config.json`, demonstrates agency defaults, two location entries (Dummy Clinic with a full theme and a repository-fixture logo, and Xcelsior Health with the logo HighLevel already hosts for it and a `primary` accent only, which leaves the native sidebar untouched), the `helpCenter` header link, and the `sendInvite` webhook button.
 
 ## Security notes
 
