@@ -24,8 +24,7 @@ covered_files:
   - test/fixtures/logos/loc-b.svg
   - test/harness.html
   - test/run.mjs
-covered_digest: 
-covered_digest: "v1:sha256:b27d2945a3cb32d7ce52d8ae517ea609dbce607f8da3b1fb2cf6fa99f88d6c8f"
+covered_digest: "v1:sha256:4770160be31f1ed6f153f88f50c5b5f8dc7a020d2e4c9f42902900e64d0e505f"
 behavior_unverified: 0
 overrides_applied: 0
 head_verified: a47707f
