@@ -26,8 +26,9 @@
  *                         | { type: 'handler', handler: string }
  *   Theme          object   { primary?: '#rrggbb', sidebarBg?: '#rrggbb', sidebarText?: '#rrggbb', navActive?: '#rrggbb' }
  *                           Only 3- or 6-digit hex is accepted; anything else is ignored. A location
- *                           value overrides the agency value key by key. A sidebar text/background
- *                           pair below 4.5:1 falls back to a safe text color.
+ *                           value overrides the agency value key by key. sidebarText applies only
+ *                           with sidebarBg, and navActive only with an applied sidebarText. A sidebar
+ *                           text/background pair below 4.5:1 falls back to a safe text color.
  *
  * The config is public to staff: never put tokens, secrets, or contact data in it.
  * Config never becomes code: action types are allowlisted, handlers resolve
@@ -569,11 +570,14 @@
    * unknown keys are never read. Agency-level pages resolve the agency tokens
    * alone. After the merge, the readability rules (A-04, T-03-06):
    *   1. sidebarText without sidebarBg is dropped ('unpaired');
-   *   2. a sidebarBg/sidebarText pair below MIN_CONTRAST replaces the text
+   *   2. navActive without an applied sidebarText is dropped ('unpaired'):
+   *      the script cannot see the native text color, so it has nothing to
+   *      check the item against;
+   *   3. a sidebarBg/sidebarText pair below MIN_CONTRAST replaces the text
    *      with the safe color that reads best on the background (fallback);
-   *   3. navActive below MIN_CONTRAST against the applied sidebarText is
+   *   4. navActive below MIN_CONTRAST against the applied sidebarText is
    *      dropped ('contrast');
-   *   4. an applied primary always carries the readable primaryText.
+   *   5. an applied primary always carries the readable primaryText.
    * Returns { tokens, ignored, fallback }; tokens are '#rrggbb' only. Each
    * ignored entry names the scope that supplied the token, never its value.
    */
@@ -608,11 +612,15 @@
       ignored.push({ scope: owner.sidebarText, token: 'sidebarText', reason: 'unpaired' });
       delete tokens.sidebarText;
     }
+    if (tokens.navActive && !tokens.sidebarText) {
+      ignored.push({ scope: owner.navActive, token: 'navActive', reason: 'unpaired' });
+      delete tokens.navActive;
+    }
     if (tokens.sidebarBg && tokens.sidebarText && contrastRatio(tokens.sidebarBg, tokens.sidebarText) < MIN_CONTRAST) {
       tokens.sidebarText = pickReadableText(tokens.sidebarBg);
       fallback = true;
     }
-    if (tokens.navActive && tokens.sidebarText && contrastRatio(tokens.navActive, tokens.sidebarText) < MIN_CONTRAST) {
+    if (tokens.navActive && contrastRatio(tokens.navActive, tokens.sidebarText) < MIN_CONTRAST) {
       ignored.push({ scope: owner.navActive, token: 'navActive', reason: 'contrast' });
       delete tokens.navActive;
     }

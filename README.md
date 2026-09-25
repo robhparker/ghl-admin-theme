@@ -104,7 +104,7 @@ Only these three types exist. A button with any other type, or with an unsafe va
 | `primary` | The customizer's own buttons and their focus ring. The button text color is chosen automatically (white or dark) so it stays readable against `primary`. |
 | `sidebarBg` | Background of the sidebar container. |
 | `sidebarText` | Text color of the sidebar and its links. Only applied together with `sidebarBg`; a pair whose contrast is below 4.5:1 keeps the background and falls back to white or dark text, whichever reads better. |
-| `navActive` | Background of the active sidebar navigation item. Dropped when it is unreadable against the sidebar text. |
+| `navActive` | Background of the active sidebar navigation item. Only applied together with `sidebarBg` and `sidebarText` (the script cannot check it against a native text color it does not know); dropped when its contrast against the applied sidebar text is below 4.5:1. |
 
 Values must be `#rgb` or `#rrggbb` hex strings; anything else is ignored with a diagnostic naming the scope and token, never the value. Location tokens override agency tokens key by key, so a location may set only `primary` and inherit the rest. An empty string means "not set". Tokens are written only as inline CSS custom properties on the customizer's own elements and on the sidebar container; nothing else in HighLevel is restyled, and native success, warning, and error colors are unchanged.
 

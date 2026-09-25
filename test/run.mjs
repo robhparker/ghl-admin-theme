@@ -2835,6 +2835,33 @@ scenario('theme: sidebarText requires sidebarBg and a pair below 4.5:1 falls bac
   assert.equal(logCount(u.shim, 'theme-token-ignored', "reason: 'unpaired'"), 1);
   assert.equal(u.shim.errors.length, 0);
 
+  // Unpaired navActive: without an applied sidebarText there is no text color to
+  // check it against, so it is dropped and reported, never written or marked.
+  const loneNav = loadFixture();
+  loneNav.locations.locB.theme = { navActive: B_NAV };
+  const ln = await bootBranding({ path: '/v2/location/locB/dashboard', config: loneNav });
+  assert.deepEqual(sidebarVars(ln.shell.sidebar), { bg: '', text: '', nav: '' });
+  assert.equal(ln.shell.sidebar.getAttribute('data-ghlc-theme'), null);
+  assert.equal(navMarked(ln.shim).length, 0, 'no nav item is marked');
+  const lnr = plain(ln.GHLC.__test.resolveTheme(loneNav, 'locB'));
+  assert.deepEqual(lnr.ignored, [{ scope: 'location', token: 'navActive', reason: 'unpaired' }]);
+  assert.deepEqual(lnr.tokens, { primary: AGENCY_PRIMARY, primaryText: '#ffffff' });
+  assert.deepEqual(plain(ln.GHLC.verify().theme), { root: true, applied: ['primary'], navActive: 0, ignored: 1, fallback: false });
+  assert.equal(ln.GHLC.verify().observers.theme, false, 'no sidebar token survived, so no theme observer');
+  assert.equal(logCount(ln.shim, 'theme-token-ignored', "token: 'navActive'", "reason: 'unpaired'"), 1);
+  assertNoLeak(ln.shim.console.lines, ALL_HEX, 'theme DLV-04');
+  assert.equal(ln.shim.errors.length, 0);
+
+  // A sidebarText that rule 1 dropped leaves navActive unpaired too: both are reported, in rule order.
+  const twoUnpaired = loadFixture();
+  twoUnpaired.locations.locB.theme = { sidebarText: '#ffffff', navActive: B_NAV };
+  const tr = plain(ln.GHLC.__test.resolveTheme(twoUnpaired, 'locB'));
+  assert.deepEqual(tr.ignored, [
+    { scope: 'location', token: 'sidebarText', reason: 'unpaired' },
+    { scope: 'location', token: 'navActive', reason: 'unpaired' },
+  ]);
+  assert.deepEqual(tr.tokens, { primary: AGENCY_PRIMARY, primaryText: '#ffffff' });
+
   // Low-contrast navActive against the applied text is dropped and nothing is marked.
   const lowNav = loadFixture();
   lowNav.locations.locA.theme.navActive = A_TEXT;
