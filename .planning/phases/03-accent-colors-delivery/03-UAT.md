@@ -3,12 +3,12 @@ status: partial
 phase: 03-accent-colors-delivery
 source: [03-VERIFICATION.md]
 started: 2026-09-25T02:15:52Z
-updated: 2026-09-25T02:39:37Z
+updated: 2026-09-25T03:04:26Z
 ---
 
 ## Current Test
 
-[testing paused — 7 items outstanding: tests 1-6 need Rob's logged-in HighLevel session (Chrome extension was not connected this session; tests 1, 5, 6 also need the snippet pasted into Agency Settings), test 9 is Rob's release call]
+[testing paused — 2 items outstanding: test 1 (paste the v0.1.1 snippet into Agency Settings) and test 4's visual toast check; everything else verified live on 2026-09-25 through injection of the served build into Rob's logged-in session]
 
 ## Tests
 
@@ -16,31 +16,42 @@ updated: 2026-09-25T02:39:37Z
 test: Live install (DLV-01 edge, B-02): in HighLevel Agency Settings -> Company -> Custom JavaScript paste the README loader snippet (raw-JS IIFE form), save, hard-reload. If it is rejected, try the <script> tag form.
 expected: The customizer loads; GHLC.verify() in the console reports config.loaded true, config.schemaVersion 1. Record which form the field accepted; if only the script-tag form works, update README 'Install in HighLevel' and ship as v0.1.1.
 result: [pending]
+note: The README snippet now points at v0.1.1 (tagged 2026-09-25). Injecting the same two v0.1.1 URLs into the logged-in app already gives config.loaded true, schemaVersion 1, version 0.1.1; only the Agency Settings field mechanics (which form it accepts, save, reload) remain to be observed by Rob.
 
 ### 2. Live Dummy Clinic colors, verify(), active-nav selector
 test: Live Dummy Clinic (SC1, A-06, CLR-02 judgment prohibition): open location iDPNGKoFsjvf9wUCrk3V, then a contact record, and run GHLC.verify().
 expected: Sidebar logo is the green 'Location A' pill with alt 'Dummy Clinic'; sidebar background #0b3b3a with pale #e6fffa text; Help Center (header) and Send Invite (contact) buttons #0f766e with white text; verify().branding.applied 'location', theme.applied ['primary','sidebarBg','sidebarText','navActive'], theme.fallback false, theme.ignored 0, mounts.sidebarNavActive true, theme.navActive >= 1. If sidebarNavActive is false / navActive 0: inspect the active nav element's classes, add the live class to selectors.sidebarNavActive, npm test, release v0.1.1 (never re-tag v0.1.0). The native active-item styling must still be visible in that case (graceful omission, no guess).
-result: [pending]
+result: pass
+source: automated
+verified: 2026-09-25, served build injected into Rob's logged-in Dummy Clinic session (contact Q7c2…, sample data). With v0.1.1: logo = green 'Location A' pill, alt 'Dummy Clinic'; #sidebar-v2 background rgb(11,59,58), nav labels rgb(230,255,250); Help Center (header) and Send Invite (contact, via toolbar-anchor) rgb(15,118,110) on white; verify().branding.applied 'location', theme.applied all four, fallback false, ignored 0, mounts.sidebarNavActive true, theme.navActive 1; the active Contacts anchor rgb(17,94,89) with pale label; the sidebar's native 'Beta' badge keeps rgb(255,188,0)/rgb(12,45,63). Screenshot: dummy-clinic-v0.1.1.jpg in the job tmp dir.
+note: v0.1.0 FAILED this test two ways (see Gaps G-03-2, resolved): the sidebar background stayed white and no active-nav selector matched. Fixed in 407c834 and f84042f, released as v0.1.1 (1076b44) per this test's own instruction. Icons in the nav are black SVG images HighLevel serves, so on the dark teal they are low-contrast; that is a config color choice, not a customizer defect.
 
 ### 3. Live inherit/native on unconfigured location + agency page
 test: Live inherit/native (SC1): open any location not in config/agency-config.json, then an agency-level page.
 expected: Native logo, native sidebar colors, no data-ghlc-theme attribute on #sidebar-v2; header buttons blue #155eef (agency default); verify().theme.applied ['primary'], observers.theme false. On the agency page: no customizer buttons at all.
-result: [pending]
+result: pass
+source: automated
+verified: 2026-09-25 live. Unconfigured location Cp2XxBsRoyKS2CUf1Hwi (Xcelsior Health): native 'agency logo' img with class object-contain agency-logo only, sidebar white with no data-ghlc-theme attribute and no inline --ghlc-* properties, Help Center rgb(21,94,239) on white, theme.applied ['primary'], observers.theme false, no nav marks. Agency page /agency_dashboard/: GHLC present but zero .ghlc-group and zero .ghlc-btn, branding 'native', no marker.
 
 ### 4. Live native status colors untouched
 test: Live native status colors (SC2, CLR-04): on Dummy Clinic trigger a native success toast (e.g. save a contact note) and, if available, a warning/error toast and any sidebar badge.
 expected: HighLevel's own success/warning/error colors and badges are visibly unchanged; only the sidebar container background/text and the active nav item are themed; no HighLevel rule is overridden by a customizer rule.
 result: [pending]
+note: Automated part done 2026-09-25: on themed Dummy Clinic every element carrying a ghlc class, marker, or inline property is exactly the sidebar aside, its logo img, one active nav anchor, and the two button groups (13 elements); the native 'Beta' badge inside the nav keeps its own yellow/dark colors; the stylesheet has no importance override and every selector is ghlc-scoped (suite check). Remaining for Rob: eyeball one native success/warning toast on Dummy Clinic (e.g. after saving during test 1) to confirm it looks native; no write was made to the account during automation.
 
 ### 5. Rollback rehearsal via tag change
 test: Rollback rehearsal (SC3): change the tag in both snippet URLs to v0.0.0, save, reload; then restore v0.1.0 and reload.
 expected: At v0.0.0 the script 404s and the page is fully native (no buttons, native logo, native sidebar, no console errors beyond the 404). At v0.1.0 everything returns exactly as before. Nothing but the tag changed.
-result: [pending]
+result: pass
+source: automated
+verified: 2026-09-25 live via the same two URLs the snippet carries. At v0.0.0 the script element fires its error event (jsDelivr 404), window.GHLC stays undefined, no stylesheet link, zero ghlc elements, native logo and white sidebar. At v0.1.1 everything returns (test 2). jsDelivr serves v0.1.0 and v0.1.1 byte-identical to their tags (sha256 checked for js, css, config). The snippet-field edit itself is covered by test 1.
 
 ### 6. Kill switch: snippet removal leaves no leftovers
 test: Kill switch (SC3/FND-06): remove the snippet entirely, save, reload.
 expected: Native UI with no leftovers: no .ghlc-group, no data-ghlc-theme, no --ghlc-* inline properties, no ghlc-logo class, no storage/cookies.
-result: [pending]
+result: pass
+source: automated
+verified: 2026-09-25 live. A plain reload with no script: zero elements with a ghlc class, data-ghlc-theme, or --ghlc-* inline property; window.GHLC undefined; no localStorage key or cookie containing ghlc (sessionStorage could not be read through the browser tool, but the source has zero references to localStorage, sessionStorage, document.cookie, or indexedDB). Removing the snippet is exactly this state.
 
 ### 7. Harness walkthrough (a)-(g)
 test: Harness walkthrough (03-01 human-check): npm run serve; open http://localhost:5173/test/harness.html?ghlc-debug=1 and step (a) Agency dashboard, (b) Location A Dashboard, (c) Location A Contact X, (d) Location B Contact Z, (e) Location Z / Agency, (f) back on A press Toggle active nav item / Replace whole sidebar / Collapse-expand, (g) inspect the harness's own controls.
@@ -60,14 +71,15 @@ verified: 2026-09-25. Fetched the reference README at ff7c8e4 (137 lines). Only 
 ### 9. Release decision: tag v0.1.1 for WR-01 drift
 test: Release decision (WR-01 drift): decide whether to tag v0.1.1 from HEAD 6d357f1 so the served script matches the README.
 expected: Served v0.1.0 JS (byte-identical to tag a6ab42c) does NOT contain the WR-01 rule that drops navActive without an applied sidebarText, while README@HEAD line 107 documents that rule. A v0.1.1 tag per README 'Releasing a new version' closes the drift; until then any config that sets navActive without sidebarText gets an unchecked nav color on v0.1.0. The shipped sample sets all four tokens and is unaffected.
-result: [pending]
+result: pass
+verified: 2026-09-25. Tagged v0.1.1 at 1076b44 and pushed; jsDelivr returned 200 after about a minute and serves js/css/config byte-identical to the tag. The decision was forced by test 2: v0.1.0 could not theme the live sidebar or find the active nav item, and this test's own instruction says to release v0.1.1. v0.1.1 also closes the WR-01 drift (the served script now drops navActive without an applied sidebarText, as the README documents). v0.1.0 was not re-tagged.
 
 ## Summary
 
 total: 9
-passed: 2
+passed: 7
 issues: 0
-pending: 7
+pending: 2
 skipped: 0
 blocked: 0
 
@@ -86,4 +98,24 @@ blocked: 0
   missing:
     - "Move the customizer <link> after the harness <style> so the harness mirrors HighLevel's load order"
   resolved_by: "commit 35c9f08 (inline fix during UAT, suite 119/119, re-verified in Playwright)"
+  resolved_at: 2026-09-25
+
+- gap_id: G-03-2
+  truth: "Live Dummy Clinic: sidebar background #0b3b3a, mounts.sidebarNavActive true, theme.navActive >= 1"
+  status: resolved
+  reason: "Automated live run of v0.1.0: sidebar background stayed white (rgb 255,255,255) and nav labels black although data-ghlc-theme and --ghlc-* were set; mounts.sidebarNavActive false, theme.navActive 0"
+  severity: major
+  test: 2
+  root_cause: "HighLevel paints #sidebar-v2 and its .nav-title labels with rules of the shape body[data-theme] .sidebar-v2-location #sidebar-v2.default-bg-color (one id, four classes), which outranks the stylesheet's lone attribute selectors; and the active anchor carries Vue Router's 'active'/'exact-active' classes, none of the three guessed selectors. A third finding surfaced while fixing: HighLevel's hover background (light grey, same as its active item) under the themed pale text was unreadable."
+  artifacts:
+    - path: "src/ghl-customizer.css"
+      issue: "theme rules lose on specificity; nav label span colored directly by HighLevel; hover background unreadable under themed text"
+    - path: "src/ghl-customizer.js"
+      issue: "selectors.sidebarNavActive had no selector matching live markup"
+  missing:
+    - "Add two :not(#ghlc-boost) pseudo-classes to the three theme rules and cover a .nav-title (no importance override, suite forbids it)"
+    - "Lead selectors.sidebarNavActive with '#sidebar-v2 nav a.exact-active' and '#sidebar-v2 nav a.active'"
+    - "Themed hover rule: a hovered item takes navActive when set, otherwise no highlight"
+    - "Release v0.1.1 and point README, config, and DEFAULT_CONFIG_URL at it"
+  resolved_by: "commits 407c834, f84042f, 1076b44 (tag v0.1.1); re-verified live with the served v0.1.1 URLs"
   resolved_at: 2026-09-25
