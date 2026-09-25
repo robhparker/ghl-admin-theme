@@ -21,8 +21,20 @@ const sampleText = fs.readFileSync(SAMPLE_CONFIG_PATH, 'utf8');
 const fixtureText = fs.readFileSync(FIXTURE_PATH, 'utf8');
 const loadFixture = () => JSON.parse(fixtureText);
 
+// The published slug and tag, extracted once from DEFAULT_CONFIG_URL so the
+// README, the sample config, VERSION, and package.json are all tied to it
+// (Phase 3 B-08). A renamed repository or a bumped version that misses one
+// file fails the suite.
+const SLUG_RE = /DEFAULT_CONFIG_URL = 'https:\/\/cdn\.jsdelivr\.net\/gh\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)@(v\d+\.\d+\.\d+)\//;
+const slugMatch = SLUG_RE.exec(src);
+const SLUG = slugMatch ? slugMatch[1] : null;
+const TAG = slugMatch ? slugMatch[2] : null;
+const CDN = `https://cdn.jsdelivr.net/gh/${SLUG}@${TAG}/`;
+const pkgVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 // ---------------------------------------------------------------------------
-// Tiny runner
+// Tiny runner (declared early; the runner loop itself is at the end of the file)
 // ---------------------------------------------------------------------------
 
 const items = [];
@@ -177,6 +189,15 @@ check('static: schema documentation, data-config attribute, constant fallback, r
   assert.ok(src.includes("'#rrggbb'"), 'the schema comment documents the theme color grammar');
 });
 
+check('static: DEFAULT_CONFIG_URL slug and tag match package.json and VERSION', () => {
+  assert.ok(slugMatch, 'DEFAULT_CONFIG_URL is a jsDelivr URL pinned to owner/repo@vX.Y.Z');
+  assert.match(SLUG, /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
+  assert.equal(TAG, `v${pkgVersion}`, 'the pinned tag is v + package.json version');
+  assert.ok(src.includes(`VERSION = '${pkgVersion}'`), 'the VERSION constant matches package.json');
+  assert.ok(src.includes(`Version ${pkgVersion}`), 'the head comment Version line matches package.json');
+  assert.ok(!src.includes('Provisional slug'), 'the provisional-slug comment was replaced when the slug was published');
+});
+
 check('static: verify section contains no selector literals (probing goes through adapter.probe)', () => {
   const start = src.indexOf('// ==== verify ====');
   const end = src.indexOf('// ==== boot ====');
@@ -224,6 +245,38 @@ check('notice: NOTICE.md records the reference project, its revision, its missin
   }
 });
 
+check('readme: README.md documents install, hosting, config schema, and rollback with tag-pinned jsDelivr URLs', () => {
+  const readmePath = path.join(root, 'README.md');
+  assert.ok(fs.existsSync(readmePath), 'README.md exists at the repo root');
+  const readme = fs.readFileSync(readmePath, 'utf8');
+  const headings = [
+    'What it does', 'Install in HighLevel', 'Hosting on jsDelivr', 'Releasing a new version', 'Rollback',
+    'Configuration', 'Security notes', 'Verify mode', 'Local development', 'Selector maintenance', 'License and attribution',
+  ];
+  for (const h of headings) assert.ok(readme.includes(`\n## ${h}\n`), `README must contain the H2 "## ${h}"`);
+  const h2s = readme.split('\n').filter((l) => l.startsWith('## '));
+  assert.deepEqual(h2s, headings.map((h) => `## ${h}`), 'exactly the eleven H2 sections, in order');
+  for (const s of [
+    'data-config', 'Agency Settings', 'Custom JavaScript',
+    `${CDN}src/ghl-customizer.js`, `${CDN}config/agency-config.json`,
+    'schemaVersion', 'enabled', 'logoMount', 'primary', 'sidebarBg', 'sidebarText', 'navActive', '#rrggbb', '4.5:1',
+    'Inbound Webhook', 'email', 'phone', 'requestId', 'cooldownMs', 'extraFields', 'copyContactId',
+    '?ghlc-debug=1', 'GHLC.verify()', 'npm test', 'npm run serve', 'git tag', 'NOTICE.md',
+  ]) {
+    assert.ok(readme.includes(s), `README must mention "${s}"`);
+  }
+  // Every jsDelivr URL in the README uses the published slug and the shipped tag (T-03-10, P-01).
+  const urls = readme.match(/cdn\.jsdelivr\.net\/gh\/[^\s"'`)]+/g) || [];
+  assert.ok(urls.length >= 4, 'README carries the pinned install URLs in both snippet forms');
+  const pinned = new RegExp(`^cdn\\.jsdelivr\\.net\\/gh\\/${escapeRe(SLUG)}@(v\\d+\\.\\d+\\.\\d+)\\/`);
+  for (const u of urls) {
+    const m = pinned.exec(u);
+    assert.ok(m, `README jsDelivr URL "${u}" must use the published slug and a version tag`);
+    assert.equal(m[1], TAG, `README jsDelivr URL "${u}" must pin the shipped tag`);
+  }
+  assert.ok(!readme.includes('innerHTML'), 'README never suggests HTML-string injection');
+});
+
 check('harness: test/harness.html carries the required HighLevel shell, router hook, config, and stub', () => {
   const harness = fs.readFileSync(path.join(root, 'test', 'harness.html'), 'utf8');
   for (const s of ['id="sidebar-v2"', 'hl_header--controls', 'id="location-switcher-sidbar-v2"', "id: 'record-details-lhs'", "id: 'delete-contact-trigger'", "id: 'contact.email'", 'data-config="./fixtures/config.json"', 'routeChangeEvent', 'no-cors']) {
@@ -266,10 +319,34 @@ check('config: both JSON files parse, validate, use HTTPS webhooks, and carry no
   assert.ok(/^https:\/\/services\.leadconnectorhq\.com\/hooks\/[A-Za-z0-9]+\/webhook-trigger\/[0-9a-f-]{36}$/.test(invite.action.url) || invite.action.url.includes('REPLACE_ME'), 'sample config points at a HighLevel Inbound Webhook trigger URL (or the placeholder)');
   assert.ok(sample.buttons.some((b) => b.placement === 'header' && b.action.type === 'link'), 'sample must ship a header link button');
 
-  // Phase 2: the sample declares the sidebar mount and no logos (native fallback, A-02).
+  // Phase 2: the sample declares the sidebar mount and no agency logo (native fallback, A-02).
   assert.equal(sample.agency.logoMount, 'sidebar');
   assert.equal(sample.agency.logoUrl, '');
-  assert.equal(Object.keys(sample.locations).length, 0, 'sample ships no location logos (Phase 3 DLV-02 adds the demo overrides)');
+  // Phase 3 (DLV-02, B-03, B-04): agency defaults plus exactly two location
+  // entries, both pointing at the repository's own SVG fixtures on the
+  // published slug and tag; Dummy Clinic carries a full theme that never
+  // exercises the fallback path, the placeholder carries a logo only.
+  assert.equal(Object.keys(sample.locations).length, 2, 'sample ships exactly two location entries');
+  const dummy = sample.locations.iDPNGKoFsjvf9wUCrk3V;
+  const placeholder = sample.locations.REPLACE_WITH_LOCATION_ID;
+  assert.ok(dummy, 'the Dummy Clinic entry exists');
+  assert.equal(dummy.name, 'Dummy Clinic');
+  assert.ok(placeholder, 'the REPLACE_WITH_LOCATION_ID placeholder entry exists');
+  const SAMPLE_LOGO_RE = new RegExp(`^${escapeRe(CDN)}test/fixtures/logos/(loc-a|loc-b)\\.svg$`);
+  for (const [id, entry] of Object.entries(sample.locations)) {
+    const m = SAMPLE_LOGO_RE.exec(entry.logoUrl);
+    assert.ok(m, `${id}: logoUrl "${entry.logoUrl}" must be a repository fixture on the published slug and tag`);
+    assert.ok(fs.existsSync(path.join(root, 'test', 'fixtures', 'logos', `${m[1]}.svg`)), `${id}: the referenced fixture exists`);
+  }
+  assert.ok(api.parseColor(sample.agency.theme.primary), 'agency theme.primary parses');
+  for (const token of ['primary', 'sidebarBg', 'sidebarText', 'navActive']) {
+    assert.ok(api.parseColor(dummy.theme[token]), `Dummy Clinic theme.${token} parses`);
+  }
+  const dummyTheme = api.resolveTheme(sample, 'iDPNGKoFsjvf9wUCrk3V');
+  assert.equal(dummyTheme.fallback, false, 'the sample theme never exercises the contrast fallback');
+  assert.deepEqual(plain(dummyTheme.ignored), [], 'the sample theme has no ignored token');
+  assert.equal(placeholder.theme, undefined, 'the placeholder entry is a logo override only');
+  assert.equal(placeholder.buttons, undefined, 'the placeholder entry has no button overrides');
   // Every logoUrl in both files is https without credentials or a ./ relative path.
   const logoUrls = (cfg) => [cfg.agency.logoUrl, ...Object.values(cfg.locations).map((l) => l.logoUrl)].filter((u) => u !== undefined && u !== '');
   for (const [label, cfg] of [['sample', sample], ['fixture', fixture]]) {
@@ -3107,6 +3184,77 @@ scenario('logs: theme diagnostics never contain color values or the sidebar sele
   // No existing [ghlc] line carries a hash, so the bare '#' needle catches any
   // color value in any shape; the hex bodies catch a hash-less leak.
   assertNoLeak(shim.console.lines, ['#', 'c2410c', '1f2937', 'f9fafb', '374151', '0f766e', 'e5e7eb', '101828', 'ffffff', 'sidebar-v2', 'hl_nav', 'router-link', 'aria-current'], 'theme DLV-04');
+  assert.equal(shim.errors.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// The shipped sample config, booted headlessly exactly as served (Phase 3, Plan 02)
+// ---------------------------------------------------------------------------
+
+const SAMPLE_LOC = 'iDPNGKoFsjvf9wUCrk3V';
+const SAMPLE_PLACEHOLDER = 'REPLACE_WITH_LOCATION_ID';
+const SAMPLE_CONTACT_PATH = `/v2/location/${SAMPLE_LOC}/contacts/detail/c1`;
+const SAMPLE_LOC_A = `${CDN}test/fixtures/logos/loc-a.svg`;
+const SAMPLE_LOC_B = `${CDN}test/fixtures/logos/loc-b.svg`;
+const SAMPLE_PRIMARY = '#0f766e';
+const SAMPLE_AGENCY_PRIMARY = '#155eef';
+const SAMPLE_LEAKS = ['leadconnectorhq', 'hooks/', 'jsdelivr', 'Dummy Clinic', '#0f766e', '#0b3b3a'];
+
+scenario('sample: the shipped config boots at Dummy Clinic with its logo override, theme, header link, and Send Invite', async () => {
+  const sample = JSON.parse(sampleText);
+  // The shim origin is https://app.gohighlevel.com, so the https jsDelivr logo
+  // URLs pass isSafeImageUrl and the image stub loads them on the next turn.
+  const { shim, shell, GHLC } = await bootWithConfig(sample, { pathname: SAMPLE_CONTACT_PATH });
+
+  // Branding: the location logo candidate resolves and lands on the sidebar mount after preload.
+  assert.deepEqual(plain(GHLC.__test.resolveBranding(sample, SAMPLE_LOC)[0]), { tier: 'location', src: SAMPLE_LOC_A, alt: 'Dummy Clinic' });
+  logoIs(shell.logo, { src: SAMPLE_LOC_A, alt: 'Dummy Clinic', tier: 'location' });
+
+  // Buttons: the Help Center header link and a ready Send Invite on the contact record.
+  const header = headerGroup(shim);
+  assert.ok(header, 'the header group rendered in the header controls');
+  const help = header.querySelector('[data-ghlc-button-id="helpCenter"]');
+  assert.ok(help, 'Help Center renders in the header group');
+  assert.equal(help.tagName, 'A');
+  assert.equal(help.getAttribute('href'), 'https://help.gohighlevel.com/');
+  assert.equal(help.getAttribute('target'), '_blank');
+  const contact = contactGroup(shim);
+  assert.ok(contact, 'the contact group rendered on the contact record');
+  const inviteEl = contact.querySelector('[data-ghlc-button-id="sendInvite"]');
+  assert.ok(inviteEl, 'Send Invite renders in the contact group');
+  assert.equal(inviteEl.getAttribute('data-state'), 'ready');
+
+  // Theme: Dummy Clinic's four tokens on the groups and the sidebar, no fallback, nothing ignored.
+  const groups = groupsOf(shim);
+  assert.equal(groups.length, 2, 'header and contact groups');
+  for (const group of groups) assert.equal(varOf(group, '--ghlc-primary'), SAMPLE_PRIMARY);
+  assert.deepEqual(sidebarVars(shell.sidebar), { bg: '#0b3b3a', text: '#e6fffa', nav: '#115e59' });
+  assert.equal(shell.sidebar.getAttribute('data-ghlc-theme'), 'sidebar-bg sidebar-text');
+  const report = GHLC.verify();
+  assert.deepEqual(plain(report.theme), { root: true, applied: ALL_TOKENS, navActive: 1, ignored: 0, fallback: false });
+  assert.deepEqual(plain(report.config.buttonIds), ['sendInvite', 'helpCenter']);
+  assert.equal(report.config.loaded, true);
+  assert.equal(report.config.enabled, true);
+  assert.equal(report.config.schemaVersion, 1);
+  assert.equal(report.branding.applied, 'location');
+
+  // The placeholder location: logo override only, agency default primary, no sidebar theme.
+  await go(shim, `/v2/location/${SAMPLE_PLACEHOLDER}/dashboard`);
+  logoIs(shell.logo, { src: SAMPLE_LOC_B, alt: 'Example Clinic', tier: 'location' });
+  const dashGroups = groupsOf(shim);
+  assert.ok(dashGroups.length >= 1, 'the header group renders on the placeholder dashboard');
+  for (const group of dashGroups) assert.equal(varOf(group, '--ghlc-primary'), SAMPLE_AGENCY_PRIMARY);
+  assert.equal(shell.sidebar.getAttribute('data-ghlc-theme'), null, 'no sidebar theme marker for a location without sidebar tokens');
+  assert.equal(shell.sidebar.style.cssText.includes('--ghlc-'), false, 'no sidebar custom properties for a location without sidebar tokens');
+
+  // The agency route: native logo, no markers, no groups.
+  await go(shim, '/v2/agency/dashboard');
+  logoIs(shell.logo, { src: NATIVE_SRC, alt: 'Native Agency', tier: null });
+  assert.equal(shell.sidebar.getAttribute('data-ghlc-theme'), null);
+  assert.equal(groupsOf(shim).length, 0);
+  assert.equal(shim.document.querySelectorAll('[data-ghlc-theme]').length, 0, 'no element carries a theme marker on the agency route');
+
+  assertNoLeak(shim.console.lines, SAMPLE_LEAKS, 'sample');
   assert.equal(shim.errors.length, 0);
 });
 

@@ -42,8 +42,9 @@
 
   var VERSION = '0.1.0';
   var NS = 'ghlc';
-  // Provisional slug: the repo has no GitHub remote yet. Phase 3 pins the final
-  // jsDelivr tag; the data-config attribute on the script tag always wins.
+  // Fallback config URL: the sample config published at robhparker/admin-theme
+  // on the tag this version ships under. The data-config attribute on the
+  // script tag always wins; README "Releasing a new version" bumps the tag.
   var DEFAULT_CONFIG_URL = 'https://cdn.jsdelivr.net/gh/robhparker/admin-theme@v0.1.0/config/agency-config.json';
   var DEFAULT_COOLDOWN_MS = 10000;
   var MAX_COOLDOWN_MS = 300000; // 5 minutes; also keeps setTimeout inside int32
