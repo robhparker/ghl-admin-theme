@@ -124,16 +124,23 @@
 
 /* Theme markers: the script writes data-ghlc-theme only on the sidebar container
    (listing the sidebar tokens applied) and on its active nav items while a location
-   or agency theme is applied, and removes it on native, so these match nothing otherwise. */
-[data-ghlc-theme~="sidebar-bg"] {
+   or agency theme is applied, and removes it on native, so these match nothing otherwise.
+   HighLevel paints the sidebar and its nav labels with rules of the shape
+   body[data-theme] .sidebar-v2-location #sidebar-v2.default-bg-color (one id, four
+   classes), which outranks a lone attribute selector. The two :not(#ghlc-boost)
+   pseudo-classes add two ids of specificity without an importance override and
+   match every element, because nothing carries that id. The nav label is the
+   .nav-title span HighLevel colors directly; its badge spans keep their own colors. */
+[data-ghlc-theme~="sidebar-bg"]:not(#ghlc-boost):not(#ghlc-boost) {
   background-color: var(--ghlc-sidebar-bg);
 }
 
-[data-ghlc-theme~="sidebar-text"],
-[data-ghlc-theme~="sidebar-text"] a {
+[data-ghlc-theme~="sidebar-text"]:not(#ghlc-boost):not(#ghlc-boost),
+[data-ghlc-theme~="sidebar-text"]:not(#ghlc-boost):not(#ghlc-boost) a,
+[data-ghlc-theme~="sidebar-text"]:not(#ghlc-boost):not(#ghlc-boost) a .nav-title {
   color: var(--ghlc-sidebar-text);
 }
 
-[data-ghlc-theme~="nav-active"] {
+[data-ghlc-theme~="nav-active"]:not(#ghlc-boost):not(#ghlc-boost) {
   background-color: var(--ghlc-nav-active);
 }

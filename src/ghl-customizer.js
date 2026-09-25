@@ -209,9 +209,14 @@
     contactPhone: Object.freeze(['a[href^="tel:"]', 'input[type="tel"]']),
     sidebarLogo: '#sidebar-v2 img.agency-logo',
     headerLogo: '.hl_header img.agency-logo',
-    // Active nav item inside the sidebar (unverified live, A-06): the community
-    // class, Vue Router's active link class, then the standards attribute.
+    // Active nav item inside the sidebar. Verified live 2026-09-25: HighLevel's
+    // Vue Router marks the current item's anchor with the classes "active" and
+    // "exact-active" (no aria-current, no router-link-active). The community
+    // class, the default Vue Router class, and the standards attribute follow
+    // as fallbacks for older or future markup.
     sidebarNavActive: Object.freeze([
+      '#sidebar-v2 nav a.exact-active',
+      '#sidebar-v2 nav a.active',
       '#sidebar-v2 .hl_nav-item--active',
       '#sidebar-v2 a.router-link-active',
       '#sidebar-v2 [aria-current="page"]'
