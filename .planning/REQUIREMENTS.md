@@ -34,10 +34,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Accent Colors
 
-- [ ] **CLR-01**: Config supports optional theme tokens (`primary`, `sidebarBg`, `sidebarText`, `navActive`) at agency and location levels
-- [ ] **CLR-02**: When tokens are present they are applied as CSS custom properties on a scoped root and used only by the customizer's own buttons and the verified sidebar surfaces
-- [ ] **CLR-03**: Invalid color values are ignored; sidebar text/background pairs below 4.5:1 contrast fall back to safe defaults
-- [ ] **CLR-04**: Native success, warning, and error colors are untouched
+- [x] **CLR-01**: Config supports optional theme tokens (`primary`, `sidebarBg`, `sidebarText`, `navActive`) at agency and location levels
+- [x] **CLR-02**: When tokens are present they are applied as CSS custom properties on a scoped root and used only by the customizer's own buttons and the verified sidebar surfaces
+- [x] **CLR-03**: Invalid color values are ignored; sidebar text/background pairs below 4.5:1 contrast fall back to safe defaults
+- [x] **CLR-04**: Native success, warning, and error colors are untouched
 
 ### Configurable Buttons
 
@@ -114,10 +114,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BRD-03 | Phase 2 | Complete |
 | BRD-04 | Phase 2 | Complete |
 | BRD-05 | Phase 2 | Complete |
-| CLR-01 | Phase 3 | Pending |
-| CLR-02 | Phase 3 | Pending |
-| CLR-03 | Phase 3 | Pending |
-| CLR-04 | Phase 3 | Pending |
+| CLR-01 | Phase 3 | Complete |
+| CLR-02 | Phase 3 | Complete |
+| CLR-03 | Phase 3 | Complete |
+| CLR-04 | Phase 3 | Complete |
 | BTN-01 | Phase 1 | Complete |
 | BTN-02 | Phase 1 | Complete |
 | BTN-03 | Phase 1 | Complete |
