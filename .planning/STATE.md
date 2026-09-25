@@ -6,7 +6,7 @@ status: completed
 stopped_at: Phase 3 complete — all phases complete
 last_updated: "2026-09-25T12:53:56.994Z"
 last_activity: 2026-09-25
-last_activity_desc: Phase 3 complete
+last_activity_desc: Quick task 260925-cf3 complete (v0.1.2 released)
 state_head: e74ab370c0c8745c89fa1ee68eb4a63b95343ad0
 progress:
   total_phases: 3
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-25)
 Phase: 3
 Plan: Not started
 Status: All phases complete
-Last activity: 2026-09-25 — Phase 3 complete
+Last activity: 2026-09-25 - Completed quick task 260925-cf3: Xcelsior Health location entry, released v0.1.2
 
 Progress: [██████████] 100%
 
