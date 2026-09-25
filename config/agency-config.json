@@ -12,7 +12,7 @@
   "locations": {
     "iDPNGKoFsjvf9wUCrk3V": {
       "name": "Dummy Clinic",
-      "logoUrl": "https://cdn.jsdelivr.net/gh/robhparker/admin-theme@v0.1.0/test/fixtures/logos/loc-a.svg",
+      "logoUrl": "https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.0/test/fixtures/logos/loc-a.svg",
       "logoAlt": "Dummy Clinic",
       "theme": {
         "primary": "#0f766e",
@@ -23,7 +23,7 @@
     },
     "REPLACE_WITH_LOCATION_ID": {
       "name": "Example Clinic",
-      "logoUrl": "https://cdn.jsdelivr.net/gh/robhparker/admin-theme@v0.1.0/test/fixtures/logos/loc-b.svg",
+      "logoUrl": "https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.0/test/fixtures/logos/loc-b.svg",
       "logoAlt": "Example Clinic"
     }
   },
