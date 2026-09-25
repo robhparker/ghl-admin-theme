@@ -88,7 +88,7 @@ Plans:
   3. A new agency admin can follow the README to paste the snippet into Agency Settings → Custom JS/CSS, point it at a jsDelivr URL pinned to a version tag, understand every field in the config schema, and roll back by changing only the tag.
   4. The shipped sample config loads without validation errors and demonstrates agency defaults, two location logo overrides, one header link button, and the contact-record "Send Invite" webhook button.
 
-**Plans**: 1/2 plans executed
+**Plans**: 2/2 plans executed
 **UI hint**: yes
 
 Plans:
@@ -98,7 +98,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 03-02-PLAN.md — Tracer: README (install snippet, jsDelivr pinned tag, full schema, rollback) + sample config (two location logo overrides, one full theme, header link, Send Invite) proven by a headless boot of the sample; blocking-human decision on slug/visibility/tag/D-08 exposure; publish to GitHub, tag v0.1.0, verify jsDelivr (or prepare-only)
+- [x] 03-02-PLAN.md — Tracer: README (install snippet, jsDelivr pinned tag, full schema, rollback) + sample config (two location logo overrides, one full theme, header link, Send Invite) proven by a headless boot of the sample; blocking-human decision on slug/visibility/tag/D-08 exposure; publish to GitHub, tag v0.1.0, verify jsDelivr (or prepare-only)
 
 ## Progress
 
@@ -109,4 +109,4 @@ Phases execute in numeric order: 1 → 2 → 3
 |-------|----------------|--------|-----------|
 | 1. Foundation, Context & Workflow Buttons | 3/3 | Complete    | 2026-09-24 |
 | 2. Location Logo Switching | 2/2 | Complete    | 2026-09-24 |
-| 3. Accent Colors & Delivery | 1/2 | In Progress|  |
+| 3. Accent Colors & Delivery | 2/2 | In Progress|  |

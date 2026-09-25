@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 milestone: v0.1.0
 current_phase: 03
 current_phase_name: Accent Colors & Delivery
-status: executing
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-09-25T01:27:36.892Z"
+status: verifying
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-09-25T01:53:00.087Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 03 execution started
-state_head: b63a7be286d0627b6833cb9b696de6a291e779ce
+state_head: a6ab42c2d3101ae829869ddf9fc581db67b351c8
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 7
-  completed_plans: 6
+  completed_plans: 7
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 
 Phase: 03 (Accent Colors & Delivery) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-24 — Phase 03 execution started
 
 Progress: [███████░░░] 67%
@@ -62,6 +62,7 @@ Progress: [███████░░░] 67%
 | Phase 02 P01 | 14 min | 2 tasks | 5 files |
 | Phase 02 P02 | 14 min | 2 tasks | 8 files |
 | Phase 03 P01 | 20 min | 3 tasks | 6 files |
+| Phase 03 P02 | 22 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -81,6 +82,8 @@ Recent decisions affecting current work:
 - [Phase 03]: Theme tokens are written only as inline CSS custom properties on the customizer's own groups and the adapter-located sidebar container (plus a data-ghlc-theme marker); the stylesheet selects markers only, so nothing native can be restyled
 - [Phase 03]: locationEntry is the single per-location own-property lookup shared by branding, buttons, and theme; parseColor's normalized #rrggbb is the only value that ever reaches style.setProperty
 - [Phase 03]: One theme MutationObserver (sidebar root filtered to class/aria-current + shallow parent) exists only while a sidebar token is applied; a native sidebar carries zero theme footprint
+- [Phase 03]: Published as robhparker/ghl-admin-theme (public) with immutable tag v0.1.0 served by jsDelivr; D-08 exposure of the trigger URL and .planning/ history accepted by Rob at the blocking-human checkpoint
+- [Phase 03]: Every CDN URL is tag-pinned and the slug lives in one constant (DEFAULT_CONFIG_URL); the suite derives SLUG/TAG from it to gate README and sample; rollback is only a tag change and a served tag is never moved
 
 ### Pending Todos
 
@@ -102,6 +105,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-25T01:27:36.870Z
-Stopped at: Completed 03-01-PLAN.md
+Last session: 2026-09-25T01:53:00.064Z
+Stopped at: Completed 03-02-PLAN.md
 Resume file: None

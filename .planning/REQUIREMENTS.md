@@ -57,8 +57,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Delivery
 
-- [ ] **DLV-01**: README documents installation in HighLevel (Agency Settings → Custom JS/CSS snippet), config schema, hosting via jsDelivr with a pinned tag, and rollback
-- [ ] **DLV-02**: Sample config includes agency defaults, two location logo overrides, one header link button, and the contact-record webhook button
+- [x] **DLV-01**: README documents installation in HighLevel (Agency Settings → Custom JS/CSS snippet), config schema, hosting via jsDelivr with a pinned tag, and rollback
+- [x] **DLV-02**: Sample config includes agency defaults, two location logo overrides, one header link button, and the contact-record webhook button
 - [x] **DLV-03**: A local test harness (`test/harness.html`) mimics the HighLevel DOM shell so location switching, fallbacks, and re-render behavior can be exercised without a live account
 - [x] **DLV-04**: Diagnostics never log credentials, contact content, or config payloads beyond IDs and states
 
@@ -131,8 +131,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BTN-11 | Phase 1 | Complete |
 | BTN-12 | Phase 1 | Complete |
 | BTN-13 | Phase 1 | Complete |
-| DLV-01 | Phase 3 | Pending |
-| DLV-02 | Phase 3 | Pending |
+| DLV-01 | Phase 3 | Complete |
+| DLV-02 | Phase 3 | Complete |
 | DLV-03 | Phase 1 | Complete |
 | DLV-04 | Phase 1 | Complete |
 
