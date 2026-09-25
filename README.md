@@ -8,7 +8,15 @@ HighLevel does not support custom JavaScript or CSS and can change its interface
 
 ## Install in HighLevel
 
-Open **Agency Settings -> Company** (the whitelabel and company settings area) and find the **Custom JavaScript** field. Paste the loader below. It creates a script element that points at the pinned release on jsDelivr and tells the script where its config lives through the `data-config` attribute. The stylesheet is loaded automatically from the same folder as the script (`src/ghl-customizer.css`); a `data-css` attribute on the script element overrides that location.
+Open **Agency Settings -> Company** (the whitelabel and company settings area) and find the **Custom JavaScript** field. Paste the script tag below and save. The field takes HTML: HighLevel inserts its contents into every page, and a `<script>` tag is what makes the browser load the pinned release from jsDelivr. The `data-config` attribute tells the script where its config lives. The stylesheet is loaded automatically from the same folder as the script (`src/ghl-customizer.css`); a `data-css` attribute on the script element overrides that location.
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.1/src/ghl-customizer.js"
+        data-config="https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.1/config/agency-config.json"
+        defer></script>
+```
+
+Do not paste raw JavaScript into this field. Verified on 2026-09-25: HighLevel renders raw JavaScript as plain text inside a `div#customJS` container, so it never runs, and the code can show up as stray text on the page. If the script has to be created from JavaScript for some other reason (a tag manager, for example), this is the equivalent loader:
 
 ```js
 (function () {
@@ -20,15 +28,7 @@ Open **Agency Settings -> Company** (the whitelabel and company settings area) a
 })();
 ```
 
-If the field accepts HTML rather than raw JavaScript, the equivalent script tag is:
-
-```html
-<script src="https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.1/src/ghl-customizer.js"
-        data-config="https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.1/config/agency-config.json"
-        defer></script>
-```
-
-Then save, reload HighLevel, open a location that has an entry in the config, and run `GHLC.verify()` in the browser console to confirm the script loaded its config and found its mount points (see "Verify mode"). For a pilot, keep `locations` limited to the pilot locations: every other location keeps the native logo and colors and only sees the buttons whose `scope` includes it or is `all`.
+Then save, reload HighLevel, open a location that has an entry in the config, and run `GHLC.verify()` in the browser console (Cmd+Option+J in Chrome on a Mac) to confirm the script loaded its config and found its mount points (see "Verify mode"). For a pilot, keep `locations` limited to the pilot locations: every other location keeps the native logo and colors and only sees the buttons whose `scope` includes it or is `all`.
 
 ## Hosting on jsDelivr
 
