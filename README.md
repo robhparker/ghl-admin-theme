@@ -43,7 +43,7 @@ Rules that make this safe:
 ## Releasing a new version
 
 1. Edit the source or the config and run `npm test`.
-2. Bump the version in three places so they agree: the `VERSION` constant in `src/ghl-customizer.js`, the `Version` line in that file's head comment, and `"version"` in `package.json`. The test suite fails if the tag pinned in `DEFAULT_CONFIG_URL` disagrees with `package.json`.
+2. Bump the version everywhere it appears so they all agree: `"version"` in `package.json`; in `src/ghl-customizer.js` the `VERSION` constant, the `Version` line in the head comment, and the tag in `DEFAULT_CONFIG_URL`; the tag in both logo URLs in `config/agency-config.json`; and the tag in every jsDelivr URL in this README (the install snippets and the example location entry). `grep -rn 'ghl-admin-theme@v' README.md config src` lists every URL that carries the tag. `npm test` checks all of these against `package.json`, so a missed spot fails the suite instead of shipping a mismatched release.
 3. Commit, then create an annotated tag and push it together with the branch:
 
    ```sh
@@ -51,7 +51,7 @@ Rules that make this safe:
    git push origin main --tags
    ```
 
-4. Wait until the script URL at the new tag returns HTTP 200 (the install URL above with `@v0.1.0` replaced by the new tag). A new tag can take a few minutes to appear on jsDelivr.
+4. Wait until the script URL at the new tag returns HTTP 200 (the install URL above with its tag replaced by the new one). A new tag can take a few minutes to appear on jsDelivr.
 5. Change the tag in both URLs of the HighLevel snippet (the script `src` and `data-config`) and reload.
 
 ## Rollback
