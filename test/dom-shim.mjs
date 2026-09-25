@@ -991,8 +991,11 @@ export function createShim(options = {}) {
 
   // The sidebar logo as HighLevel renders it: an img.agency-logo inside an
   // anchor. `logo` may be false (no logo) or { src, alt, srcset } overrides.
+  // `nav` (default true) appends a nav with two anchors carrying the community
+  // nav-item classes, the first one active (the adapter's first candidate);
+  // false omits it (shell.nav === null).
   const NATIVE_LOGO = { src: 'https://native.test/agency.png', alt: 'Native Agency', srcset: null };
-  const buildShell = ({ sidebarMode = 'location', contact = null, logo = true } = {}) => {
+  const buildShell = ({ sidebarMode = 'location', contact = null, logo = true, nav = true } = {}) => {
     while (doc.body.firstChild) doc.body.removeChild(doc.body.firstChild);
     let logoEl = null;
     let logoLink = null;
@@ -1001,6 +1004,15 @@ export function createShim(options = {}) {
       logoEl = el('img', { class: 'agency-logo', src: spec.src, alt: spec.alt, srcset: spec.srcset || false });
       logoLink = el('a', { class: 'hx-logo-link', href: '/v2/agency/dashboard' }, [logoEl]);
     }
+    let navEl = null;
+    let navActive = null;
+    if (nav) {
+      navActive = el('a', { class: 'hl_nav-item hl_nav-item--active', href: '/v2/location/locA/dashboard' }, ['Dashboard']);
+      navEl = el('nav', { class: 'hx-nav' }, [
+        navActive,
+        el('a', { class: 'hl_nav-item', href: '/v2/location/locA/contacts' }, ['Contacts']),
+      ]);
+    }
     const sidebar = el('aside', { id: 'sidebar-v2', class: `sidebar-v2-${sidebarMode}` }, [
       ...(logoLink ? [logoLink] : []),
       el('select', { id: 'location-switcher-sidbar-v2' }, [
@@ -1008,6 +1020,7 @@ export function createShim(options = {}) {
         el('option', { value: 'locB' }, ['Location B']),
       ]),
       el('button', { id: 'backButtonv2', type: 'button' }, ['Back to agency']),
+      ...(navEl ? [navEl] : []),
     ]);
     const headerControls = el('div', { class: 'hl_header--controls' });
     const header = el('header', { class: 'hl_header' }, [headerControls]);
@@ -1022,7 +1035,7 @@ export function createShim(options = {}) {
     doc.body.appendChild(sidebar);
     doc.body.appendChild(header);
     doc.body.appendChild(main);
-    shell = { sidebar, header, headerControls, main, contactRegion, logo: logoEl };
+    shell = { sidebar, header, headerControls, main, contactRegion, logo: logoEl, nav: navEl, navActive };
     return shell;
   };
 

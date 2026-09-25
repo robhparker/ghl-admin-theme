@@ -1729,13 +1729,13 @@ scenario('verify: report shape and hygiene', async () => {
     contactMountVia: 'selector',
     contactEmailField: false,
     contactPhoneField: false,
-    sidebarNavActive: false,
+    sidebarNavActive: true,
   });
   assert.deepEqual(plain(r.contactFields), { email: true, phone: true, emailCandidates: 1, phoneCandidates: 1 });
   assert.deepEqual(plain(r.observers), { header: true, contact: true, branding: true, theme: true });
   assert.deepEqual(plain(r.waiting), { header: false, contact: false, contactFields: false, branding: false, theme: false });
   assert.deepEqual(plain(r.branding), { mount: 'sidebar', found: true, applied: 'location', resolving: false, failed: 0, loaded: 1 });
-  assert.deepEqual(plain(r.theme), { root: true, applied: ['primary', 'sidebarBg', 'sidebarText', 'navActive'], navActive: 0, ignored: 0, fallback: false });
+  assert.deepEqual(plain(r.theme), { root: true, applied: ['primary', 'sidebarBg', 'sidebarText', 'navActive'], navActive: 1, ignored: 0, fallback: false });
   assert.ok(Array.isArray(r.buttons) && r.buttons.length === 6);
   assert.ok(r.buttons.some((b) => b.id === 'sendInvite' && b.placement === 'contact' && b.state === 'ready'));
   assert.ok(r.buttons.every((b) => Object.keys(b).length === 3), 'buttons carry id, placement, state only');
@@ -1767,8 +1767,13 @@ scenario('verify: missing mounts are reported false and native DOM stays untouch
   assert.equal(r.mounts.locationSwitcher, true);
   assert.equal(r.mounts.backToAgency, false);
   assert.deepEqual(plain(r.contactFields), { email: false, phone: false, emailCandidates: 0, phoneCandidates: 0 });
-  // The hand-built sidebar is the theme root, so locA's sidebar tokens apply and the theme observer is up.
+  // The hand-built sidebar is the theme root, so locA's sidebar tokens apply and the theme observer is up;
+  // it has no nav, so no active item is found or marked (graceful omission).
   assert.deepEqual(plain(r.observers), { header: false, contact: false, branding: false, theme: true });
+  assert.equal(r.mounts.sidebarNavActive, false);
+  assert.equal(r.theme.root, true);
+  assert.equal(r.theme.navActive, 0);
+  assert.deepEqual(plain(r.theme.applied), ['primary', 'sidebarBg', 'sidebarText', 'navActive']);
   assert.deepEqual(plain(r.branding), { mount: 'sidebar', found: false, applied: null, resolving: false, failed: 0, loaded: 0 });
   assert.equal(r.waiting.branding, true, 'locA has a logo to show, so a bounded wait runs for the missing mount');
   assert.equal(r.waiting.header, true, 'the route expects a header, so a bounded wait runs');
@@ -2645,6 +2650,349 @@ scenario("theme tracer: a location's primary and sidebarBg land on the customize
   assert.ok(logCount(shim, 'theme-applied') >= 1, 'theme diagnostics were produced');
   assertNoLeak(shim.console.lines, THEME_LEAKS, 'theme');
   assert.equal(shim.errors.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Contrast rules, nav marking, no-bleed switching, the single theme observer,
+// missing root, and the verify().theme report (Phase 3, Plan 01, Task 2)
+// ---------------------------------------------------------------------------
+
+const B_BG = '#ffffff';
+const B_TEXT_FALLBACK = '#101828';
+const B_NAV = '#e5e7eb';
+const ALL_TOKENS = ['primary', 'sidebarBg', 'sidebarText', 'navActive'];
+const ALL_HEX = [A_PRIMARY, A_BG, A_TEXT, A_NAV, AGENCY_PRIMARY, B_BG, B_TEXT_FALLBACK, B_NAV];
+const navMarked = (shim) => shim.document.querySelectorAll('[data-ghlc-theme="nav-active"]');
+const sidebarVars = (el) => ({ bg: varOf(el, '--ghlc-sidebar-bg'), text: varOf(el, '--ghlc-sidebar-text'), nav: varOf(el, '--ghlc-nav-active') });
+const noStaleHex = (shim, hexes, label) => {
+  for (const el of allElements(shim.document)) {
+    for (const h of hexes) assert.ok(!el.style.cssText.includes(h), `${label}: <${el.localName}> still carries ${h}`);
+  }
+};
+const freshSidebarWithNav = (shim, { active = 0 } = {}) => {
+  const anchors = [
+    shim.el('a', { class: 'hl_nav-item', href: '/v2/location/locA/dashboard' }, ['Dashboard']),
+    shim.el('a', { class: 'hl_nav-item', href: '/v2/location/locA/contacts' }, ['Contacts']),
+  ];
+  if (active !== null) anchors[active].setAttribute('class', 'hl_nav-item hl_nav-item--active');
+  const img = freshNativeImg(shim);
+  const aside = shim.el('aside', { id: 'sidebar-v2', class: 'sidebar-v2-location' }, [
+    shim.el('a', { class: 'hx-logo-link', href: '/v2/agency/dashboard' }, [img]),
+    shim.el('nav', { class: 'hx-nav' }, anchors),
+  ]);
+  return { aside, img, anchors };
+};
+
+check('unit: contrastRatio follows WCAG relative luminance (21:1 black/white, #777777 fails, #767676 passes)', () => {
+  const api = throwawayApi();
+  assert.ok(Math.abs(api.contrastRatio('#000000', '#ffffff') - 21) < 1e-9, 'black on white is 21:1');
+  assert.equal(api.contrastRatio('#ffffff', '#000000'), api.contrastRatio('#000000', '#ffffff'), 'order-independent');
+  const grey = api.contrastRatio('#777777', '#ffffff');
+  assert.ok(grey < 4.5 && grey > 4.4, `#777777 on white is just below the threshold (${grey})`);
+  assert.ok(api.contrastRatio('#767676', '#ffffff') >= 4.5, '#767676 on white passes');
+  assert.equal(api.contrastRatio('#FFF', '#ffffff'), 1, 'the same color in two spellings is 1:1');
+  assert.ok(api.contrastRatio(A_BG, A_TEXT) > 13, "locA's pair is comfortably readable");
+  assert.ok(api.contrastRatio(B_BG, '#f5f5f5') < 1.2, "locB's pair is unreadable");
+  assert.equal(api.contrastRatio('red', '#ffffff'), 0, 'an unparseable color is 0 (unreadable)');
+});
+
+scenario('theme: sidebarText requires sidebarBg and a pair below 4.5:1 falls back to the safe default text', async () => {
+  const { shim, shell, GHLC } = await bootBranding({ path: '/v2/location/locB/dashboard' });
+  assert.deepEqual(sidebarVars(shell.sidebar), { bg: B_BG, text: B_TEXT_FALLBACK, nav: B_NAV });
+  assert.equal(shell.sidebar.getAttribute('data-ghlc-theme'), 'sidebar-bg sidebar-text');
+  assert.deepEqual(plain(GHLC.verify().theme), { root: true, applied: ALL_TOKENS, navActive: 1, ignored: 1, fallback: true });
+  const groups = groupsOf(shim);
+  assert.ok(groups.length >= 1, 'the header group exists on locB');
+  for (const group of groups) assert.equal(varOf(group, '--ghlc-primary'), AGENCY_PRIMARY, 'the invalid location primary falls back to the agency primary');
+  assert.equal(logCount(shim, 'theme-contrast-fallback'), 1);
+  assert.equal(logCount(shim, 'theme-token-ignored', "token: 'primary'", "reason: 'invalid'"), 1);
+  assert.equal(logCount(shim, 'theme-token-ignored'), 1);
+  assertNoLeak(shim.console.lines, ALL_HEX, 'theme DLV-04');
+  assert.equal(shim.errors.length, 0);
+
+  // Unpaired: a text color without a background is dropped, never written.
+  const unpaired = loadFixture();
+  unpaired.locations.locB.theme = { sidebarText: '#ffffff' };
+  const u = await bootBranding({ path: '/v2/location/locB/dashboard', config: unpaired });
+  assert.deepEqual(sidebarVars(u.shell.sidebar), { bg: '', text: '', nav: '' });
+  assert.equal(u.shell.sidebar.getAttribute('data-ghlc-theme'), null);
+  const resolved = plain(u.GHLC.__test.resolveTheme(unpaired, 'locB'));
+  assert.deepEqual(resolved.ignored, [{ scope: 'location', token: 'sidebarText', reason: 'unpaired' }]);
+  assert.deepEqual(resolved.tokens, { primary: AGENCY_PRIMARY, primaryText: '#ffffff' });
+  assert.deepEqual(plain(u.GHLC.verify().theme), { root: true, applied: ['primary'], navActive: 0, ignored: 1, fallback: false });
+  assert.equal(u.GHLC.verify().observers.theme, false, 'no sidebar token survived, so no theme observer');
+  assert.equal(logCount(u.shim, 'theme-token-ignored', "reason: 'unpaired'"), 1);
+  assert.equal(u.shim.errors.length, 0);
+
+  // Low-contrast navActive against the applied text is dropped and nothing is marked.
+  const lowNav = loadFixture();
+  lowNav.locations.locA.theme.navActive = A_TEXT;
+  const n = await bootBranding({ config: lowNav });
+  const nr = plain(n.GHLC.__test.resolveTheme(lowNav, 'locA'));
+  assert.deepEqual(nr.ignored, [{ scope: 'location', token: 'navActive', reason: 'contrast' }]);
+  assert.equal(nr.tokens.navActive, undefined);
+  assert.equal(navMarked(n.shim).length, 0, 'no nav item is marked');
+  assert.equal(varOf(n.shell.sidebar, '--ghlc-nav-active'), '');
+  assert.deepEqual(plain(n.GHLC.verify().theme), { root: true, applied: ['primary', 'sidebarBg', 'sidebarText'], navActive: 0, ignored: 1, fallback: false });
+  assert.equal(logCount(n.shim, 'theme-token-ignored', "token: 'navActive'", "reason: 'contrast'"), 1);
+  assert.equal(n.shim.errors.length, 0);
+});
+
+scenario("theme: navActive marks the adapter's active nav items and moves when the active class moves", async () => {
+  const { shim, shell, GHLC } = await bootBranding();
+  const [first, second] = shell.nav.querySelectorAll('a');
+  assert.equal(first, shell.navActive);
+  assert.equal(first.getAttribute('data-ghlc-theme'), 'nav-active');
+  assert.equal(second.getAttribute('data-ghlc-theme'), null);
+  assert.equal(GHLC.verify().theme.navActive, 1);
+  assert.equal(GHLC.verify().mounts.sidebarNavActive, true);
+  assert.equal(first.getAttribute('class'), 'hl_nav-item hl_nav-item--active', "the item's classes are untouched");
+
+  first.setAttribute('class', 'hl_nav-item');
+  second.setAttribute('class', 'hl_nav-item hl_nav-item--active');
+  await shim.flush();
+  assert.equal(first.getAttribute('data-ghlc-theme'), null, 'the marker left the old item');
+  assert.equal(second.getAttribute('data-ghlc-theme'), 'nav-active', 'the marker followed the active class');
+  assert.equal(navMarked(shim).length, 1);
+  assert.equal(GHLC.verify().theme.navActive, 1);
+  assert.equal(logCount(shim, 'retheme'), 1, 'two attribute records, one coalesced retheme');
+  await shim.advanceTimers(50);
+  assert.equal(logCount(shim, 'retheme'), 1, 'the retheme settled in one pass');
+  assert.equal(shim.errors.length, 0);
+
+  // No nav at all: nothing is marked, the count is 0, and the token still counts as applied on the root.
+  const bare = await bootBranding({ shell: { nav: false } });
+  assert.equal(bare.shell.nav, null);
+  const r = bare.GHLC.verify();
+  assert.equal(r.theme.navActive, 0);
+  assert.equal(r.mounts.sidebarNavActive, false);
+  assert.equal(bare.shell.sidebar.getAttribute('data-ghlc-theme'), 'sidebar-bg sidebar-text');
+  assert.deepEqual(plain(r.theme.applied), ALL_TOKENS, 'applied lists navActive whenever the token resolves and the root is found');
+  assert.equal(varOf(bare.shell.sidebar, '--ghlc-nav-active'), A_NAV);
+  assert.equal(navMarked(bare.shim).length, 0);
+  assert.equal(bare.shim.errors.length, 0);
+});
+
+scenario('theme: switching A -> B -> agency swaps tokens with no bleed-through', async () => {
+  const { shim, shell, GHLC } = await bootBranding({ path: CONTACT_PATH, shell: { contact: JANE } });
+  assert.deepEqual(sidebarVars(shell.sidebar), { bg: A_BG, text: A_TEXT, nav: A_NAV });
+  assert.equal(groupsOf(shim).length, 2);
+  for (const group of groupsOf(shim)) assert.equal(varOf(group, '--ghlc-primary'), A_PRIMARY);
+  assert.equal(shell.navActive.getAttribute('data-ghlc-theme'), 'nav-active');
+
+  await go(shim, '/v2/location/locB/dashboard');
+  assert.deepEqual(sidebarVars(shell.sidebar), { bg: B_BG, text: B_TEXT_FALLBACK, nav: B_NAV });
+  assert.equal(shell.sidebar.getAttribute('data-ghlc-theme'), 'sidebar-bg sidebar-text');
+  const headerGroups = groupsOf(shim);
+  assert.equal(headerGroups.length, 1, 'only the header group remains without a contact');
+  assert.equal(varOf(headerGroups[0], '--ghlc-primary'), AGENCY_PRIMARY);
+  assert.equal(varOf(headerGroups[0], '--ghlc-focus'), AGENCY_PRIMARY);
+  noStaleHex(shim, [A_PRIMARY, A_BG, A_TEXT, A_NAV], 'after A -> B');
+  assert.equal(GHLC.verify().observers.theme, true);
+
+  await go(shim, '/v2/agency/dashboard');
+  assert.equal(groupsOf(shim).length, 0);
+  assert.equal(shell.sidebar.getAttribute('data-ghlc-theme'), null);
+  assert.deepEqual(sidebarVars(shell.sidebar), { bg: '', text: '', nav: '' });
+  assert.equal(navMarked(shim).length, 0, 'no nav marker anywhere');
+  assert.equal(shim.document.querySelectorAll('[data-ghlc-theme]').length, 0);
+  assert.equal(themedElements(shim).length, 0);
+  assert.equal(GHLC.verify().observers.theme, false);
+  assert.deepEqual(plain(GHLC.verify().theme), { root: true, applied: ['primary'], navActive: 0, ignored: 0, fallback: false });
+
+  await go(shim, '/v2/location/locA/dashboard');
+  assert.deepEqual(sidebarVars(shell.sidebar), { bg: A_BG, text: A_TEXT, nav: A_NAV });
+  assert.equal(shell.sidebar.getAttribute('data-ghlc-theme'), 'sidebar-bg sidebar-text');
+  assert.equal(shell.navActive.getAttribute('data-ghlc-theme'), 'nav-active');
+  assert.equal(varOf(groupsOf(shim)[0], '--ghlc-primary'), A_PRIMARY);
+  // B_BG (#ffffff) is also locA's readable primary text, so only B-exclusive values can be stale here.
+  noStaleHex(shim, [B_TEXT_FALLBACK, B_NAV, AGENCY_PRIMARY], 'after agency -> A');
+  assert.equal(GHLC.verify().observers.theme, true);
+  assert.equal(GHLC.__test.getState().generation, 4);
+  assertNoLeak(shim.console.lines, ALL_HEX, 'theme DLV-04');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('theme: empty, null, non-string, and unknown tokens are ignored and write nothing', async () => {
+  const cfg = loadFixture();
+  cfg.agency.theme = { primary: '', sidebarBg: null, sidebarText: 42, navActive: 'blue', accent: '#ff0000' };
+  cfg.locations.locA.theme = {};
+  const { shim, shell, GHLC } = await bootBranding({ config: cfg });
+  assert.ok(groupsOf(shim).length >= 1);
+  for (const group of groupsOf(shim)) {
+    assert.equal(varOf(group, '--ghlc-primary'), '');
+    assert.equal(group.style.cssText, '', 'no inline property at all on the group');
+  }
+  assert.equal(shell.sidebar.getAttribute('data-ghlc-theme'), null);
+  assert.ok(!shell.sidebar.style.cssText.includes('--ghlc-'));
+  assert.equal(themedElements(shim).length, 0);
+  assert.deepEqual(plain(GHLC.verify().theme), { root: true, applied: [], navActive: 0, ignored: 2, fallback: false });
+  assert.equal(logCount(shim, 'theme-token-ignored'), 2, "42 and 'blue' are invalid; '' and null are silent; accent is unknown");
+  assert.equal(logCount(shim, 'theme-token-ignored', "token: 'sidebarText'"), 1);
+  assert.equal(logCount(shim, 'theme-token-ignored', "token: 'navActive'"), 1);
+  assert.equal(GHLC.verify().observers.theme, false);
+  assert.equal(themeRegs(shim).length, 0);
+  assertNoLeak(shim.console.lines, ['ff0000', 'blue', '42'], 'theme DLV-04');
+  assert.equal(shim.errors.length, 0);
+
+  const odd = loadFixture();
+  odd.agency.theme = [];
+  odd.locations.locA.theme = 'dark';
+  const o = await bootBranding({ config: odd });
+  assert.deepEqual(plain(o.GHLC.verify().theme), { root: true, applied: [], navActive: 0, ignored: 0, fallback: false });
+  assert.equal(themedElements(o.shim).length, 0);
+  assert.equal(o.shim.errors.length, 0);
+});
+
+scenario('theme: sidebar replaced wholesale is re-themed once through a single theme observer instance', async () => {
+  const { shim, shell, GHLC } = await bootBranding();
+  let regs = themeRegs(shim);
+  assert.equal(regs.length, 2, 'root + anchor registrations');
+  assert.equal(new Set(regs.map((r) => r.observer)).size, 1, 'one theme observer instance');
+  const rootReg = regs.find((r) => r.target === shell.sidebar);
+  assert.ok(rootReg, 'root registration targets the sidebar');
+  assert.equal(rootReg.options.childList, true);
+  assert.equal(rootReg.options.subtree, true);
+  assert.equal(rootReg.options.attributes, true);
+  assert.deepEqual(plain(rootReg.options.attributeFilter), ['class', 'aria-current']);
+  const anchorReg = regs.find((r) => r.target === shell.sidebar.parentNode);
+  assert.ok(anchorReg, 'anchor registration targets the sidebar parent');
+  assert.equal(anchorReg.options.childList, true);
+  assert.equal(anchorReg.options.subtree, false);
+  assert.equal(anchorReg.options.attributes, false);
+  assert.equal(GHLC.verify().observers.theme, true);
+  // A-15: header placement set (2) + branding (3) + theme (2) on a locA dashboard.
+  const totalBefore = shim.observers().length;
+  assert.equal(totalBefore, 7, 'placements + branding + theme, nothing else');
+  assert.equal(logCount(shim, 'theme-observer-attached'), 1);
+  assert.equal(logCount(shim, 'retheme'), 0, 'boot writes never schedule a retheme');
+
+  const oldSidebar = shell.sidebar;
+  const { aside: fresh, anchors } = freshSidebarWithNav(shim);
+  oldSidebar.replaceWith(fresh);
+  await shim.flush();
+  assert.equal(shim.document.querySelector('#sidebar-v2'), fresh);
+  assert.deepEqual(sidebarVars(fresh), { bg: A_BG, text: A_TEXT, nav: A_NAV });
+  assert.equal(fresh.getAttribute('data-ghlc-theme'), 'sidebar-bg sidebar-text');
+  assert.equal(anchors[0].getAttribute('data-ghlc-theme'), 'nav-active');
+  assert.equal(anchors[1].getAttribute('data-ghlc-theme'), null);
+  assert.equal(logCount(shim, 'retheme'), 1, 'the anchor registration saw the swap: one retheme');
+  assert.equal(oldSidebar.getAttribute('data-ghlc-theme'), null, 'the detached sidebar was cleaned before it was forgotten');
+  assert.equal(shell.navActive.getAttribute('data-ghlc-theme'), null, 'the detached nav item was unmarked');
+  assert.ok(!oldSidebar.style.cssText.includes('--ghlc-'));
+  regs = themeRegs(shim);
+  assert.equal(regs.length, 2, 'registrations swapped, not accumulated');
+  assert.equal(new Set(regs.map((r) => r.observer)).size, 1);
+  assert.ok(regs.some((r) => r.target === fresh && r.options.subtree === true), 'root follows the new sidebar');
+  assert.ok(regs.some((r) => r.target === shim.document.body && r.options.subtree === false), 'anchor is still the sidebar parent');
+  assert.ok(!shim.observers().some((r) => r.target === oldSidebar), 'nothing targets the old sidebar');
+  assert.equal(shim.document.querySelectorAll('[data-ghlc-theme]').length, 2, 'the root and one nav item');
+  assert.equal(shim.observers().length, totalBefore, 'no observer leaked across the swap');
+  assert.equal(brandingRegs(shim).length, 3);
+  assert.equal(logCount(shim, 'theme-observer-attached'), 2);
+  assert.equal(logCount(shim, 'theme-observer-detached'), 1);
+  assert.equal(GHLC.verify().observers.theme, true);
+  assert.equal(GHLC.verify().theme.navActive, 1);
+  await shim.advanceTimers(50);
+  assert.equal(logCount(shim, 'retheme'), 1, 'the retheme settled in one pass');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('theme: native sidebar keeps no theme observer and no marker', async () => {
+  const cfg = loadFixture();
+  cfg.locations.locA.theme = { primary: A_PRIMARY };
+  cfg.agency.theme = {};
+  const { shim, shell, GHLC } = await bootBranding({ config: cfg });
+  for (const group of groupsOf(shim)) assert.equal(varOf(group, '--ghlc-primary'), A_PRIMARY);
+  assert.equal(shell.sidebar.getAttribute('data-ghlc-theme'), null);
+  assert.ok(!shell.sidebar.style.cssText.includes('--ghlc-'));
+  assert.equal(navMarked(shim).length, 0);
+  assert.equal(GHLC.verify().observers.theme, false);
+  assert.equal(themeRegs(shim).length, 0);
+  assert.deepEqual(plain(GHLC.verify().theme), { root: true, applied: ['primary'], navActive: 0, ignored: 0, fallback: false });
+  assert.equal(logCount(shim, 'theme-observer-attached'), 0);
+
+  await go(shim, '/v2/location/locB/dashboard');
+  assert.equal(GHLC.verify().observers.theme, true);
+  assert.equal(themeRegs(shim).length, 2);
+  assert.equal(logCount(shim, 'theme-observer-attached'), 1);
+  await go(shim, '/v2/location/locA/dashboard');
+  assert.equal(GHLC.verify().observers.theme, false);
+  assert.equal(themeRegs(shim).length, 0);
+  assert.equal(shell.sidebar.getAttribute('data-ghlc-theme'), null);
+  assert.ok(!shell.sidebar.style.cssText.includes('--ghlc-'));
+  assert.equal(logCount(shim, 'theme-observer-attached'), 1);
+  assert.equal(logCount(shim, 'theme-observer-detached'), 1);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('theme: missing sidebar root themes the groups, waits bounded, and themes the root when it appears', async () => {
+  const { shim, GHLC } = await bootBranding({ before: (s) => s.document.getElementById('sidebar-v2').remove() });
+  assert.equal(shim.document.querySelector('#sidebar-v2'), null);
+  assert.ok(groupsOf(shim).length >= 1);
+  for (const group of groupsOf(shim)) assert.equal(varOf(group, '--ghlc-primary'), A_PRIMARY, 'groups are themed without a sidebar');
+  let r = GHLC.verify();
+  assert.equal(r.theme.root, false);
+  assert.deepEqual(plain(r.theme.applied), ['primary'], 'sidebar tokens are not applied without a root');
+  assert.equal(r.waiting.theme, true);
+  assert.equal(r.observers.theme, false);
+  assert.equal(logCount(shim, 'theme-root-missing'), 1);
+  await shim.advanceTimers(600);
+  assert.equal(logCount(shim, 'theme-root-missing'), 1, 'reported once per generation while waiting');
+  assert.equal(GHLC.verify().waiting.theme, true);
+
+  const { aside, anchors } = freshSidebarWithNav(shim);
+  shim.document.body.appendChild(aside);
+  await shim.advanceTimers(300);
+  assert.deepEqual(sidebarVars(aside), { bg: A_BG, text: A_TEXT, nav: A_NAV });
+  assert.equal(aside.getAttribute('data-ghlc-theme'), 'sidebar-bg sidebar-text');
+  assert.equal(anchors[0].getAttribute('data-ghlc-theme'), 'nav-active');
+  r = GHLC.verify();
+  assert.equal(r.theme.root, true);
+  assert.deepEqual(plain(r.theme.applied), ALL_TOKENS);
+  assert.equal(r.waiting.theme, false);
+  assert.equal(r.observers.theme, true);
+  assert.equal(logCount(shim, 'mount-missing', "placement: 'theme'"), 0, 'the wait was satisfied, not exhausted');
+  assert.equal(shim.errors.length, 0);
+
+  // Second half: no sidebar ever appears; the wait gives up within the bound.
+  const bare = await bootBranding({ before: (s) => s.document.getElementById('sidebar-v2').remove() });
+  assert.equal(bare.GHLC.verify().waiting.theme, true);
+  await bare.shim.advanceTimers(16000);
+  assert.equal(bare.GHLC.verify().waiting.theme, false, 'wait gave up');
+  assert.equal(logCount(bare.shim, 'mount-missing', "placement: 'theme'"), 1);
+  assert.equal(logCount(bare.shim, 'theme-root-missing'), 1, 'once per generation');
+  await bare.shim.advanceTimers(5000);
+  assert.equal(logCount(bare.shim, 'mount-missing', "placement: 'theme'"), 1, 'nothing keeps polling after giving up');
+  assert.equal(bare.shim.errors.length, 0);
+
+  // No sidebar token to show: a missing root is reported but never waited for.
+  const idle = loadFixture();
+  idle.locations.locA.theme = { primary: A_PRIMARY };
+  const i = await bootBranding({ config: idle, before: (s) => s.document.getElementById('sidebar-v2').remove() });
+  assert.equal(i.GHLC.verify().waiting.theme, false);
+  await i.shim.advanceTimers(16000);
+  assert.equal(logCount(i.shim, 'mount-missing', "placement: 'theme'"), 0);
+  assert.equal(i.shim.errors.length, 0);
+});
+
+scenario('verify: theme report shape and hygiene', async () => {
+  const a = await bootBranding();
+  assert.deepEqual(plain(a.GHLC.verify().theme), { root: true, applied: ALL_TOKENS, navActive: 1, ignored: 0, fallback: false });
+  const b = await bootBranding({ path: '/v2/location/locB/dashboard' });
+  assert.deepEqual(plain(b.GHLC.verify().theme), { root: true, applied: ALL_TOKENS, navActive: 1, ignored: 1, fallback: true });
+  for (const [label, s] of [['locA', a], ['locB', b]]) {
+    const report = s.GHLC.verify();
+    assert.deepEqual(Object.keys(report.theme).sort(), ['applied', 'fallback', 'ignored', 'navActive', 'root'], `${label}: theme carries names, counts, and booleans only`);
+    assert.ok(report.theme.applied.every((t) => ALL_TOKENS.includes(t)), `${label}: applied is a subset of the token names`);
+    const text = JSON.stringify(report);
+    for (const needle of ['#', 'c2410c', '1f2937', '0f766e', 'f9fafb', '374151', 'e5e7eb', '101828']) {
+      assert.ok(!text.includes(needle), `${label}: verify report must not contain "${needle}"`);
+    }
+    assert.ok(logCount(s.shim, 'theme-applied') >= 1, `${label}: the hygiene assertion is not vacuous`);
+    assertNoLeak(s.shim.console.lines, ALL_HEX, `${label} theme DLV-04`);
+    assert.equal(s.shim.errors.length, 0);
+  }
 });
 
 // ---------------------------------------------------------------------------

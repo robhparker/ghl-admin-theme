@@ -566,12 +566,21 @@
    * diagnostic); any other rejected value is ignored with reason 'invalid'.
    * A theme that is missing, empty, or not a plain object yields no tokens;
    * unknown keys are never read. Agency-level pages resolve the agency tokens
-   * alone. Returns { tokens, ignored, fallback }; tokens are '#rrggbb' only and
-   * an applied primary always carries the readable primaryText.
+   * alone. After the merge, the readability rules (A-04, T-03-06):
+   *   1. sidebarText without sidebarBg is dropped ('unpaired');
+   *   2. a sidebarBg/sidebarText pair below MIN_CONTRAST replaces the text
+   *      with the safe color that reads best on the background (fallback);
+   *   3. navActive below MIN_CONTRAST against the applied sidebarText is
+   *      dropped ('contrast');
+   *   4. an applied primary always carries the readable primaryText.
+   * Returns { tokens, ignored, fallback }; tokens are '#rrggbb' only. Each
+   * ignored entry names the scope that supplied the token, never its value.
    */
   function resolveTheme(config, locationId) {
     var tokens = {};
+    var owner = {};
     var ignored = [];
+    var fallback = false;
     var entry = locationEntry(config, locationId);
     var scopes = [
       ['agency', config && isPlainObject(config.agency) ? config.agency.theme : null],
@@ -586,12 +595,28 @@
         var raw = theme[token];
         if (raw === '' || raw === null) return;
         var parsed = parseColor(raw);
-        if (parsed) tokens[token] = parsed.hex;
-        else ignored.push({ scope: scope, token: token, reason: 'invalid' });
+        if (parsed) {
+          tokens[token] = parsed.hex;
+          owner[token] = scope;
+        } else {
+          ignored.push({ scope: scope, token: token, reason: 'invalid' });
+        }
       });
     });
+    if (tokens.sidebarText && !tokens.sidebarBg) {
+      ignored.push({ scope: owner.sidebarText, token: 'sidebarText', reason: 'unpaired' });
+      delete tokens.sidebarText;
+    }
+    if (tokens.sidebarBg && tokens.sidebarText && contrastRatio(tokens.sidebarBg, tokens.sidebarText) < MIN_CONTRAST) {
+      tokens.sidebarText = pickReadableText(tokens.sidebarBg);
+      fallback = true;
+    }
+    if (tokens.navActive && tokens.sidebarText && contrastRatio(tokens.navActive, tokens.sidebarText) < MIN_CONTRAST) {
+      ignored.push({ scope: owner.navActive, token: 'navActive', reason: 'contrast' });
+      delete tokens.navActive;
+    }
     if (tokens.primary) tokens.primaryText = pickReadableText(tokens.primary);
-    return { tokens: tokens, ignored: ignored, fallback: false };
+    return { tokens: tokens, ignored: ignored, fallback: fallback };
   }
 
   var BUTTON_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -1885,12 +1910,26 @@
   }
 
   // Marks the adapter-located active nav items while a navActive token is
-  // applied; completed in the next task (this pass only clears stale marks).
+  // applied: items no longer active lose the marker, newly active ones gain
+  // it, and the container's own marker is never touched here. Zero matches
+  // (the candidate list did not resolve) marks nothing and reports 0 (P-03).
   function markNavActive(root, tokens) {
     if (!tokens.navActive) {
       clearNavMarks();
       return;
     }
+    var items = adapter.findNavActive().filter(function (item) {
+      return item !== root;
+    });
+    state.theme.navMarked.forEach(function (item) {
+      if (items.indexOf(item) === -1 && item.getAttribute(OWN.themeAttr) === NAV_MARKER) {
+        item.removeAttribute(OWN.themeAttr);
+      }
+    });
+    items.forEach(function (item) {
+      if (item.getAttribute(OWN.themeAttr) !== NAV_MARKER) item.setAttribute(OWN.themeAttr, NAV_MARKER);
+    });
+    state.theme.navMarked = items;
   }
 
   /**
