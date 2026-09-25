@@ -5,24 +5,29 @@
  *
  * One hosted vanilla JavaScript IIFE (ES2019, no build step) that reads a public
  * JSON config, resolves the active HighLevel location and contact from the URL,
- * shows the active location's logo in place of the native one, and renders
- * configurable buttons where staff work. Every HighLevel selector, route regex,
- * and DOM reader lives in the single `adapter` object below; when HighLevel's
- * markup changes, that object is the only thing that changes.
+ * shows the active location's logo in place of the native one, applies its
+ * accent colors to the customizer's own buttons and the verified sidebar
+ * surfaces, and renders configurable buttons where staff work. Every HighLevel
+ * selector, route regex, and DOM reader lives in the single `adapter` object
+ * below; when HighLevel's markup changes, that object is the only thing that changes.
  *
  * Config schema (schemaVersion 1)
  *   schemaVersion  number   must be exactly 1
  *   enabled        boolean  false disables the script entirely (native UI untouched)
  *   agency         object   { logoUrl?: string, logoAlt?: string, logoMount?: 'sidebar' | 'header',
- *                              theme?: object, buttons?: object }
+ *                              theme?: Theme, buttons?: object }
  *   locations      object   { [locationId: string]: { name?: string, logoUrl?: string, logoAlt?: string,
- *                              theme?: object, buttons?: { [buttonId: string]: boolean | object } } }
+ *                              theme?: Theme, buttons?: { [buttonId: string]: boolean | object } } }
  *   buttons        array    Array<{ id: string, label: string, icon?: string,
  *                              placement: 'header' | 'contact',
  *                              scope: 'all' | string[], action: Action }>
  *   Action         object   { type: 'link', href: string, target?: string }
  *                         | { type: 'webhook', url: string, extraFields?: object, cooldownMs?: number }
  *                         | { type: 'handler', handler: string }
+ *   Theme          object   { primary?: '#rrggbb', sidebarBg?: '#rrggbb', sidebarText?: '#rrggbb', navActive?: '#rrggbb' }
+ *                           Only 3- or 6-digit hex is accepted; anything else is ignored. A location
+ *                           value overrides the agency value key by key. A sidebar text/background
+ *                           pair below 4.5:1 falls back to a safe text color.
  *
  * The config is public to staff: never put tokens, secrets, or contact data in it.
  * Config never becomes code: action types are allowlisted, handlers resolve
@@ -60,6 +65,24 @@
   // carries the default.
   var LOGO_MOUNTS = Object.freeze(['sidebar', 'header']);
 
+  // Accent colors (CLR-01..03): the optional theme keys at the agency level and
+  // per location, the only color grammar accepted, the WCAG threshold for the
+  // sidebar text/background pair, the two fallback text colors, and the inline
+  // custom properties the theme section writes (groups: primary, primary-text,
+  // focus; the sidebar container: sidebar-bg, sidebar-text, nav-active).
+  var THEME_TOKENS = Object.freeze(['primary', 'sidebarBg', 'sidebarText', 'navActive']);
+  var HEX_COLOR_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+  var MIN_CONTRAST = 4.5;
+  var SAFE_TEXT_COLORS = Object.freeze(['#ffffff', '#101828']);
+  var CSS_VARS = Object.freeze({
+    primary: '--' + NS + '-primary',
+    primaryText: '--' + NS + '-primary-text',
+    focus: '--' + NS + '-focus',
+    sidebarBg: '--' + NS + '-sidebar-bg',
+    sidebarText: '--' + NS + '-sidebar-text',
+    navActive: '--' + NS + '-nav-active'
+  });
+
   var SVG_NS = 'http://www.w3.org/2000/svg';
 
   // Approved icon set: name -> stroke paths on a 24x24 grid. This is the only
@@ -87,7 +110,11 @@
     msgSel: '.' + NS + '-btn__msg',
     // Marks on the native logo element while a non-native tier is showing.
     logoClass: NS + '-logo',
-    logoAttr: 'data-' + NS + '-logo'
+    logoAttr: 'data-' + NS + '-logo',
+    // Theme marker on the sidebar container (the sidebar tokens applied) and
+    // on its active nav items ("nav-active") while a theme is applied; removed on native.
+    themeAttr: 'data-' + NS + '-theme',
+    themeAttrSel: '[data-' + NS + '-theme]'
   });
 
   var DEBUG = (function () {
@@ -139,6 +166,10 @@
   // ones resolve. The sidebar logo mount was verified live on 2026-09-24; the
   // header logo is the config-selectable alternative (agency.logoMount) and is
   // narrowed to the same class so a header avatar can never be branded.
+  // The sidebar container is the verified theme surface (Phase 3); the active
+  // nav item candidates inside it are unverified and confirmed in the Phase 3
+  // live check. findNavActive returns the matches of the first candidate that
+  // matches anything, else nothing, so an unverified guess marks nothing.
   var routes = Object.freeze({
     location: /^\/v2\/location\/([^/?#]+)/,
     contactDetail: /^\/v2\/location\/([^/?#]+)\/contacts\/detail\/([^/?#]+)/,
@@ -175,7 +206,14 @@
     contactEmail: Object.freeze(['a[href^="mailto:"]', 'input[type="email"]']),
     contactPhone: Object.freeze(['a[href^="tel:"]', 'input[type="tel"]']),
     sidebarLogo: '#sidebar-v2 img.agency-logo',
-    headerLogo: '.hl_header img.agency-logo'
+    headerLogo: '.hl_header img.agency-logo',
+    // Active nav item inside the sidebar (unverified live, A-06): the community
+    // class, Vue Router's active link class, then the standards attribute.
+    sidebarNavActive: Object.freeze([
+      '#sidebar-v2 .hl_nav-item--active',
+      '#sidebar-v2 a.router-link-active',
+      '#sidebar-v2 [aria-current="page"]'
+    ])
   });
 
   var events = Object.freeze({
@@ -327,6 +365,23 @@
     return root || img.parentNode || img;
   }
 
+  // The sidebar container: the verified theme surface. This is the only place
+  // the theme root is located; the theme section never queries on its own.
+  function findThemeRoot() {
+    return document.querySelector(selectors.sidebar);
+  }
+
+  // Every active nav item matched by the first candidate selector that matches
+  // anything, else an empty list (graceful omission: nothing is marked).
+  function findNavActive() {
+    var candidates = selectors.sidebarNavActive;
+    for (var i = 0; i < candidates.length; i++) {
+      var hits = document.querySelectorAll(candidates[i]);
+      if (hits.length) return Array.prototype.slice.call(hits);
+    }
+    return [];
+  }
+
   // Boolean presence of every mount selector, for verify mode (FND-04). No
   // element or value leaves the adapter, only true/false.
   function probe() {
@@ -342,7 +397,8 @@
       sidebarLogo: !!document.querySelector(selectors.sidebarLogo),
       headerLogo: !!document.querySelector(selectors.headerLogo),
       locationSwitcher: !!document.querySelector(selectors.locationSwitcher),
-      backToAgency: !!document.querySelector(selectors.backToAgency)
+      backToAgency: !!document.querySelector(selectors.backToAgency),
+      sidebarNavActive: findNavActive().length > 0
     };
   }
 
@@ -363,6 +419,8 @@
     logoMount: 'sidebar',
     findLogoMount: findLogoMount,
     findLogoRoot: findLogoRoot,
+    findThemeRoot: findThemeRoot,
+    findNavActive: findNavActive,
     probe: probe
   });
 
@@ -436,6 +494,20 @@
   }
 
   /**
+   * The active location's config entry, or null. The ONE own-property lookup
+   * every per-location facet (logo, buttons, theme) reads through, so a
+   * prototype-named location ID never resolves anywhere and a fourth facet
+   * later is one more caller, not another lookup path. Agency-level pages
+   * (locationId null) have no entry.
+   */
+  function locationEntry(config, locationId) {
+    if (!config || typeof locationId !== 'string' || !isPlainObject(config.locations)) return null;
+    if (!hasOwn(config.locations, locationId)) return null;
+    var entry = config.locations[locationId];
+    return isPlainObject(entry) ? entry : null;
+  }
+
+  /**
    * Ordered branding candidates for a location (BRD-01, BRD-04): the
    * location's own logo when configured and safe, then the agency logo when
    * configured and safe. The native logo is not a candidate; it is the
@@ -449,20 +521,77 @@
     if (!config) return out;
     var agency = isPlainObject(config.agency) ? config.agency : {};
     var agencyAlt = typeof agency.logoAlt === 'string' ? agency.logoAlt : null;
-    if (typeof locationId === 'string' && isPlainObject(config.locations) && hasOwn(config.locations, locationId)) {
-      var entry = config.locations[locationId];
-      if (isPlainObject(entry) && isSafeImageUrl(entry.logoUrl)) {
-        out.push({
-          tier: 'location',
-          src: entry.logoUrl,
-          alt: firstString([entry.logoAlt, entry.name, agencyAlt])
-        });
-      }
+    var entry = locationEntry(config, locationId);
+    if (entry && isSafeImageUrl(entry.logoUrl)) {
+      out.push({
+        tier: 'location',
+        src: entry.logoUrl,
+        alt: firstString([entry.logoAlt, entry.name, agencyAlt])
+      });
     }
     if (isSafeImageUrl(agency.logoUrl)) {
       out.push({ tier: 'agency', src: agency.logoUrl, alt: agencyAlt });
     }
     return out;
+  }
+
+  /**
+   * The only color grammar a theme token may use (CLR-03, T-03-01): '#rgb' or
+   * '#rrggbb', either case, exact match. Named colors, functional notation,
+   * alpha digits, whitespace, and non-strings are null. The value that reaches
+   * the DOM is always the normalized lowercase '#rrggbb' returned here, never
+   * the raw config string, so '#FFF' and '#ffffff' are the same color and
+   * nothing but six hex digits can ever be written as a style value.
+   */
+  function parseColor(value) {
+    if (typeof value !== 'string' || !HEX_COLOR_RE.test(value)) return null;
+    var digits = value.slice(1).toLowerCase();
+    if (digits.length === 3) {
+      digits = digits.charAt(0) + digits.charAt(0) +
+        digits.charAt(1) + digits.charAt(1) +
+        digits.charAt(2) + digits.charAt(2);
+    }
+    return {
+      hex: '#' + digits,
+      r: parseInt(digits.slice(0, 2), 16),
+      g: parseInt(digits.slice(2, 4), 16),
+      b: parseInt(digits.slice(4, 6), 16)
+    };
+  }
+
+  /**
+   * Theme tokens for a location (CLR-01..03): the agency theme overlaid by the
+   * location's theme, key by key over THEME_TOKENS, each value through
+   * parseColor. An empty string or null is "absent" (falls through, no
+   * diagnostic); any other rejected value is ignored with reason 'invalid'.
+   * A theme that is missing, empty, or not a plain object yields no tokens;
+   * unknown keys are never read. Agency-level pages resolve the agency tokens
+   * alone. Returns { tokens, ignored, fallback }; tokens are '#rrggbb' only and
+   * an applied primary always carries the readable primaryText.
+   */
+  function resolveTheme(config, locationId) {
+    var tokens = {};
+    var ignored = [];
+    var entry = locationEntry(config, locationId);
+    var scopes = [
+      ['agency', config && isPlainObject(config.agency) ? config.agency.theme : null],
+      ['location', entry ? entry.theme : null]
+    ];
+    scopes.forEach(function (pair) {
+      var scope = pair[0];
+      var theme = pair[1];
+      if (!isPlainObject(theme)) return;
+      THEME_TOKENS.forEach(function (token) {
+        if (!hasOwn(theme, token)) return;
+        var raw = theme[token];
+        if (raw === '' || raw === null) return;
+        var parsed = parseColor(raw);
+        if (parsed) tokens[token] = parsed.hex;
+        else ignored.push({ scope: scope, token: token, reason: 'invalid' });
+      });
+    });
+    if (tokens.primary) tokens.primaryText = pickReadableText(tokens.primary);
+    return { tokens: tokens, ignored: ignored, fallback: false };
   }
 
   var BUTTON_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -589,9 +718,8 @@
    */
   function resolveButtons(config, locationId) {
     if (!config || !Array.isArray(config.buttons) || !locationId) return [];
-    var locations = isPlainObject(config.locations) ? config.locations : {};
-    var entry = hasOwn(locations, locationId) ? locations[locationId] : null;
-    var overrides = isPlainObject(entry) && isPlainObject(entry.buttons) ? entry.buttons : {};
+    var entry = locationEntry(config, locationId);
+    var overrides = entry && isPlainObject(entry.buttons) ? entry.buttons : {};
     var out = [];
     config.buttons.forEach(function (button) {
       var override = hasOwn(overrides, button.id) ? overrides[button.id] : undefined;
@@ -628,7 +756,27 @@
     // shows (BRD-05). { mo, img, root, anchor }.
     brandingWatch: null,
     renderTimers: { header: null, contact: null },
-    mountWaits: { header: null, contact: null, branding: null },
+    mountWaits: { header: null, contact: null, branding: null, theme: null },
+    // Theme section. `tokens` is what resolveTheme returned for the current
+    // context; `root` the sidebar container last themed; `applied` the token
+    // names on screen (the verify report); `navMarked` the nav items carrying
+    // the marker; `timer` the coalescing slot for the theme observer.
+    theme: {
+      root: null,
+      tokens: null,
+      applied: [],
+      appliedKey: '',
+      navMarked: [],
+      timer: null,
+      missingGen: null,
+      logGen: null,
+      ignored: 0,
+      fallback: false
+    },
+    // Observers section: the single MutationObserver instance that keeps the
+    // sidebar surfaces themed, or null while no sidebar token is applied.
+    // { mo, root, anchor }.
+    themeWatch: null,
     // D-02: bounded poll for contact fields that populate after the toolbar
     // renders (a programmatic input value change yields no MutationRecord).
     fieldWait: null,
@@ -692,13 +840,15 @@
       cancelMountWait(placement);
     });
     cancelMountWait('branding');
+    cancelMountWait('theme');
     cancelContactFieldsWait();
     // A logo still resolving for the old location must never land on the new
     // one (BRD-03): the preload dies with the generation that started it.
     cancelLogoPreload();
-    // A rebrand queued by the old route's observer is moot: renderAll below
-    // reconciles the mount for the new route.
+    // A rebrand or retheme queued by the old route's observers is moot:
+    // renderAll below reconciles the mount and the theme for the new route.
     cancelScheduledBranding();
+    cancelScheduledTheme();
     renderAll();
     log('nav', { reason: reason, generation: state.generation });
     log('context', {
@@ -1003,6 +1153,9 @@
     group.setAttribute('class', OWN.groupClass);
     group.setAttribute('data-' + NS + '-placement', placement);
     mount.appendChild(group);
+    // A group recreated by an observer-driven re-render carries the current
+    // theme from its first frame; a default-colored button is never shown.
+    applyGroupTheme(group, state.theme.tokens);
     return group;
   }
 
@@ -1060,6 +1213,7 @@
     renderPlacement('header');
     renderPlacement('contact');
     renderBranding('render');
+    renderTheme('render');
   }
 
   function uuid() {
@@ -1610,6 +1764,208 @@
     startLogoPreload(first);
   }
 
+// ==== theme ====
+
+  /**
+   * Accent colors (CLR-01..04). Tokens come from resolveTheme (the agency
+   * theme overlaid by the active location's) and are written only as inline
+   * CSS custom properties through style.setProperty on two kinds of element:
+   *   - every .ghlc-group this script created carries primary, primary-text,
+   *     and focus, which the buttons' own stylesheet already reads; and
+   *   - the sidebar container the adapter located carries sidebar-bg,
+   *     sidebar-text, and nav-active plus the data-ghlc-theme marker listing
+   *     the sidebar tokens applied; its adapter-located active nav items carry
+   *     data-ghlc-theme="nav-active".
+   * The scoped stylesheet selects only those markers, so with no marker
+   * present nothing native is restyled (CLR-04). Never the html or body
+   * element, never a style element, never stylesheet text: the value written
+   * is always the parser's normalized '#rrggbb' (T-03-01). renderTheme is an
+   * idempotent reconcile: a re-entry writes only what differs and removes
+   * whatever the current context no longer resolves, so a previous location's
+   * colors are never left on any element (T-03-03).
+   */
+
+  var SIDEBAR_TOKENS = Object.freeze(['sidebarBg', 'sidebarText', 'navActive']);
+  var SIDEBAR_MARKERS = Object.freeze({ sidebarBg: 'sidebar-bg', sidebarText: 'sidebar-text' });
+  var NAV_MARKER = 'nav-active';
+
+  // WCAG 2.x relative luminance of parsed sRGB channels (A-04).
+  function relativeLuminance(rgb) {
+    var linear = function (channel) {
+      var c = channel / 255;
+      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * linear(rgb.r) + 0.7152 * linear(rgb.g) + 0.0722 * linear(rgb.b);
+  }
+
+  // Contrast ratio of two hex colors, lighter luminance on top (1..21); 0 when
+  // either fails to parse, which every caller treats as unreadable.
+  function contrastRatio(hexA, hexB) {
+    var a = parseColor(hexA);
+    var b = parseColor(hexB);
+    if (!a || !b) return 0;
+    var la = relativeLuminance(a);
+    var lb = relativeLuminance(b);
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+  }
+
+  // Whichever safe text color reads better on the given background.
+  function pickReadableText(hex) {
+    var best = SAFE_TEXT_COLORS[0];
+    var bestRatio = -1;
+    for (var i = 0; i < SAFE_TEXT_COLORS.length; i++) {
+      var ratio = contrastRatio(hex, SAFE_TEXT_COLORS[i]);
+      if (ratio > bestRatio) {
+        best = SAFE_TEXT_COLORS[i];
+        bestRatio = ratio;
+      }
+    }
+    return best;
+  }
+
+  // Inline custom-property writes that touch the element only when the value differs.
+  function setVar(el, name, value) {
+    if (el.style.getPropertyValue(name) !== value) el.style.setProperty(name, value);
+  }
+
+  function removeVar(el, name) {
+    if (el.style.getPropertyValue(name) !== '') el.style.removeProperty(name);
+  }
+
+  // The button tokens on one of our groups: primary, its readable text, and
+  // the focus ring that follows primary; all three removed when no primary.
+  function applyGroupTheme(group, tokens) {
+    if (!group || !group.style) return;
+    if (tokens && tokens.primary) {
+      setVar(group, CSS_VARS.primary, tokens.primary);
+      setVar(group, CSS_VARS.primaryText, tokens.primaryText);
+      setVar(group, CSS_VARS.focus, tokens.primary);
+    } else {
+      removeVar(group, CSS_VARS.primary);
+      removeVar(group, CSS_VARS.primaryText);
+      removeVar(group, CSS_VARS.focus);
+    }
+  }
+
+  // The sidebar tokens on the sidebar container plus the marker listing the
+  // ones applied; absent tokens are removed and the marker follows them.
+  function applySidebarTheme(root, tokens) {
+    if (!root || !root.style) return;
+    var markers = [];
+    SIDEBAR_TOKENS.forEach(function (token) {
+      if (tokens[token]) setVar(root, CSS_VARS[token], tokens[token]);
+      else removeVar(root, CSS_VARS[token]);
+      if (tokens[token] && hasOwn(SIDEBAR_MARKERS, token)) markers.push(SIDEBAR_MARKERS[token]);
+    });
+    var value = markers.join(' ');
+    if (!value) {
+      if (root.hasAttribute(OWN.themeAttr)) root.removeAttribute(OWN.themeAttr);
+    } else if (root.getAttribute(OWN.themeAttr) !== value) {
+      root.setAttribute(OWN.themeAttr, value);
+    }
+  }
+
+  // Removes the nav marker from every item this script marked.
+  function clearNavMarks() {
+    state.theme.navMarked.forEach(function (item) {
+      if (item.getAttribute(OWN.themeAttr) === NAV_MARKER) item.removeAttribute(OWN.themeAttr);
+    });
+    state.theme.navMarked = [];
+  }
+
+  // Everything the theme wrote on the sidebar container and its nav items.
+  function clearSidebarTheme(root) {
+    if (root && root.style) {
+      SIDEBAR_TOKENS.forEach(function (token) {
+        removeVar(root, CSS_VARS[token]);
+      });
+      if (root.hasAttribute(OWN.themeAttr)) root.removeAttribute(OWN.themeAttr);
+    }
+    clearNavMarks();
+  }
+
+  // Marks the adapter-located active nav items while a navActive token is
+  // applied; completed in the next task (this pass only clears stale marks).
+  function markNavActive(root, tokens) {
+    if (!tokens.navActive) {
+      clearNavMarks();
+      return;
+    }
+  }
+
+  /**
+   * Reconcile the customizer's groups and the sidebar surfaces with the theme
+   * the current context resolves. Safe to call from any path (render, the
+   * theme observer, the bounded mount wait): every write is idempotent.
+   */
+  function renderTheme(reason) {
+    var theme = state.theme;
+    var resolved = resolveTheme(state.config, state.ctx.locationId);
+    var tokens = resolved.tokens;
+    theme.tokens = tokens;
+    theme.ignored = resolved.ignored.length;
+    theme.fallback = resolved.fallback;
+    if (theme.logGen !== state.generation) {
+      // Diagnostics carry scope, token name, and reason only: no value (DLV-04).
+      theme.logGen = state.generation;
+      resolved.ignored.forEach(function (item) {
+        log('theme-token-ignored', { scope: item.scope, token: item.token, reason: item.reason });
+      });
+      if (resolved.fallback) log('theme-contrast-fallback', { pair: 'sidebar' });
+    }
+    PLACEMENTS.forEach(function (placement) {
+      findGroups(placement).forEach(function (group) {
+        applyGroupTheme(group, tokens);
+      });
+    });
+    var root = adapter.findThemeRoot();
+    var wantsSidebar = !!(tokens.sidebarBg || tokens.sidebarText || tokens.navActive);
+    if (!root) {
+      // Missing surface: omit the customization, leave the native UI alone,
+      // and wait a bounded time for it only when this context has sidebar
+      // tokens to show. A container that slipped out of reach still wearing
+      // our properties is cleaned before it is forgotten (T-03-03).
+      if (theme.root) clearSidebarTheme(theme.root);
+      theme.root = null;
+      unwatchTheme();
+      if (theme.missingGen !== state.generation) {
+        theme.missingGen = state.generation;
+        log('theme-root-missing', { reason: reason });
+      }
+      if (wantsSidebar) waitForMount('theme');
+      else cancelMountWait('theme');
+    } else {
+      cancelMountWait('theme');
+      if (theme.root && theme.root !== root) clearSidebarTheme(theme.root);
+      theme.root = root;
+      if (wantsSidebar) {
+        // Watch before writing: our writes are outside the observer's filter,
+        // so the observer sees only HighLevel's records (A-07).
+        watchTheme(root);
+        applySidebarTheme(root, tokens);
+        markNavActive(root, tokens);
+      } else {
+        // Native sidebar means zero theme footprint: no properties, no marker, no observer.
+        clearSidebarTheme(root);
+        unwatchTheme();
+      }
+    }
+    var applied = THEME_TOKENS.filter(function (token) {
+      if (!tokens[token]) return false;
+      return token === 'primary' || !!root;
+    });
+    var key = applied.join(',') + '|' + (root ? 'root' : 'none');
+    if (key !== theme.appliedKey) {
+      theme.appliedKey = key;
+      theme.applied = applied;
+      log('theme-applied', {
+        generation: state.generation,
+        locationId: state.ctx.locationId || 'none',
+        tokens: applied.length
+      });
+    }
+  }
+
 // ==== observers ====
 
   function everyNode(list, predicate) {
@@ -1828,6 +2184,73 @@
   }
 
   /**
+   * Theme observer (CLR-02, A-07): exactly ONE MutationObserver instance keeps
+   * the sidebar surfaces themed while a sidebar token is applied. It is
+   * registered on two targets, both scoped to the sidebar, never the whole page:
+   *   root    the sidebar container, { childList, subtree, attributes filtered
+   *           to class and aria-current }: nav items re-rendered inside it or
+   *           the active state moved between them.
+   *   anchor  the root's parent, { childList } only: the whole container
+   *           replaced, which nothing inside it can see.
+   * No sidebar token means no observer at all (native sidebar, zero theme
+   * footprint). The script adds no nodes inside the sidebar and its own writes
+   * there (custom properties, the theme marker) fall outside the attribute
+   * filter, so every delivered record is HighLevel's, except a class record on
+   * the branding mount (the logo class add/remove), which is filtered by
+   * target. Any other record schedules ONE coalesced retheme; the retheme is
+   * an idempotent reconcile. A new root swaps the registrations; they never
+   * accumulate.
+   */
+  function watchTheme(root) {
+    var slot = state.themeWatch;
+    if (slot && slot.root === root && slot.anchor.isConnected && anchorFor(root) === slot.anchor) return;
+    unwatchTheme();
+    var anchor = anchorFor(root);
+    var mo = new MutationObserver(onThemeMutation);
+    mo.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'aria-current'] });
+    mo.observe(anchor, { childList: true, subtree: false });
+    state.themeWatch = { mo: mo, root: root, anchor: anchor };
+    log('theme-observer-attached', {});
+  }
+
+  function unwatchTheme() {
+    var slot = state.themeWatch;
+    if (!slot) return;
+    slot.mo.disconnect();
+    state.themeWatch = null;
+    log('theme-observer-detached', {});
+  }
+
+  function onThemeMutation(records) {
+    if (!state.themeWatch) return;
+    var mount = state.branding.native ? state.branding.native.el : null;
+    for (var i = 0; i < records.length; i++) {
+      var target = records[i].target;
+      if (isOwnNode(target) || (mount && target === mount)) continue;
+      scheduleTheme('mutation');
+      return;
+    }
+  }
+
+  // Coalesces a burst of native sidebar mutations into one theme reconcile on
+  // the next tick, mirroring scheduleBranding. state.theme.timer is the slot;
+  // applyContext cancels it because the new route reconciles anyway.
+  function scheduleTheme(reason) {
+    cancelScheduledTheme();
+    state.theme.timer = setTimeout(function () {
+      state.theme.timer = null;
+      renderTheme('retheme');
+      log('retheme', { reason: reason });
+    }, 0);
+  }
+
+  function cancelScheduledTheme() {
+    if (state.theme.timer === null) return;
+    clearTimeout(state.theme.timer);
+    state.theme.timer = null;
+  }
+
+  /**
    * Bounded, route-scoped retry for a mount that appears shortly after
    * navigation: one querySelector pass every MOUNT_WAIT_INTERVAL_MS for at
    * most MOUNT_WAIT_MAX_MS (60 passes), then give up and leave the native UI
@@ -1852,9 +2275,10 @@
       }
       // Re-arm first so the render's waitForMount is a no-op; it cancels the
       // wait itself once the mount is found. The branding slot re-enters
-      // renderBranding, the placement slots renderPlacement.
+      // renderBranding, the theme slot renderTheme, the placement slots renderPlacement.
       scheduleMountTick(placement, wait);
       if (placement === 'branding') renderBranding('mount-wait');
+      else if (placement === 'theme') renderTheme('mount-wait');
       else renderPlacement(placement);
     }, MOUNT_WAIT_INTERVAL_MS);
   }
@@ -1906,12 +2330,27 @@
         failed: Object.keys(state.branding.failed).length,
         loaded: Object.keys(state.branding.loaded).length
       },
-      observers: { header: !!state.watch.header, contact: !!state.watch.contact, branding: !!state.brandingWatch },
+      // Theme is reported as token names, counts, and booleans only: no color
+      // value anywhere (T-03-05).
+      theme: {
+        root: !!adapter.findThemeRoot(),
+        applied: state.theme.applied.slice(),
+        navActive: state.theme.navMarked.length,
+        ignored: state.theme.ignored,
+        fallback: state.theme.fallback
+      },
+      observers: {
+        header: !!state.watch.header,
+        contact: !!state.watch.contact,
+        branding: !!state.brandingWatch,
+        theme: !!state.themeWatch
+      },
       waiting: {
         header: !!state.mountWaits.header,
         contact: !!state.mountWaits.contact,
         contactFields: !!state.fieldWait,
-        branding: !!state.mountWaits.branding
+        branding: !!state.mountWaits.branding,
+        theme: !!state.mountWaits.theme
       }
     };
     console.info('[' + NS + '] verify', report);
@@ -1993,6 +2432,11 @@
       resolveAction: resolveAction,
       resolveBranding: resolveBranding,
       renderBranding: renderBranding,
+      resolveTheme: resolveTheme,
+      renderTheme: renderTheme,
+      parseColor: parseColor,
+      contrastRatio: contrastRatio,
+      locationEntry: locationEntry,
       isSafeHttpsUrl: isSafeHttpsUrl,
       isSafeImageUrl: isSafeImageUrl,
       isSafeLinkHref: isSafeLinkHref,

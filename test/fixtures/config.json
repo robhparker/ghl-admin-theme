@@ -5,18 +5,30 @@
     "logoUrl": "",
     "logoAlt": "Test Agency",
     "logoMount": "sidebar",
-    "theme": {}
+    "theme": { "primary": "#0f766e" }
   },
   "locations": {
     "locA": {
       "name": "Location A",
       "logoUrl": "./fixtures/logos/loc-a.svg",
       "logoAlt": "Location A logo",
+      "theme": {
+        "primary": "#c2410c",
+        "sidebarBg": "#1f2937",
+        "sidebarText": "#f9fafb",
+        "navActive": "#374151"
+      },
       "buttons": {}
     },
     "locB": {
       "name": "Location B",
       "logoUrl": "./fixtures/logos/loc-b.svg",
+      "theme": {
+        "primary": "not-a-color",
+        "sidebarBg": "#ffffff",
+        "sidebarText": "#f5f5f5",
+        "navActive": "#e5e7eb"
+      },
       "buttons": {
         "sendInvite": false,
         "supportLink": { "label": "B Support" }

@@ -1,7 +1,9 @@
 /*!
  * GHL Customizer (admin-theme) — scoped stylesheet, version 0.1.0
- * Every rule is prefixed .ghlc- so nothing bleeds into HighLevel's native UI.
- * Tokens live on .ghlc-group; Phase 3 overrides them per location.
+ * Every selector carries a ghlc marker (a .ghlc- class or a data-ghlc- attribute
+ * the script writes) so nothing bleeds into HighLevel's native UI.
+ * Button tokens live on .ghlc-group; a location or agency theme overrides them
+ * inline per group and sets the sidebar tokens inline on the sidebar container.
  */
 
 .ghlc-group {
@@ -118,4 +120,20 @@
 .ghlc-logo {
   object-fit: contain;
   background: transparent;
+}
+
+/* Theme markers: the script writes data-ghlc-theme only on the sidebar container
+   (listing the sidebar tokens applied) and on its active nav items while a location
+   or agency theme is applied, and removes it on native, so these match nothing otherwise. */
+[data-ghlc-theme~="sidebar-bg"] {
+  background-color: var(--ghlc-sidebar-bg);
+}
+
+[data-ghlc-theme~="sidebar-text"],
+[data-ghlc-theme~="sidebar-text"] a {
+  color: var(--ghlc-sidebar-text);
+}
+
+[data-ghlc-theme~="nav-active"] {
+  background-color: var(--ghlc-nav-active);
 }

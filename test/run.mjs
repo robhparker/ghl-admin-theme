@@ -54,6 +54,7 @@ const SECTION_MARKERS = [
   '// ==== context ====',
   '// ==== buttons ====',
   '// ==== branding ====',
+  '// ==== theme ====',
   '// ==== observers ====',
   '// ==== verify ====',
   '// ==== boot ====',
@@ -118,7 +119,7 @@ check('static: source contains no forbidden tokens (HTML setters, eval, storage,
   }
 });
 
-check('static: nine section markers appear exactly once, in order', () => {
+check('static: ten section markers appear exactly once, in order', () => {
   let last = -1;
   for (const marker of SECTION_MARKERS) {
     const lines = src.split('\n').filter((l) => l === marker);
@@ -171,6 +172,9 @@ check('static: schema documentation, data-config attribute, constant fallback, r
   assert.ok(src.includes('logoMount'), 'the logo mount is config-selectable');
   assert.ok(src.includes('img.agency-logo'), 'logo selectors are narrowed to the verified class');
   assert.ok(src.includes('__GHLC_TEST__') && src.includes('__test'));
+  // Phase 3: the active-nav candidates live in the adapter and the schema documents the hex grammar.
+  assert.ok(src.includes('sidebarNavActive'), 'the active nav candidates are an adapter selector list');
+  assert.ok(src.includes("'#rrggbb'"), 'the schema comment documents the theme color grammar');
 });
 
 check('static: verify section contains no selector literals (probing goes through adapter.probe)', () => {
@@ -1257,16 +1261,27 @@ const brandingRegs = (shim) => {
   const imgReg = shim.observers().find((o) => o.options.attributes && o.target.tagName === 'IMG');
   return imgReg ? shim.observers().filter((o) => o.observer === imgReg.observer) : [];
 };
+// Registrations belonging to the theme observer (Phase 3): the one instance
+// whose root registration filters attributes to class and aria-current. No
+// other observer in the script filters on aria-current.
+const themeRegs = (shim) => {
+  const rootReg = shim.observers().find((o) => Array.isArray(o.options.attributeFilter) && o.options.attributeFilter.includes('aria-current'));
+  return rootReg ? shim.observers().filter((o) => o.observer === rootReg.observer) : [];
+};
+const themeMo = (shim) => { const regs = themeRegs(shim); return regs.length ? regs[0].observer : null; };
 
 scenario('observers: wholesale header replacement restores header buttons once and swaps the observer set', async () => {
   const { shim, shell: page, GHLC } = await bootContactPage();
-  // The shipped fixture brands locA, so the single branding observer (Phase 2)
-  // holds three registrations; the placement sets are everything else.
+  // The shipped fixture brands and themes locA, so the single branding observer
+  // (Phase 2) holds three registrations and the single theme observer (Phase 3)
+  // two; the placement sets are everything else.
   const brandingMo = shim.observers().find((o) => o.target === page.logo).observer;
-  const placementRegs = () => shim.observers().filter((o) => o.observer !== brandingMo);
+  const placementRegs = () => shim.observers().filter((o) => o.observer !== brandingMo && o.observer !== themeMo(shim));
   const before = placementRegs().length;
   assert.equal(before, 4, 'root + anchor observer for each of header and contact');
   assert.equal(shim.observers().filter((o) => o.observer === brandingMo).length, 3, 'three branding registrations on one instance');
+  assert.equal(themeRegs(shim).length, 2, 'two theme registrations on one instance');
+  assert.equal(shim.observers().length, 9, 'placements + branding + theme, nothing else');
   assert.equal(logCount(shim, 'observer-attached', 'header'), 1);
   let oldHeader = shim.document.querySelector('.hl_header');
   assert.ok(placementRegs().some((o) => o.target === oldHeader && o.options.subtree === true), 'root observer on the header');
@@ -1311,10 +1326,10 @@ scenario('observers: wholesale header replacement restores header buttons once a
   assert.equal(await W.__test.boot(), true);
   await wrapped.flush();
   const wrappedBrandingMo = wrapped.observers().find((o) => o.target === shell.logo).observer;
-  const wrappedPlacementRegs = () => wrapped.observers().filter((o) => o.observer !== wrappedBrandingMo);
+  const wrappedPlacementRegs = () => wrapped.observers().filter((o) => o.observer !== wrappedBrandingMo && o.observer !== themeMo(wrapped));
   assert.ok(wrappedPlacementRegs().some((o) => o.target === wrap && o.options.subtree === false), 'anchor is the wrapper');
-  // The branding anchor legitimately targets body (the sidebar's parent); no
-  // placement registration may, and nothing may observe body with subtree.
+  // The branding and theme anchors legitimately target body (the sidebar's
+  // parent); no placement registration may, and nothing may observe body with subtree.
   assert.ok(!wrappedPlacementRegs().some((o) => o.target === wrapped.document.body), 'no placement registration targets body');
   assert.ok(!wrapped.observers().some((o) => o.target === wrapped.document.body && o.options.subtree === true), 'never a page-wide subtree observer');
   const replacement = freshHeader(wrapped);
@@ -1374,8 +1389,9 @@ scenario('observers: contact toolbar re-render keeps one button bound to the cur
   assert.equal(GHLC.verify().observers.contact, true);
   assert.ok(shim.observers().some((o) => o.target === newRegion), 'root observer follows the new region');
   assert.ok(!shim.observers().some((o) => o.target === oldRegion), 'nothing targets the old region');
-  assert.equal(shim.observers().length, 7, 'two placement sets plus three branding registrations');
+  assert.equal(shim.observers().length, 9, 'two placement sets plus three branding and two theme registrations');
   assert.equal(brandingRegs(shim).length, 3, 'the branding registrations belong to one instance');
+  assert.equal(themeRegs(shim).length, 2, 'the theme registrations belong to one instance');
   assert.equal(GHLC.__test.getState().generation, 1, 'no generation bump on a same-context re-render');
   assert.equal(logCount(shim, 'rerender', 'contact'), 1);
   button.click();
@@ -1507,8 +1523,10 @@ scenario('observers: own writes do not cause render loops', async () => {
   assert.equal(button.getAttribute('data-state'), 'ready');
   assert.equal(logCount(shim, 'rerender'), 0, 'setState label/message swaps are self-inflicted');
   assert.equal(logCount(shim, 'rebrand'), 0, 'branding writes never schedule a rebrand');
-  assert.equal(shim.observers().length, 7);
+  assert.equal(logCount(shim, 'retheme'), 0, 'theme writes never schedule a retheme');
+  assert.equal(shim.observers().length, 9);
   assert.equal(brandingRegs(shim).length, 3);
+  assert.equal(themeRegs(shim).length, 2);
   assert.equal(shim.errors.length, 0);
 });
 
@@ -1539,8 +1557,9 @@ scenario('observers: mount appearing after navigation is picked up by the bounde
   assert.equal(button.getAttribute('data-state'), 'ready');
   assert.equal(GHLC.verify().waiting.contact, false);
   assert.equal(GHLC.verify().observers.contact, true);
-  assert.equal(shim.observers().length, 7);
+  assert.equal(shim.observers().length, 9);
   assert.equal(brandingRegs(shim).length, 3);
+  assert.equal(themeRegs(shim).length, 2);
   assert.equal(shim.errors.length, 0);
 });
 
@@ -1570,15 +1589,16 @@ scenario('observers: context change cancels the wait and leaving to agency disco
   shim.navigate('/v2/location/locA/contacts/detail/c4', { via: 'pushState' });
   await shim.flush();
   assert.equal(GHLC.verify().waiting.contact, true);
-  assert.equal(shim.observers().length, 5, 'header set plus the branding registrations while waiting for the contact mount');
+  assert.equal(shim.observers().length, 7, 'header set plus the branding and theme registrations while waiting for the contact mount');
   assert.equal(brandingRegs(shim).length, 3, 'branding registrations belong to one instance');
+  assert.equal(themeRegs(shim).length, 2, 'theme registrations belong to one instance');
   shim.navigate('/v2/agency/dashboard', { via: 'pushState' });
   shim.setSidebarMode('agency');
   shim.setContact(null);
   await shim.flush();
   const r = GHLC.verify();
-  assert.deepEqual(plain(r.waiting), { header: false, contact: false, contactFields: false, branding: false });
-  assert.deepEqual(plain(r.observers), { header: false, contact: false, branding: false });
+  assert.deepEqual(plain(r.waiting), { header: false, contact: false, contactFields: false, branding: false, theme: false });
+  assert.deepEqual(plain(r.observers), { header: false, contact: false, branding: false, theme: false });
   assert.equal(shim.observers().length, 0, 'agency pages end with zero observers');
   assert.equal(shim.document.querySelectorAll('[data-ghlc-button-id]').length, 0);
   assert.equal(shim.document.querySelectorAll('.ghlc-group').length, 0);
@@ -1640,7 +1660,7 @@ scenario('disable: enabled false is a complete no-op', async () => {
   assert.equal(r.config.loaded, false);
   assert.equal(r.config.schemaVersion, 1);
   assert.deepEqual(plain(r.config.buttonIds), []);
-  assert.deepEqual(plain(r.observers), { header: false, contact: false, branding: false });
+  assert.deepEqual(plain(r.observers), { header: false, contact: false, branding: false, theme: false });
   assert.deepEqual(plain(r.branding), { mount: 'sidebar', found: true, applied: null, resolving: false, failed: 0, loaded: 0 }, 'disabled: the mount is probed, nothing was applied');
   assert.ok(r.mounts.headerMount && r.mounts.contactMount, 'verify still probes mounts while disabled');
   await shim.advanceTimers(16000);
@@ -1709,11 +1729,13 @@ scenario('verify: report shape and hygiene', async () => {
     contactMountVia: 'selector',
     contactEmailField: false,
     contactPhoneField: false,
+    sidebarNavActive: false,
   });
   assert.deepEqual(plain(r.contactFields), { email: true, phone: true, emailCandidates: 1, phoneCandidates: 1 });
-  assert.deepEqual(plain(r.observers), { header: true, contact: true, branding: true });
-  assert.deepEqual(plain(r.waiting), { header: false, contact: false, contactFields: false, branding: false });
+  assert.deepEqual(plain(r.observers), { header: true, contact: true, branding: true, theme: true });
+  assert.deepEqual(plain(r.waiting), { header: false, contact: false, contactFields: false, branding: false, theme: false });
   assert.deepEqual(plain(r.branding), { mount: 'sidebar', found: true, applied: 'location', resolving: false, failed: 0, loaded: 1 });
+  assert.deepEqual(plain(r.theme), { root: true, applied: ['primary', 'sidebarBg', 'sidebarText', 'navActive'], navActive: 0, ignored: 0, fallback: false });
   assert.ok(Array.isArray(r.buttons) && r.buttons.length === 6);
   assert.ok(r.buttons.some((b) => b.id === 'sendInvite' && b.placement === 'contact' && b.state === 'ready'));
   assert.ok(r.buttons.every((b) => Object.keys(b).length === 3), 'buttons carry id, placement, state only');
@@ -1745,7 +1767,8 @@ scenario('verify: missing mounts are reported false and native DOM stays untouch
   assert.equal(r.mounts.locationSwitcher, true);
   assert.equal(r.mounts.backToAgency, false);
   assert.deepEqual(plain(r.contactFields), { email: false, phone: false, emailCandidates: 0, phoneCandidates: 0 });
-  assert.deepEqual(plain(r.observers), { header: false, contact: false, branding: false });
+  // The hand-built sidebar is the theme root, so locA's sidebar tokens apply and the theme observer is up.
+  assert.deepEqual(plain(r.observers), { header: false, contact: false, branding: false, theme: true });
   assert.deepEqual(plain(r.branding), { mount: 'sidebar', found: false, applied: null, resolving: false, failed: 0, loaded: 0 });
   assert.equal(r.waiting.branding, true, 'locA has a logo to show, so a bounded wait runs for the missing mount');
   assert.equal(r.waiting.header, true, 'the route expects a header, so a bounded wait runs');
@@ -1756,7 +1779,8 @@ scenario('verify: missing mounts are reported false and native DOM stays untouch
   await shim.advanceTimers(16000);
   assert.equal(GHLC.verify().waiting.header, false, 'wait gave up');
   assert.deepEqual(doc.body.childNodes, snapshot, 'still untouched after the wait');
-  assert.equal(shim.observers().length, 0);
+  assert.equal(shim.observers().length, 2, 'only the theme observer remains: the sidebar is present and themed');
+  assert.equal(themeRegs(shim).length, 2);
   assert.equal(shim.errors.length, 0);
 });
 
@@ -2465,7 +2489,7 @@ scenario('verify: branding report shape, header mount, and hygiene', async () =>
   const { shim, GHLC } = await bootBranding();
   const r = GHLC.verify();
   assert.deepEqual(plain(r.branding), { mount: 'sidebar', found: true, applied: 'location', resolving: false, failed: 0, loaded: 1 });
-  assert.deepEqual(plain(r.observers), { header: true, contact: false, branding: true });
+  assert.deepEqual(plain(r.observers), { header: true, contact: false, branding: true, theme: true });
   assert.equal(r.waiting.branding, false);
   const text = JSON.stringify(r);
   for (const s of ['loc-a.svg', 'logos/', 'native.test', 'Location A', 'Test Agency']) {
@@ -2508,6 +2532,119 @@ scenario('verify: branding report shape, header mount, and hygiene', async () =>
   assert.equal(b.GHLC.verify().branding.mount, 'sidebar');
   logoIs(b.shell.logo, { src: LOC_A_LOGO, alt: 'Location A logo', tier: 'location' });
   assert.equal(b.shim.errors.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Accent colors (Phase 3, Plan 01)
+// Fixture: agency.theme.primary #0f766e; locA a full valid theme; locB an
+// invalid primary plus a low-contrast sidebar pair; locC no theme.
+// ---------------------------------------------------------------------------
+
+const A_PRIMARY = '#c2410c';
+const A_BG = '#1f2937';
+const A_TEXT = '#f9fafb';
+const A_NAV = '#374151';
+const AGENCY_PRIMARY = '#0f766e';
+const THEME_LEAKS = ['#c2410c', '#1f2937', '#0f766e', '#f9fafb', '#374151', 'c2410c', '1f2937', '0f766e', 'f9fafb', '374151'];
+const groupsOf = (shim) => shim.document.querySelectorAll('.ghlc-group');
+const varOf = (el, name) => el.style.getPropertyValue(name);
+// Every element in the document whose inline style carries a theme custom property.
+const themedElements = (shim) => allElements(shim.document).filter((el) => el.style.cssText.includes('--ghlc-'));
+
+check('unit: parseColor accepts 3- and 6-digit hex only and normalizes to #rrggbb', () => {
+  const api = throwawayApi();
+  assert.deepEqual(plain(api.parseColor('#fff')), { hex: '#ffffff', r: 255, g: 255, b: 255 });
+  assert.deepEqual(plain(api.parseColor('#0F766E')), { hex: '#0f766e', r: 15, g: 118, b: 110 });
+  assert.deepEqual(plain(api.parseColor('#C2410C')), { hex: '#c2410c', r: 194, g: 65, b: 12 });
+  for (const bad of ['fff', '#ffff', '#fffffff0', ' #fff', '#fff ', 'red', 'rgb(0,0,0)', 'url(x)', '', null, undefined, 42, {}, []]) {
+    assert.equal(api.parseColor(bad), null, `rejects ${JSON.stringify(bad)}`);
+  }
+});
+
+check('unit: resolveTheme merges agency and location tokens through locationEntry and drops invalid values', () => {
+  const api = throwawayApi();
+  const cfg = loadFixture();
+  const theme = (c, id) => plain(api.resolveTheme(c, id));
+  assert.deepEqual(theme(cfg, 'locA'), {
+    tokens: { primary: A_PRIMARY, primaryText: '#ffffff', sidebarBg: A_BG, sidebarText: A_TEXT, navActive: A_NAV },
+    ignored: [],
+    fallback: false,
+  });
+  const agencyOnly = { tokens: { primary: AGENCY_PRIMARY, primaryText: '#ffffff' }, ignored: [], fallback: false };
+  assert.deepEqual(theme(cfg, 'locC'), agencyOnly, 'a location without a theme inherits the agency tokens');
+  assert.deepEqual(theme(cfg, null), agencyOnly, 'agency-level pages resolve the agency tokens alone');
+  assert.deepEqual(theme(cfg, 'locZ'), agencyOnly, 'an unconfigured location inherits the agency tokens');
+  assert.deepEqual(theme(cfg, 'constructor'), agencyOnly, 'a prototype-named location ID never resolves');
+  const b = theme(cfg, 'locB');
+  assert.equal(b.tokens.primary, AGENCY_PRIMARY, 'an invalid location primary falls through to the agency value');
+  assert.ok(b.ignored.some((i) => i.scope === 'location' && i.token === 'primary' && i.reason === 'invalid'), 'the invalid value is reported by scope and token');
+
+  const empty = loadFixture();
+  empty.agency.theme.primary = '';
+  assert.deepEqual(theme(empty, 'locC'), { tokens: {}, ignored: [], fallback: false }, 'an empty string is absent, not a diagnostic');
+  const nulled = loadFixture();
+  nulled.agency.theme.primary = null;
+  assert.deepEqual(theme(nulled, 'locC').ignored, [], 'null is absent, not a diagnostic');
+  const notObject = loadFixture();
+  notObject.agency.theme = 'blue';
+  assert.deepEqual(theme(notObject, 'locC'), { tokens: {}, ignored: [], fallback: false }, 'a non-object theme yields no tokens');
+  const arrayTheme = loadFixture();
+  arrayTheme.agency.theme = ['#ff0000'];
+  assert.deepEqual(theme(arrayTheme, 'locC').tokens, {}, 'an array theme yields no tokens');
+  assert.deepEqual(theme({ ...loadFixture(), agency: {} }, 'locC').tokens, {}, 'a missing theme yields no tokens');
+
+  // locationEntry is the one lookup every per-location facet reads through.
+  assert.equal(api.locationEntry(cfg, 'locA'), cfg.locations.locA, 'returns the fixture entry itself');
+  assert.equal(api.locationEntry(cfg, 'nope'), null);
+  assert.equal(api.locationEntry(cfg, null), null);
+  assert.equal(api.locationEntry(cfg, 'constructor'), null);
+  assert.equal(api.locationEntry(cfg, '__proto__'), null);
+  assert.equal(api.locationEntry(null, 'locA'), null);
+  assert.equal(api.locationEntry({ ...cfg, locations: [] }, 'locA'), null);
+  // The refactored callers still return exactly what the Phase 1/2 units pin.
+  assert.deepEqual(plain(api.resolveBranding(cfg, 'locA')), [{ tier: 'location', src: LOC_A_LOGO, alt: 'Location A logo' }]);
+  assert.deepEqual(plain(api.resolveBranding(cfg, 'constructor')), []);
+  assert.deepEqual(plain(api.resolveButtons(cfg, 'locA').map((b) => b.id)), ['sendInvite', 'supportLink', 'locOnlyLink', 'badTypeBtn', 'badHandlerBtn', 'copyIdBtn']);
+  assert.deepEqual(plain(api.resolveButtons(cfg, 'locB').map((b) => b.id)), ['supportLink', 'badTypeBtn', 'badHandlerBtn', 'copyIdBtn']);
+  assert.equal(api.resolveButtons(cfg, 'locB').find((b) => b.id === 'supportLink').label, 'B Support');
+  assert.deepEqual(plain(api.resolveButtons(cfg, null)), []);
+});
+
+scenario("theme tracer: a location's primary and sidebarBg land on the customizer's groups and the sidebar; the agency route removes them", async () => {
+  const { shim, shell, GHLC } = await bootBranding({ path: CONTACT_PATH, shell: { contact: JANE } });
+  const groups = groupsOf(shim);
+  assert.equal(groups.length, 2, 'header and contact groups');
+  for (const group of groups) {
+    assert.equal(varOf(group, '--ghlc-primary'), A_PRIMARY);
+    assert.equal(varOf(group, '--ghlc-primary-text'), '#ffffff');
+    assert.equal(varOf(group, '--ghlc-focus'), A_PRIMARY);
+  }
+  assert.equal(varOf(shell.sidebar, '--ghlc-sidebar-bg'), A_BG);
+  assert.ok((shell.sidebar.getAttribute('data-ghlc-theme') || '').split(' ').includes('sidebar-bg'), 'the sidebar carries the sidebar-bg marker');
+  let r = GHLC.verify();
+  assert.equal(r.theme.root, true);
+  assert.ok(r.theme.applied.includes('primary') && r.theme.applied.includes('sidebarBg'));
+  assert.equal(r.observers.theme, true);
+  assert.equal(shell.sidebar.getAttribute('class'), 'sidebar-v2-location', 'the sidebar class attribute is untouched');
+  const themed = themedElements(shim);
+  assert.equal(themed.length, 3, 'the sidebar and the two groups, nothing else');
+  assert.ok(themed.every((el) => el === shell.sidebar || el.classList.contains('ghlc-group')));
+  assert.equal(shim.document.documentElement.style.cssText, '', 'nothing on the html element');
+  assert.equal(shim.document.body.style.cssText, '', 'nothing on the body element');
+  assert.equal(shim.document.querySelectorAll('style').length, 0, 'no style element was generated');
+
+  await go(shim, '/v2/agency/dashboard');
+  assert.equal(groupsOf(shim).length, 0, 'no groups on an agency route');
+  assert.equal(shell.sidebar.getAttribute('data-ghlc-theme'), null, 'the marker is gone');
+  assert.equal(varOf(shell.sidebar, '--ghlc-sidebar-bg'), '');
+  assert.equal(themedElements(shim).length, 0, 'no element carries a theme property');
+  r = GHLC.verify();
+  assert.deepEqual(plain(r.theme.applied), ['primary'], 'the agency primary resolves; the sidebar tokens are gone');
+  assert.equal(r.observers.theme, false, 'no sidebar token, no theme observer');
+  assert.equal(GHLC.__test.getState().generation, 2);
+  assert.ok(logCount(shim, 'theme-applied') >= 1, 'theme diagnostics were produced');
+  assertNoLeak(shim.console.lines, THEME_LEAKS, 'theme');
+  assert.equal(shim.errors.length, 0);
 });
 
 // ---------------------------------------------------------------------------
