@@ -652,14 +652,14 @@ scenario('production mode: no __test surface, window.GHLC exposes version/ready/
   new vm.Script(src, { filename: 'ghl-customizer.js' }).runInContext(shim.context);
   shim.document.currentScript = null;
   const GHLC = shim.window.GHLC;
-  assert.equal(GHLC.version, '0.1.0');
+  assert.equal(GHLC.version, pkgVersion);
   assert.equal(GHLC.__test, undefined);
   assert.equal(typeof GHLC.verify, 'function');
   assert.equal(await GHLC.ready, true);
   await shim.flush();
   assert.equal(shim.document.querySelectorAll('[data-ghlc-button-id="sendInvite"]').length, 1);
   const report = GHLC.verify();
-  assert.equal(report.version, '0.1.0');
+  assert.equal(report.version, pkgVersion);
   assert.deepEqual(plain(report.route), { locationId: 'locA', contactId: 'c1', isAgency: false });
   assert.equal(report.generation, 1);
 });
@@ -1821,7 +1821,7 @@ scenario('verify: report shape and hygiene', async () => {
   const { shim, GHLC } = await bootContactPage();
   assert.ok(logCount(shim, '[ghlc] verify') >= 1, 'debug mode auto-ran verify at boot');
   const r = GHLC.verify();
-  assert.equal(r.version, '0.1.0');
+  assert.equal(r.version, pkgVersion);
   assert.equal(r.url, undefined, 'raw pathname is not reported (IN-03)');
   assert.deepEqual(plain(r.route), { locationId: 'locA', contactId: 'c1', isAgency: false });
   assert.equal(r.generation, 1);

@@ -13,8 +13,8 @@ Open **Agency Settings -> Company** (the whitelabel and company settings area) a
 ```js
 (function () {
   var s = document.createElement('script');
-  s.src = 'https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.0/src/ghl-customizer.js';
-  s.setAttribute('data-config', 'https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.0/config/agency-config.json');
+  s.src = 'https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.1/src/ghl-customizer.js';
+  s.setAttribute('data-config', 'https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.1/config/agency-config.json');
   s.defer = true;
   document.head.appendChild(s);
 })();
@@ -23,8 +23,8 @@ Open **Agency Settings -> Company** (the whitelabel and company settings area) a
 If the field accepts HTML rather than raw JavaScript, the equivalent script tag is:
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.0/src/ghl-customizer.js"
-        data-config="https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.0/config/agency-config.json"
+<script src="https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.1/src/ghl-customizer.js"
+        data-config="https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.1/config/agency-config.json"
         defer></script>
 ```
 
@@ -32,7 +32,7 @@ Then save, reload HighLevel, open a location that has an entry in the config, an
 
 ## Hosting on jsDelivr
 
-jsDelivr serves files straight from a public GitHub repository. Each URL has four parts after the `/gh/` prefix on the `cdn.jsdelivr.net` host: the repository owner, the repository name, an `@` followed by a git tag, and the file path. The install URLs above are that pattern filled in with this repository and the `v0.1.0` tag.
+jsDelivr serves files straight from a public GitHub repository. Each URL has four parts after the `/gh/` prefix on the `cdn.jsdelivr.net` host: the repository owner, the repository name, an `@` followed by a git tag, and the file path. The install URLs above are that pattern filled in with this repository and the `v0.1.1` tag.
 
 Rules that make this safe:
 
@@ -126,7 +126,7 @@ HighLevel's Inbound Webhook trigger matches the contact on `email` or `phone` in
 ```json
 "iDPNGKoFsjvf9wUCrk3V": {
   "name": "Dummy Clinic",
-  "logoUrl": "https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.0/test/fixtures/logos/loc-a.svg",
+  "logoUrl": "https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.1/test/fixtures/logos/loc-a.svg",
   "logoAlt": "Dummy Clinic",
   "theme": {
     "primary": "#0f766e",
