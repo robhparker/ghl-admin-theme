@@ -191,6 +191,30 @@ check('static: verify section contains no selector literals (probing goes throug
   assert.ok(section.includes('contactFields'), 'verify reports contact fields as booleans');
 });
 
+check('static: every stylesheet selector is ghlc-scoped and nothing is marked important', () => {
+  const css = fs.readFileSync(path.join(root, 'src', 'ghl-customizer.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  // Every text run that precedes a "{" is a prelude: a selector list, or an
+  // at-rule head (skipped; its inner rules produce their own preludes, so the
+  // @media body is checked too). Each comma-separated selector must carry a
+  // ghlc marker (a .ghlc- class or a data-ghlc- attribute) or the rule could
+  // restyle native HighLevel UI (CLR-04, T-03-02).
+  const preludes = css.split('{').slice(0, -1).map((s) => s.split('}').pop().trim()).filter(Boolean);
+  assert.ok(preludes.length >= 15, `stylesheet parsed into rules (${preludes.length})`);
+  let checked = 0;
+  for (const prelude of preludes) {
+    if (prelude.startsWith('@')) continue;
+    for (const selector of prelude.split(',').map((s) => s.trim()).filter(Boolean)) {
+      checked += 1;
+      assert.ok(selector.includes('ghlc'), `selector "${selector}" carries no ghlc marker`);
+    }
+  }
+  assert.ok(checked >= 15, `selectors were checked (${checked})`);
+  assert.equal((css.match(/!\s*important/gi) || []).length, 0, 'no importance override anywhere in the stylesheet');
+  for (const marker of ['[data-ghlc-theme~="sidebar-bg"]', '[data-ghlc-theme~="sidebar-text"]', '[data-ghlc-theme~="nav-active"]']) {
+    assert.ok(css.includes(marker), `theme rule ${marker} present`);
+  }
+});
+
 check('notice: NOTICE.md records the reference project, its revision, its missing license, and that nothing was copied', () => {
   const noticePath = path.join(root, 'NOTICE.md');
   assert.ok(fs.existsSync(noticePath), 'NOTICE.md exists at the repo root');
@@ -213,6 +237,12 @@ check('harness: test/harness.html carries the required HighLevel shell, router h
     assert.ok(harness.includes(`getElementById('${id}')`), `harness control #${id} must be wired`);
   }
   assert.ok(harness.includes('<base href="/test/">'), 'relative fixture logo URLs must resolve against /test/ after the router pushStates');
+  // Phase 3: a sidebar nav with a route-driven active class, the toggle control, and a banner note.
+  for (const s of ['class="hx-nav"', 'hl_nav-item--active', 'hx-toggle-nav', "getElementById('hx-toggle-nav')"]) {
+    assert.ok(harness.includes(s), `harness must contain ${s}`);
+  }
+  const banner = /<div class="hx-banner">([\s\S]*?)<\/div>/.exec(harness);
+  assert.ok(banner && /theme/i.test(banner[1]), 'the harness banner mentions the theme demo');
 });
 
 check('config: both JSON files parse, validate, use HTTPS webhooks, and carry no secret-like keys', () => {
@@ -1637,6 +1667,10 @@ function assertNoFootprint(shim, GHLC, label) {
   assert.equal(shim.document.querySelectorAll('.ghlc-group').length, 0, `${label}: no groups`);
   assert.equal(shim.observers().length, 0, `${label}: no observers`);
   assert.equal(GHLC.verify().observers.branding, false, `${label}: no branding observer`);
+  assert.equal(GHLC.verify().observers.theme, false, `${label}: no theme observer`);
+  assert.equal(shim.document.querySelectorAll('[data-ghlc-theme]').length, 0, `${label}: no theme marker`);
+  const sidebar = shim.document.querySelector('#sidebar-v2');
+  if (sidebar) assert.ok(!sidebar.style.cssText.includes('--ghlc-'), `${label}: no theme property on the sidebar`);
   assert.equal(shim.listenerCount(shim.window, 'popstate'), 0, `${label}: no popstate listener`);
   assert.equal(shim.listenerCount(shim.window, 'routeChangeEvent'), 0, `${label}: no route listener`);
   assert.equal(shim.listenerCount(shim.window, 'ghlc:navigate'), 0, `${label}: no navigate listener`);
@@ -2993,6 +3027,87 @@ scenario('verify: theme report shape and hygiene', async () => {
     assertNoLeak(s.shim.console.lines, ALL_HEX, `${label} theme DLV-04`);
     assert.equal(s.shim.errors.length, 0);
   }
+});
+
+// ---------------------------------------------------------------------------
+// CLR-04 guards and diagnostics hygiene (Phase 3, Plan 01, Task 3)
+// ---------------------------------------------------------------------------
+
+scenario("theme: native status colors and classes outside the customizer's surfaces are untouched (CLR-04)", async () => {
+  const shim = createShim({ pathname: CONTACT_PATH, search: '?ghlc-debug=1', fixture: loadFixture() });
+  const shell = shim.buildShell({ sidebarMode: 'location', contact: JANE });
+  // Native look-alikes: a status badge inside the sidebar and a success toast
+  // in the header, each with its own inline colors.
+  const BADGE_STYLE = 'color: #d92d20; background-color: #fef3f2';
+  const TOAST_STYLE = 'color: #027a48; background-color: #ecfdf3';
+  const badge = shim.el('span', { class: 'hx-badge', style: BADGE_STYLE }, ['3']);
+  shell.sidebar.appendChild(badge);
+  const toast = shim.el('div', { class: 'hx-toast hx-toast--success', style: TOAST_STYLE }, ['Saved']);
+  shell.header.appendChild(toast);
+  const snapshot = new Map();
+  for (const el of allElements(shim.document)) {
+    snapshot.set(el, { class: el.getAttribute('class'), style: el.getAttribute('style') });
+  }
+  assert.ok(snapshot.size >= 12, 'the shell was snapshotted');
+  const GHLC = shim.run(src);
+  assert.equal(await GHLC.__test.boot(), true);
+  await shim.flush();
+
+  const checkNative = (label) => {
+    assert.equal(badge.getAttribute('style'), BADGE_STYLE, `${label}: badge inline style byte-identical`);
+    assert.equal(toast.getAttribute('style'), TOAST_STYLE, `${label}: toast inline style byte-identical`);
+    assert.equal(badge.getAttribute('class'), 'hx-badge', `${label}: badge class untouched`);
+    assert.equal(toast.getAttribute('class'), 'hx-toast hx-toast--success', `${label}: toast class untouched`);
+    assert.ok(badge.isConnected && toast.isConnected, `${label}: look-alikes still in the document`);
+    for (const [el, snap] of snapshot) {
+      if (el.closest('.ghlc-group')) continue;
+      // The logo img is the Phase 2 branding surface: its ghlc-logo marker
+      // class while branded is the documented BRD write, not a theme write.
+      if (el !== shell.logo) assert.equal(el.getAttribute('class'), snap.class, `${label}: <${el.localName}> class attribute unchanged`);
+      assert.equal(el.getAttribute('style'), snap.style, `${label}: <${el.localName}> style attribute unchanged`);
+    }
+    const sidebar = shim.document.querySelector('#sidebar-v2');
+    for (const el of shim.document.querySelectorAll('[data-ghlc-theme]')) {
+      assert.ok(el === sidebar || (el.localName === 'a' && el.classList.contains('hl_nav-item') && sidebar.contains(el)), `${label}: marker only on the sidebar root or its nav items (<${el.localName} class="${el.getAttribute('class')}">)`);
+    }
+    for (const el of themedElements(shim)) {
+      assert.ok(el === sidebar || el.classList.contains('ghlc-group'), `${label}: theme properties only on the sidebar root or a group (<${el.localName}>)`);
+    }
+    assert.ok(!badge.style.cssText.includes('--ghlc-') && !toast.style.cssText.includes('--ghlc-'), `${label}: look-alikes carry no theme property`);
+    for (const rootEl of [shim.document.documentElement, shim.document.body]) {
+      assert.equal(rootEl.style.cssText, '', `${label}: nothing written on <${rootEl.localName}>`);
+      assert.equal(rootEl.getAttribute('data-ghlc-theme'), null, `${label}: no marker on <${rootEl.localName}>`);
+    }
+  };
+
+  checkNative('after boot at locA');
+  assert.equal(GHLC.verify().theme.root, true);
+  await go(shim, '/v2/location/locB/dashboard');
+  checkNative('at locB');
+  assert.equal(GHLC.verify().theme.fallback, true);
+  await go(shim, '/v2/agency/dashboard');
+  checkNative('at agency');
+  assert.equal(shim.document.querySelectorAll('[data-ghlc-theme]').length, 0);
+  await go(shim, '/v2/location/locA/dashboard');
+  checkNative('back at locA');
+  assert.equal(GHLC.verify().theme.navActive, 1);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('logs: theme diagnostics never contain color values or the sidebar selector', async () => {
+  const { shim } = await bootBranding({ path: CONTACT_PATH, shell: { contact: JANE } });
+  await go(shim, '/v2/location/locB/dashboard');
+  await go(shim, '/v2/agency/dashboard');
+  await go(shim, '/v2/location/locA/dashboard');
+  assert.ok(logCount(shim, 'theme-applied') >= 2, 'theme-applied was logged across the switches');
+  assert.ok(logCount(shim, 'theme-token-ignored') >= 1, "locB's invalid primary was reported");
+  assert.ok(logCount(shim, 'theme-contrast-fallback') >= 1, "locB's fallback was reported");
+  assert.ok(logCount(shim, 'theme-observer-attached') >= 1 && logCount(shim, 'theme-observer-detached') >= 1);
+  assert.ok(logCount(shim, '[ghlc] verify') >= 1, 'the verify report was printed too');
+  // No existing [ghlc] line carries a hash, so the bare '#' needle catches any
+  // color value in any shape; the hex bodies catch a hash-less leak.
+  assertNoLeak(shim.console.lines, ['#', 'c2410c', '1f2937', 'f9fafb', '374151', '0f766e', 'e5e7eb', '101828', 'ffffff', 'sidebar-v2', 'hl_nav', 'router-link', 'aria-current'], 'theme DLV-04');
+  assert.equal(shim.errors.length, 0);
 });
 
 // ---------------------------------------------------------------------------

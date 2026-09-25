@@ -20,6 +20,9 @@
     .hx-sidebar .hx-mode { margin-top: 12px; font-size: 12px; color: #98a2b3; }
     /* The sidebar logo as HighLevel sizes it: a fixed height, natural width. */
     .hx-sidebar .agency-logo { display: block; height: 40px; width: auto; margin-bottom: 8px; }
+    /* Fake nav items: the theme's nav-active marker lands on the active anchor. */
+    .hx-nav { margin-top: 12px; }
+    .hx-nav a { display: block; padding: 6px 8px; margin-top: 4px; border-radius: 6px; color: inherit; text-decoration: none; }
     #sidebar-v2.hx-collapsed { width: 64px; overflow: hidden; }
     .hx-content { display: flex; flex-direction: column; }
     .hl_header { display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 16px; background: #ffffff; border-bottom: 1px solid #eaecf0; }
@@ -49,14 +52,18 @@
     Offline HighLevel shell. From the repo root run <code>npm run serve</code> and open
     <code>http://localhost:5173/test/harness.html</code>. Navigation uses pushState, so if you reload
     on a fake route, reopen the harness URL. The webhook stub below never calls a real workflow.
-    The <strong>Sidebar logo</strong> controls mimic HighLevel re-rendering, resetting, collapsing,
-    and replacing the sidebar so the branding observer can be watched (open with
-    <code>?ghlc-debug=1</code> and inspect <code>GHLC.verify()</code>).
+    The <strong>Sidebar logo and theme</strong> controls mimic HighLevel re-rendering, resetting, collapsing,
+    and replacing the sidebar and moving the active nav item, so the branding and theme observers can be
+    watched (open with <code>?ghlc-debug=1</code> and inspect <code>GHLC.verify()</code>, including
+    <code>GHLC.verify().theme</code>). The fixture themes Location A (dark sidebar, orange buttons, grey
+    active item) and Location B (an invalid primary falls back to the agency teal; a white-on-near-white
+    sidebar pair falls back to dark text); Location C, Z, and the agency view keep the native sidebar.
   </div>
 
   <div class="hx-layout">
     <aside id="sidebar-v2" class="sidebar-v2-location hx-sidebar">
       <a class="hx-logo-link" href="/v2/agency/dashboard" id="hx-logo-link"><img class="agency-logo" src="./fixtures/logos/native.svg" alt="Native Agency"></a>
+      <nav class="hx-nav" id="hx-nav"><a class="hl_nav-item hl_nav-item--active" href="/v2/location/locA/dashboard" data-hx-nav="dashboard">Dashboard</a><a class="hl_nav-item" href="/v2/location/locA/contacts/detail/cX" data-hx-nav="contacts">Contacts</a></nav>
       <strong>Fake sidebar</strong>
       <select id="location-switcher-sidbar-v2" aria-label="Location switcher">
         <option value="locA">Location A</option>
@@ -98,12 +105,13 @@
             <button type="button" id="hx-route-event">Dispatch routeChangeEvent</button>
           </div>
 
-          <h3>Sidebar logo</h3>
+          <h3>Sidebar logo and theme</h3>
           <div class="hx-row">
             <button type="button" id="hx-rerender-logo">Re-render sidebar logo</button>
             <button type="button" id="hx-reset-logo">HighLevel resets logo src</button>
             <button type="button" id="hx-toggle-sidebar">Collapse/expand sidebar</button>
             <button type="button" id="hx-replace-sidebar">Replace whole sidebar</button>
+            <button type="button" id="hx-toggle-nav">Toggle active nav item</button>
           </div>
 
           <h3>Webhook stub</h3>
@@ -254,6 +262,7 @@
         select.value = old.querySelector('#location-switcher-sidbar-v2').value;
         return el('aside', { id: 'sidebar-v2', 'class': old.className }, [
           buildLogoLink(),
+          buildNav(),
           el('strong', {}, ['Fake sidebar']),
           select,
           el('button', { id: 'backButtonv2', type: 'button' }, ['Back to agency']),
@@ -268,12 +277,37 @@
         return true;
       }
 
+      // ---- sidebar nav (what HighLevel renders) --------------------------------
+      // Two nav items carrying the community nav-item classes; the active one
+      // follows the route (contacts on a contact record, dashboard otherwise).
+      // Looked up fresh each time because the sidebar can be replaced wholesale.
+      function navAnchors() {
+        var sidebar = sidebarEl();
+        return sidebar ? Array.prototype.slice.call(sidebar.querySelectorAll('.hx-nav a')) : [];
+      }
+      function activeNavFor(path) {
+        return CONTACT_RE.test(path) ? 'contacts' : 'dashboard';
+      }
+      function setNavActive(which) {
+        navAnchors().forEach(function (a) {
+          a.classList.toggle('hl_nav-item--active', a.getAttribute('data-hx-nav') === which);
+        });
+      }
+      function buildNav() {
+        var active = activeNavFor(location.pathname);
+        return el('nav', { 'class': 'hx-nav', id: 'hx-nav' }, [
+          el('a', { 'class': 'hl_nav-item' + (active === 'dashboard' ? ' hl_nav-item--active' : ''), href: '/v2/location/locA/dashboard', 'data-hx-nav': 'dashboard' }, ['Dashboard']),
+          el('a', { 'class': 'hl_nav-item' + (active === 'contacts' ? ' hl_nav-item--active' : ''), href: '/v2/location/locA/contacts/detail/cX', 'data-hx-nav': 'contacts' }, ['Contacts'])
+        ]);
+      }
+
       function render() {
         var path = location.pathname;
         while (main.firstChild) main.removeChild(main.firstChild);
         var m = CONTACT_RE.exec(path);
         if (m) {
           setSidebarMode('location');
+          setNavActive('contacts');
           setSwitcher(m[1]);
           main.appendChild(buildContactBlock(m[2]));
           return;
@@ -281,11 +315,13 @@
         m = LOCATION_RE.exec(path);
         if (m) {
           setSidebarMode('location');
+          setNavActive('dashboard');
           setSwitcher(m[1]);
           main.appendChild(el('div', { 'class': 'hx-placeholder' }, ['Location dashboard: ' + m[1]]));
           return;
         }
         setSidebarMode('agency');
+        setNavActive('dashboard');
         main.appendChild(el('div', { 'class': 'hx-placeholder' }, ['Agency view: ' + path]));
       }
 
@@ -311,6 +347,13 @@
           hxLog({ time: new Date().toISOString(), harness: 'logo click routed to the agency dashboard' });
           return;
         }
+        var navLink = target.closest('.hx-nav a');
+        if (navLink) {
+          // Nav items route through the fake router; render() moves the active class.
+          evt.preventDefault();
+          go(navLink.getAttribute('href'));
+          return;
+        }
         if (target.closest('#backButtonv2')) go('/v2/agency/dashboard');
       });
       document.addEventListener('change', function (evt) {
@@ -334,7 +377,17 @@
       });
       document.getElementById('hx-replace-sidebar').addEventListener('click', function () {
         sidebarEl().replaceWith(buildSidebar());
-        hxLog({ time: new Date().toISOString(), harness: 'replaced whole sidebar (fresh aside with a native img)' });
+        hxLog({ time: new Date().toISOString(), harness: 'replaced whole sidebar (fresh aside with a native img and nav)' });
+      });
+      // Moves the active class between the two nav items WITHOUT navigating:
+      // exactly the mutation the theme observer must follow (one retheme).
+      document.getElementById('hx-toggle-nav').addEventListener('click', function () {
+        var anchors = navAnchors();
+        if (!anchors.length) { hxLog({ time: new Date().toISOString(), harness: 'hx-toggle-nav: no nav items to toggle' }); return; }
+        var current = anchors.filter(function (a) { return a.classList.contains('hl_nav-item--active'); })[0];
+        var next = current && current.getAttribute('data-hx-nav') === 'dashboard' ? 'contacts' : 'dashboard';
+        setNavActive(next);
+        hxLog({ time: new Date().toISOString(), harness: 'hx-toggle-nav: moved the active class to ' + next + ' (no navigation)' });
       });
       document.getElementById('hx-back').addEventListener('click', function () { history.back(); });
       document.getElementById('hx-forward').addEventListener('click', function () { history.forward(); });
