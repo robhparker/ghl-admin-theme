@@ -3,20 +3,25 @@ status: partial
 phase: 03-accent-colors-delivery
 source: [03-VERIFICATION.md]
 started: 2026-09-25T02:15:52Z
-updated: 2026-09-25T03:04:26Z
+updated: 2026-09-25T12:38:28Z
 ---
 
 ## Current Test
 
-[testing paused — 2 items outstanding: test 1 (paste the v0.1.1 snippet into Agency Settings) and test 4's visual toast check; everything else verified live on 2026-09-25 through injection of the served build into Rob's logged-in session]
+number: 4
+name: Live native status colors untouched
+expected: |
+  HighLevel's own success/warning/error colors and badges are visibly unchanged; only the sidebar container background/text and the active nav item are themed; no HighLevel rule is overridden by a customizer rule.
+awaiting: user response
 
 ## Tests
 
 ### 1. Live install / snippet form
 test: Live install (DLV-01 edge, B-02): in HighLevel Agency Settings -> Company -> Custom JavaScript paste the README loader snippet (raw-JS IIFE form), save, hard-reload. If it is rejected, try the <script> tag form.
 expected: The customizer loads; GHLC.verify() in the console reports config.loaded true, config.schemaVersion 1. Record which form the field accepted; if only the script-tag form works, update README 'Install in HighLevel' and ship as v0.1.1.
-result: [pending]
-note: The README snippet now points at v0.1.1 (tagged 2026-09-25). Injecting the same two v0.1.1 URLs into the logged-in app already gives config.loaded true, schemaVersion 1, version 0.1.1; only the Agency Settings field mechanics (which form it accepts, save, reload) remain to be observed by Rob.
+result: pass
+reported: "GHLC.verify() pasted from Rob's console: version 0.1.1, config.loaded true, config.enabled true, config.schemaVersion 1, buttonIds [sendInvite, helpCenter], branding.applied location, theme.applied all four, mounts.sidebarNavActive true"
+note: The raw-JS loader form did NOT work: HighLevel rendered it as plain text inside div#customJS (335 chars, no script element) and GHLC was undefined. The <script> tag form works: it lands as a SCRIPT child of div#customJS with defer and data-config intact (confirmed from a second logged-in tab). README 'Install in HighLevel' now leads with the script tag and warns against raw JavaScript (commit c97b9cb, documentation only; the served v0.1.1 assets are unchanged, so no new tag).
 
 ### 2. Live Dummy Clinic colors, verify(), active-nav selector
 test: Live Dummy Clinic (SC1, A-06, CLR-02 judgment prohibition): open location iDPNGKoFsjvf9wUCrk3V, then a contact record, and run GHLC.verify().
@@ -77,9 +82,9 @@ verified: 2026-09-25. Tagged v0.1.1 at 1076b44 and pushed; jsDelivr returned 200
 ## Summary
 
 total: 9
-passed: 7
+passed: 8
 issues: 0
-pending: 2
+pending: 1
 skipped: 0
 blocked: 0
 
