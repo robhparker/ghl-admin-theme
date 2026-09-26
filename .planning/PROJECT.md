@@ -8,6 +8,22 @@ A small, configuration-driven browser customization layer for our HighLevel agen
 
 From an open contact record, a staff member can press one button and reliably trigger the right HighLevel workflow for that exact contact and location, with no stale context and no duplicate sends.
 
+## Current State
+
+**Shipped:** milestone v0.1.0 (2026-09-25). Release tags on GitHub: `v0.1.0` (first publish), `v0.1.1` (live sidebar theming, active-nav detection, readable hover, script-tag install), `v0.1.2` (Xcelsior Health location entry). jsDelivr serves each tag immutably. Installed in the Park Health Systems agency through Agency Settings > Company > Custom JavaScript (v0.1.1 at close; the snippet moves to v0.1.2 by changing the tag in both URLs).
+
+**Configured locations:** Dummy Clinic (test, full theme) and Xcelsior Health (HighLevel-hosted logo, navy `primary` only, native sidebar). Every other location shows the native UI plus the scope-`all` buttons.
+
+**Codebase:** one 2,513-line vanilla IIFE (`src/ghl-customizer.js`), a 154-line scoped stylesheet, a 1,510-byte public JSON config, and a zero-dependency test suite (119 checks over a 1,153-line DOM shim plus an offline harness). No build step, no packages.
+
+**Known limits:** HighLevel's nav icons are black images, so a dark `sidebarBg` leaves them low-contrast; the sidebar logo slot is 40px tall, so padded logos render small; a location logo hosted by HighLevel keeps its URL only until someone re-uploads it.
+
+## Next Milestone Goals
+
+- Per-client onboarding as a routine: location entry, logo (tighter crop or repo-hosted copy), colors, new tag, snippet bump.
+- v2 hardening (INV-01..05): a companion service so the Send Invite trigger URL leaves the public config and contact-to-location is verified server-side.
+- A lighter release path for config-only changes (today every client change is a full tag bump by design).
+
 ## Requirements
 
 ### Validated
@@ -103,4 +119,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-25 after Phase 3 (milestone v0.1.0 complete; v0.1.1 installed in the agency)*
+*Last updated: 2026-09-25 after v0.1.0 milestone*
