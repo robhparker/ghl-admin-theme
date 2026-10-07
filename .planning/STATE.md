@@ -1,18 +1,16 @@
 ---
 gsd_state_version: "1.0"
-milestone: v0.1.0
-status: Awaiting next milestone
-stopped_at: Milestone v0.1.0 archived (override closeout); next is /gsd-new-milestone
-last_updated: "2026-09-26T19:21:38.001Z"
-last_activity: 2026-09-26
-last_activity_desc: Milestone v0.1.0 completed and archived
-state_head: b887b708712a045d3b8a9cb079ce3fa81312c8d7
+milestone: v0.2.0
+milestone_name: Actions menu + Send individual consent
+status: planning
+last_updated: "2026-10-07T23:34:04.326Z"
+last_activity: 2026-10-07
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 7
-  completed_plans: 7
-current_phase: 3
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -26,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-09-26)
 
 ## Current Position
 
-Phase: Milestone v0.1.0 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-09-26 — Milestone v0.1.0 completed and archived
+Status: Defining requirements
+Last activity: 2026-10-07 — Milestone v0.2.0 started
 
 ## Performance Metrics
 

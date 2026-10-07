@@ -18,11 +18,16 @@ From an open contact record, a staff member can press one button and reliably tr
 
 **Known limits:** HighLevel's nav icons are black images, so a dark `sidebarBg` leaves them low-contrast; the sidebar logo slot is 40px tall, so padded logos render small; a location logo hosted by HighLevel keeps its URL only until someone re-uploads it.
 
-## Next Milestone Goals
+## Current Milestone: v0.2.0 Actions menu + "Send individual consent" for family members
 
-- Per-client onboarding as a routine: location entry, logo (tighter crop or repo-hosted copy), colors, new tag, snippet bump.
-- v2 hardening (INV-01..05): a companion service so the Send Invite trigger URL leaves the public config and contact-to-location is verified server-side.
-- A lighter release path for config-only changes (today every client change is a full tag bump by design).
+**Goal:** From an Xcelsior contact record, staff open one Actions menu and send the Hint join link, a family member's own consent forms, or the owner's Consent Hub link (or copy the contact ID), each reaching exactly the open contact.
+
+**Target features:**
+- Actions menu in the contact name row (`menus[]` config, backward compatible with plain buttons), keyboard accessible, per-item states and a 60 s per-item cooldown
+- Four Xcelsior-only items: Send Invite (unchanged trigger), Send individual consent, Resend Consent Hub link, Copy contact ID; Xcelsior actions scoped to `Cp2XxBsRoyKS2CUf1Hwi`
+- ClinX 365 build spec for one consent Inbound Webhook workflow (Find Contact by payload `contactId`, branch on `buttonId`, guards, refusal notes) and the Send Invite workflow rename
+- wf2 Build Status change so a member-held `consent_hub_token` shows only that member's card; member consent email (MJML)
+- Release v0.2.0 with a live-test checklist and rollback to v0.1.2
 
 ## Requirements
 
@@ -43,7 +48,10 @@ From an open contact record, a staff member can press one button and reliably tr
 
 ### Active
 
-- [ ] Per-client onboarding path: add a location entry (logo URL from HighLevel's own Business Profile, theme) and release a new tag — first candidate Xcelsior Health (`Cp2XxBsRoyKS2CUf1Hwi`)
+- [ ] Actions menu replaces the single Send Invite button on Xcelsior contact records (v0.2.0)
+- [ ] Staff can send a family member their own consent forms by email, completing through the existing family consent path (v0.2.0)
+- [ ] Staff can resend the family owner's Consent Hub link from the owner's or a member's record (v0.2.0)
+- [ ] Per-client onboarding path as a routine (location entry, logo, theme, tag) — carried from v0.1.0, not in v0.2.0 scope
 
 ### Out of Scope
 
@@ -54,6 +62,10 @@ From an open contact record, a staff member can press one button and reliably tr
 - Spark-style folders/submenus, configuration UI, automatic brand-data sync — "later only" per PRD
 - Executing arbitrary JavaScript from configuration — security boundary; only link and registered-handler actions
 - Mobile app / non-desktop layouts — desktop web application only
+- Server-side dedupe, n8n-by-contactId routing, INV-01..05 in v0.2.0 — deferred in `seeds/consent-actions-hardening.md`; client cooldown only (Rob, 2026-10-07)
+- Age/DOB gate for individual consent — eligibility is staff judgment; parents often reuse their own email for children
+- "Send Longevity Plus invite" menu item — deferred with the hardening seed
+- Hiding menu items by role or contact field values — same items for every Xcelsior contact; only the synthetic/empty-email pre-check disables an item
 
 ## Context
 
@@ -74,6 +86,8 @@ From an open contact record, a staff member can press one button and reliably tr
 - **Logo position:** sidebar (`#sidebar-v2 img.agency-logo`), decided in Phase 2 after live inspection; the adapter still supports the header mount.
 - **Hosting:** GitHub repo under Rob's account, served via jsDelivr pinned to a version tag. Rollback = change the tag in the HighLevel snippet.
 - Different browser tabs must keep independent active-location state (no shared storage for location).
+- **Send Invite workflow audit (2026-10-07, `notes/webhook-test-workflow-audit.md`):** "WEBHOOK TEST Send Hint JOIN LINK & Reminders" is published (v5), triggered by Inbound Webhook `bde416ab`, and resolves the contact with a **Find Contact by `{{inboundWebhookRequest.contactId}}`** step (not email). It then branches on Longevity tags to one of two Hint link emails; no waits, reminders, or field writes. It is a copy of "[Ready] Send Hint JOIN LINK & Reminders" (c140f93c, Packet Sent pipeline trigger, 49 runs).
+- **Family consent system** lives in `~/Repos/clients/xcelsior/hint-api/` (design doc, n8n wf1 fan-out, wf2 hub status, wf3 consent-completed) with email templates in `~/Repos/clients/xcelsior/Email-Templates/`. Exploration decisions: `notes/actions-menu-individual-consent.md`.
 
 ## Constraints
 
@@ -99,6 +113,10 @@ From an open contact record, a staff member can press one button and reliably tr
 | Keep existing `.planning/config.json` | Preferences already set by Rob before kickoff | ✓ Kept |
 | Theme rules win on specificity with two `:not(#ghlc-boost)` pseudo-classes, never `!important` | HighLevel paints the sidebar with id+4-class rules; the suite forbids importance overrides so native UI can always out-rank the customizer where it matters | ✓ v0.1.1; live sidebar themed, badges and toasts untouched |
 | Active nav item detected by Vue Router's `active` / `exact-active` classes | The three guessed selectors matched nothing live | ✓ v0.1.1; `mounts.sidebarNavActive` true live |
+| Member consent link reuses the member's own `consent_hub_token`; wf2 shows only the holder's card when the holder is not the owner | No new field; completion path (Parts 1-3, 5.8 workflow, wf3 recount) unchanged | — Pending |
+| Consent actions resolve the contact with Find Contact by payload `contactId`, never email or phone | Proven in the live Send Invite workflow; removes the shared-email wrong-member risk | — Pending |
+| Send Invite keeps its own trigger (`bde416ab`); consent actions share one new Inbound Webhook branching on `buttonId` | Live path stays untouched, rollback to v0.1.2 needs no ClinX change; one premium trigger for consent | — Pending |
+| Refusals are written by the ClinX workflow as a contact Note + internal notification; client pre-check disables the consent item for empty or synthetic (`+<digits>@`) email | The browser cannot read a webhook workflow's outcome | — Pending |
 | Install snippet is the `<script>` tag form | HighLevel's Custom JavaScript field takes HTML; raw JS is rendered as inert text | ✓ Installed in the agency 2026-09-25; README updated |
 
 ## Evolution
@@ -119,4 +137,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-25 after v0.1.0 milestone*
+*Last updated: 2026-10-07 at start of milestone v0.2.0*
