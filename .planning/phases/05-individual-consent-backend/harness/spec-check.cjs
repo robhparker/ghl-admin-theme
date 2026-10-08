@@ -40,8 +40,8 @@ const REFUSALS = {
 };
 
 // Highest refusal and verify ids (raised by the 2026-10-08 code-review fixes).
-const R_MAX = 11;
-const V_MAX = 12;
+const R_MAX = 12;
+const V_MAX = 13;
 
 const START = '<!-- custom-code:js:start -->';
 const END = '<!-- custom-code:js:end -->';
@@ -229,13 +229,13 @@ if (args.stage >= 2) {
   check('(h) the five D-04 refusal texts appear verbatim', () => missing(Object.values(REFUSALS)));
 
   check('(i) R-03..R-07 and V-05..V-11 each appear', () => {
-    const ids = ['R-03', 'R-04', 'R-05', 'R-06', 'R-07', 'V-05', 'V-06', 'V-07', 'V-08', 'V-09', 'V-10', 'V-11', 'V-12'];
+    const ids = ['R-03', 'R-04', 'R-05', 'R-06', 'R-07', 'V-05', 'V-06', 'V-07', 'V-08', 'V-09', 'V-10', 'V-11', 'V-12', 'V-13'];
     const miss = ids.filter((id) => count(idRe(id)) < 1);
     return miss.length ? 'missing ' + miss.join(', ') : true;
   });
 
   check('(i2) V-05..V-11 inline markers use the "verify in ClinX UI (V-xx)" form', () => {
-    const miss = ['V-05', 'V-06', 'V-07', 'V-08', 'V-09', 'V-10', 'V-11', 'V-12']
+    const miss = ['V-05', 'V-06', 'V-07', 'V-08', 'V-09', 'V-10', 'V-11', 'V-12', 'V-13']
       .filter((v) => !text.includes('verify in ClinX UI (' + v + ')'));
     return miss.length ? 'missing markers ' + miss.join(', ') : true;
   });
@@ -431,12 +431,19 @@ if (args.stage >= 2) {
   });
 
   // ---- review CR-02: post-condition after the token save ----
-  check('(v1) "Verify saved token" passes only a stored adhoc_ + 64 hex token minted in this run', () => {
+  check('(v1) "Verify saved token" passes only the stored adhoc_ + 64 hex token THIS run minted', () => {
     const good = 'adhoc_' + 'a1'.repeat(32);
+    const other = 'adhoc_' + 'e5'.repeat(32);
     const now = Date.now();
     const cases = [
-      [{ savedToken: good, mintedAt: now }, 'ok'],
-      [{ savedToken: good, mintedAt: String(now - 70 * 1000) }, 'ok'],
+      [{ savedToken: good, mintedToken: good, mintedAt: now }, 'ok'],
+      [{ savedToken: good, mintedToken: good, mintedAt: String(now - 70 * 1000) }, 'ok'],
+      // review WR-04: a concurrent press saved its own token after ours
+      [{ savedToken: other, mintedToken: good, mintedAt: now }, 'superseded'],
+      [{ savedToken: other, mintedToken: '', mintedAt: now }, 'superseded'],
+      [{ savedToken: other, mintedToken: good, mintedAt: now - 2 * 60 * 60 * 1000 }, 'bad'],
+      [{ savedToken: 'adhoc_', mintedToken: good, mintedAt: now }, 'bad'],
+      [{ savedToken: '', mintedToken: good, mintedAt: now }, 'bad'],
       [{ savedToken: '', mintedAt: now }, 'bad'],
       [{ savedToken: 'adhoc_', mintedAt: now }, 'bad'],
       [{ savedToken: 'adhoc', mintedAt: now }, 'bad'],
@@ -451,7 +458,8 @@ if (args.stage >= 2) {
       [{ savedToken: good }, 'bad'],
       [{}, 'bad'],
     ];
-    for (const [input, want] of cases) {
+    for (const [raw, want] of cases) {
+      const input = Object.assign({ mintedToken: raw.savedToken }, raw);
       const out = runNamed('verify', input);
       if (!out || out.tokenCheck !== want) return JSON.stringify(input).slice(0, 90) + ' gave ' + JSON.stringify(out) + ', want ' + want;
     }
@@ -461,7 +469,7 @@ if (args.stage >= 2) {
   check('(v2) section 4 order: save, reload, verify, valid branch (R-10), then the member email', () => {
     const s4 = section(H2[4]);
     if (s4 === null) return 'section 4 missing';
-    const marks = ['action name = "Mint member hub token"', 'action name = "Save member hub token"', 'action name = "Reload member"',
+    const marks = ['action name = "Mint member hub token"', 'action name = "Save member hub token"', 'action name = "Settle concurrent presses"', 'action name = "Reload member"',
       'action name = "Verify saved token"', 'action name = "Saved token valid"', 'action name = "Member consent email"'];
     let last = -1;
     for (const mk of marks) {
@@ -473,6 +481,7 @@ if (args.stage >= 2) {
     const valid = s4.slice(s4.indexOf('action name = "Saved token valid"'), s4.indexOf('action name = "Member consent email"'));
     if (!/\bR-10\b/.test(valid)) return 'R-10 refusal not on the Saved token valid branch';
     if (!/`tokenCheck` is `ok`/.test(valid)) return 'Saved token valid does not branch on tokenCheck is ok';
+    if (!/`tokenCheck` is `superseded`[^\n]*\bR-12\b/.test(valid)) return 'no Superseded branch refusing with R-12 (review WR-04)';
     return true;
   });
 
@@ -528,6 +537,13 @@ if (args.stage >= 3) {
     const s8 = section(H2[8]);
     if (s8 === null) return 'section 8 missing';
     const req = ['Residual risk accepted (code review WR-02)', 'one member\'s own card, never the family', 'confirming with the member that the saved email is their own', '`hint_membership_id`'];
+    const miss = req.filter((x) => !s8.includes(x));
+    return miss.length ? 'section 8 missing ' + JSON.stringify(miss) : true;
+  });
+
+  check('(x2) section 8 states the concurrent-press residual risk (code review WR-04)', () => {
+    const s8 = section(H2[8]) || '';
+    const req = ['Concurrent presses (code review WR-04)', 'duplicate sends are possible; dead links are not', 'per browser tab', '`seeds/consent-actions-hardening.md`'];
     const miss = req.filter((x) => !s8.includes(x));
     return miss.length ? 'section 8 missing ' + JSON.stringify(miss) : true;
   });
