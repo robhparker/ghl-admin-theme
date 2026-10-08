@@ -1147,6 +1147,9 @@
     }
     if (action.type === 'webhook') {
       if (button.placement !== 'contact') return unavailable('Requires an open contact');
+      // D-15: a webhook whose URL does not exist yet is shipped empty; it
+      // renders unavailable and unbound, so it can never POST anywhere.
+      if (action.url === undefined || action.url === null || action.url === '') return unavailable(MSG_NOT_CONFIGURED);
       if (!isSafeHttpsUrl(action.url)) return unavailable('Webhook URL must use HTTPS');
       return {
         kind: 'webhook',
@@ -1726,6 +1729,7 @@
   var MSG_UNCONFIRMED = 'The workflow endpoint did not confirm receipt. Check the workflow execution log before resending.';
   var MSG_NO_CONTACT_FIELDS = 'contact email/phone not found';
   var MSG_COOLDOWN_RESTORED = 'Recently sent — wait before sending again';
+  var MSG_NOT_CONFIGURED = 'Not configured';
 
   function attemptFetch(url, init) {
     try {
