@@ -9,7 +9,7 @@ What this delivers: staff press "Send individual consent" on a family member's r
 | File | Where | Purpose |
 |---|---|---|
 | `README.md` | this folder | This index: apply order, wf2 change list, the Build Status v9 paste block, rollback, Phase 6 checks, open questions |
-| `BUILD-SPEC-clinx-consent-webhook.md` | this folder | Click-by-click build of the ClinX workflow "[Ready] Admin Menu: Consent Actions (webhook)", refusals R-01..R-10, checklist V-01..V-12, the Send Invite rename |
+| `BUILD-SPEC-clinx-consent-webhook.md` | this folder | Click-by-click build of the ClinX workflow "[Ready] Admin Menu: Consent Actions (webhook)", refusals R-01..R-11, checklist V-01..V-12, the Send Invite rename |
 | `wf2-consent-hub-status.member-scope.json` | this folder | wf2 Consent Hub Status (`RxnpkyL0jng8hVx7`) with Build Status v9, synced to the live v8 roster. Reference only: never import it (see F-1) |
 | `wf2-member-scope.diff` | this folder | Unified diff of the JSON above against the stale repo mirror `n8n/2-consent-hub-status.json` (shows the v8 sync and v9 together) |
 | `COMPLETION-PATH.md` | this folder | How a member's own completion reaches the owner's hub (HUB-04), the hub no-change decision (D-11), Q-1 and Q-2 |
@@ -369,8 +369,9 @@ Test contacts only, never a real patient. Record each result in the Phase 6 run 
 | R-08 | Resend on a member whose owner is missing, or on a non-owner without an owner link | | | | |
 | R-09 | Resend where the owner has no Consent Hub Token | | | | |
 | R-10 | Test member only: temporarily change the last line of "Mint member hub token" to `output = { token: 'broken', mintedAt: Date.now() };`, press Send individual consent, then restore the line, re-run Test your Code, and clear the test member's Consent Hub Token | | | | |
+| R-11 | Test member only: paste the test owner's Consent Hub Token into the test member's Consent Hub Token, press Send individual consent (must refuse, no email), then clear the member's token. Repeat with a value such as `adhoc_123` | | | | |
 
-**Pass outcomes.** Send individual consent on a valid member: tag `consent-pending`, the "Member Consent Forms" email at the member's own address with `?t=adhoc_` plus 64 hex, the Note "Individual consent email sent by staff via Actions menu". Pressing it again reuses the same token. Resend Consent Hub link from the owner and from a member: the owner receives the d6cf9af1 invite for their leaf, and the Note lands on the owner.
+**Pass outcomes.** Send individual consent on a valid member: tag `consent-pending`, the "Member Consent Forms" email at the member's own address with `?t=adhoc_` plus 64 hex, the Note "Individual consent email sent by staff via Actions menu". Pressing it again reuses the same token (only a complete `adhoc_` token that is not the owner's is reused; anything else is R-11). Resend Consent Hub link from the owner and from a member: the owner receives the d6cf9af1 invite for their leaf, and the Note lands on the owner.
 
 ## Open questions and follow-ups for Rob
 

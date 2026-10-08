@@ -6,7 +6,7 @@ This spec builds ONE new workflow, "[Ready] Admin Menu: Consent Actions (webhook
 
 **How to read it.** Steps are numbered. Each step reads "Action type -> field = value". Two kinds of ids run through the spec:
 
-- **R-01 .. R-10** are refusals. Each appears inline where it happens and once in the register (§9) with its exact Note text, notification text, and staff fix.
+- **R-01 .. R-11** are refusals. Each appears inline where it happens and once in the register (§9) with its exact Note text, notification text, and staff fix.
 - **V-01 .. V-12** are "verify in ClinX UI" markers. A marker line says what to check while building and what to do if ClinX differs. Tick each in the checklist (§10). If a check fails and the marker gives no fallback, stop building and do not publish.
 
 ## 0. Before you start
@@ -109,7 +109,7 @@ Goal (D-04, D-05, D-05a): email the member staff clicked on a link to their own 
 Owners never carry `family-member`, and neither do legacy (backfilled) dependents, whose tags the 2026-08-25 backfill left untouched, so both stop here. wf1 dependents carry it (Tag Dependent).
 
 4.2 **R-04, no own email (D-04 #2, plus the client's synthetic-email pattern).**
-1. **Custom Code**, action name = "Capture member email" (the context is the member) -> Language = JavaScript -> Input properties: `memberEmail` = `{{contact.email}}`, `hintPatientId` = `{{contact.hint_patient_id}}` -> Code = the block below, pasted exactly. Click **Test your Code** (see 4.6 step 2 for why). Its output `memberEmail` is also the member side of the owner compare in §4.4.
+1. **Custom Code**, action name = "Capture member email" (the context is the member) -> Language = JavaScript -> Input properties: `memberEmail` = `{{contact.email}}`, `hintPatientId` = `{{contact.hint_patient_id}}`, `memberToken` = `{{contact.consent_hub_token}}` -> Code = the block below, pasted exactly. Click **Test your Code** (see 4.6 step 2 for why). Its outputs `memberEmail` and `memberToken` are the member side of the owner checks in §4.4.
 
 <!-- custom-code:capture:start -->
 ```js
@@ -125,7 +125,8 @@ var email = raw.toLowerCase();
 var pid = String(inputData.hintPatientId || '').trim().toLowerCase();
 var synthetic = SYNTHETIC_EMAIL_RE.test(raw) || SYNTHETIC_EMAIL_RE.test(email) || (pid !== '' && email.indexOf('+' + pid + '@') !== -1);
 var emailCheck = email === '' ? 'empty' : (synthetic ? 'synthetic' : (/^[^\s@{}]+@[^\s@{}]+\.[^\s@{}]+$/.test(email) ? 'ok' : 'invalid'));
-output = { memberEmail: email, emailCheck: emailCheck };
+// The member's stored token, passed through unchanged for the owner check in "Compare with owner" (WR-03).
+output = { memberEmail: email, emailCheck: emailCheck, memberToken: String(inputData.memberToken || '') };
 ```
 <!-- custom-code:capture:end -->
 
@@ -147,7 +148,7 @@ A missing member Consent Hub Token is NOT a refusal. Step 4.6 mints one on the f
 4.4 **R-06, email equals the owner's (D-04 #4).** Both sides of this compare are emails saved on contact records: the owner's saved email against the member's saved email, trimmed and lowercased. The webhook payload `email` is never used here or anywhere else. It is whatever the browser sent: it can be missing, a different address read off the page, an unsaved edit, or anything a caller of the public URL typed. 4.7 mails the member's saved address, so the guard must compare that address.
 1. **Find Contact**, action name = "Find owner (email compare)" -> match Contact ID (`id`) is `{{contact.owner_contact_id}}`. Multi-path on.
 2. **Contact not found** -> restore the member (Find Contact -> id == `{{inboundWebhookRequest.contactId}}`) -> refuse with R-05's text plus a suffix: Note = "Legacy member without an owner link. Needs backfill before an individual consent can be sent. (owner contact not found)". Notification with the same text. End.
-3. **Contact found** -> the context is now the owner. **Custom Code**, action name = "Compare with owner" -> Language = JavaScript -> Input properties: `ownerEmail` = `{{contact.email}}` (the owner's saved email, because the context is the owner), `memberEmail` = the "Capture member email" output `memberEmail` from §4.2 step 1 (insert it from the merge-field picker, V-07) -> Code = the block below, pasted exactly. Click **Test your Code**.
+3. **Contact found** -> the context is now the owner. **Custom Code**, action name = "Compare with owner" -> Language = JavaScript -> Input properties: `ownerEmail` = `{{contact.email}}` and `ownerToken` = `{{contact.consent_hub_token}}` (the owner's saved values, because the context is the owner), `memberEmail` and `memberToken` = the "Capture member email" outputs of the same names from §4.2 step 1 (insert them from the merge-field picker, V-07) -> Code = the block below, pasted exactly. Click **Test your Code**.
 
 <!-- custom-code:compare:start -->
 ```js
@@ -158,7 +159,13 @@ var looksLikeEmail = function (s) { return /^[^\s@{}]+@[^\s@{}]+\.[^\s@{}]+$/.te
 var o = String(inputData.ownerEmail || '').trim().toLowerCase();
 var m = String(inputData.memberEmail || '').trim().toLowerCase();
 var emailCheck = (!looksLikeEmail(o) || !looksLikeEmail(m)) ? 'unknown' : (o === m ? 'same' : 'different');
-output = { emailCheck: emailCheck };
+// tokenCheck (code review WR-03): 'none' (the member has no token: mint one in 4.6), 'reuse' (a
+// complete member token that is not the owner's), or 'foreign' (anything else, R-11). A member
+// link is only ever mailed with a token that can open nothing but this member's card.
+var mt = String(inputData.memberToken || '');
+var ot = String(inputData.ownerToken || '');
+var tokenCheck = mt.trim() === '' ? 'none' : ((/^adhoc_[0-9a-f]{64}$/.test(mt) && mt !== ot) ? 'reuse' : 'foreign');
+output = { emailCheck: emailCheck, tokenCheck: tokenCheck };
 ```
 <!-- custom-code:compare:end -->
 
@@ -176,7 +183,10 @@ D-04's acceptable alternative: drop 4.4 entirely and rely on 4.2's synthetic che
 
 4.5 **R-07, already complete (D-04 #5).** If/Else, action name = "Already complete": Branch "Complete" -> Consent Status is `complete` -> refuse (§0.5; the context is the member after 4.4's restore): Note = "Already complete. Nothing to send." Notification with the same text. End. None -> 4.6. Use the value the Form Submitted workflow a56137e1 writes (`complete`, design §5.8); if Consent Status shows as a dropdown, pick that option.
 
-4.6 **Member token (D-05a).** If/Else, action name = "Member has a hub token": Branch "No token" -> Consent Hub Token is empty -> steps 1-6 below (mint, save, reload, verify), then 4.7. None (a token exists) -> reuse it, write nothing (the member's link never changes) -> 4.7. HighLevel branches do not rejoin, so under None either add a Go To action pointing at 4.7's first action (if the plan offers Go To) or repeat 4.7's three actions there.
+4.6 **Member token (D-05a).** If/Else, action name = "Member has a hub token", on the "Compare with owner" output `tokenCheck` (§4.4 step 3):
+- Branch "No token": `tokenCheck` is `none` -> steps 1-6 below (mint, save, reload, verify), then 4.7.
+- Branch "Reuse": `tokenCheck` is `reuse` (the member already holds a complete `adhoc_` token that differs from the owner's) -> reuse it, write nothing (the member's link never changes) -> 4.7. HighLevel branches do not rejoin, so under "Reuse" either add a Go To action pointing at 4.7's first action (if the plan offers Go To) or repeat 4.7's three actions there.
+- None (any other value: the member holds something that is not a member token, such as a copy of the owner's family token, a backfilled or imported value, or an output that did not resolve) -> **R-11**, refuse (§0.5; the context is the member): Note = "This member holds a hub token that is not their own member token (it may be a copy of the family token). Nothing was sent. Rob must clear this member's Consent Hub Token, then press again." Notification with the same text. End. Never overwrite or mail such a value: a family token in a "for you personally" email would open the whole family hub (code review WR-03).
 
 1. **Custom Code**, action name = "Mint member hub token" -> Language = JavaScript -> Input properties = none (no `inputData` keys) -> Code = the block below, pasted exactly.
 
@@ -295,7 +305,7 @@ Under each branch -> **Send Email** (action names "Resend hub invite: LP Family"
 - Track link clicks = OFF, Sync edits = OFF (same as d6cf9af1)
 - Recipient = the contact in context, which is the owner on both paths
 
-verify in ClinX UI (V-04): Track link clicks is OFF on every Send Email action in this workflow (the four here and the one in §4.7, plus its copy if §4.6's None branch repeats §4.7), so the `?t=` hub link is never rewritten. If it differs (the toggle reverts after save): turn it off again, save, reload, reopen. Do not publish with tracking on.
+verify in ClinX UI (V-04): Track link clicks is OFF on every Send Email action in this workflow (the four here and the one in §4.7, plus its copy if §4.6's "Reuse" branch repeats §4.7), so the `?t=` hub link is never rewritten. If it differs (the toggle reverts after save): turn it off again, save, reload, reopen. Do not publish with tracking on.
 
 After every save of this workflow, reopen all four actions and confirm each template still renders in the panel preview with the right subject. Template bindings can silently revert to quick compose after a save.
 
@@ -329,7 +339,7 @@ Why four leaves: D-06 says use the same email the Consents Needed workflow sends
 
 What this workflow changes for the accepted risk AR-03-01 (D-14):
 
-- **Volume grows; disclosure does not.** This adds a second public Inbound Webhook URL (the first is Send Invite's). Anyone holding it can post any `contactId` and `buttonId` and make the workflow send consent emails, so spam or confusing-email volume can grow. Disclosure does not grow: mail only ever goes to the address on file for the resolved contact (the member's own email, or the owner's), and every guard (R-01 to R-10) runs server-side in ClinX on values saved on the contact records. No guard reads the payload `email` or `phone`; only `contactId` (which record) and `buttonId` (which action) come from the request. The admin-theme 60 s cooldown per item is the only throttle.
+- **Volume grows; disclosure does not.** This adds a second public Inbound Webhook URL (the first is Send Invite's). Anyone holding it can post any `contactId` and `buttonId` and make the workflow send consent emails, so spam or confusing-email volume can grow. Disclosure does not grow: mail only ever goes to the address on file for the resolved contact (the member's own email, or the owner's), and every guard (R-01 to R-11) runs server-side in ClinX on values saved on the contact records. No guard reads the payload `email` or `phone`; only `contactId` (which record) and `buttonId` (which action) come from the request. The admin-theme 60 s cooldown per item is the only throttle.
 - **No patient data in URLs** beyond the opaque hub token in the email link. The webhook payload is unchanged from v0.1.2. No new PHI flows through n8n: wf2 already receives the token and returns card data, and v9 reduces what a member token can see to that member's own card.
 - **Tokens** are 256-bit cryptographic random values (32 bytes from web crypto or Node crypto, never Math random) with the `adhoc_` prefix. The test token shown by Test your Code is never stored.
 - **Notes and notifications** carry the reason, the staff fix, the buttonId, the requestId, and the contact id only. No names, dates of birth, contact details, or clinical data.
@@ -353,6 +363,7 @@ Every refusal follows §0.5: restore the clicked contact if needed, Note, Intern
 | R-08 | §5.2 step 2 and §5.3 step 1, B | Member's owner not found, or the contact has no owner link and is not an owner | "No owner found for this member. Check the owner link or use the owner's own record." | §0.5 format with the Note text | Open the owner's record and press Resend there, or ask Rob to fix the owner link |
 | R-09 | §5.2 step 4 and §5.3 step 2, B | The owner's Consent Hub Token is empty | "The owner has no Consent Hub link (legacy or never invited). Needs a hub token before a link can be resent." | §0.5 format with the Note text | Rob mints or backfills the owner's hub token (legacy owners have none) |
 | R-10 | §4.6 step 6, A | "Verify saved token" is not `ok`: the stored Consent Hub Token is not `adhoc_` plus 64 lowercase hex after the save and reload, or the mint did not run in this run | "Member hub token could not be created or saved. Nothing was sent. Rob must check the Mint member hub token step and clear this member's Consent Hub Token if it is not empty." | §0.5 format with the Note text | Rob reads the run log of "Mint member hub token", fixes it, clears the member's Consent Hub Token, then staff press again |
+| R-11 | §4.6 None branch, A | "Compare with owner" `tokenCheck` is neither `none` nor `reuse`: the member's stored token is not `adhoc_` plus 64 lowercase hex, or equals the owner's token | "This member holds a hub token that is not their own member token (it may be a copy of the family token). Nothing was sent. Rob must clear this member's Consent Hub Token, then press again." | §0.5 format with the Note text | Rob checks where the value came from, clears the member's Consent Hub Token, then staff press again (a new member token is minted) |
 
 ## 10. Verify in ClinX UI checklist
 

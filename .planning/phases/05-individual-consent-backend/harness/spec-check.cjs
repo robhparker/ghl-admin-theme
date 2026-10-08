@@ -40,7 +40,7 @@ const REFUSALS = {
 };
 
 // Highest refusal and verify ids (raised by the 2026-10-08 code-review fixes).
-const R_MAX = 10;
+const R_MAX = 11;
 const V_MAX = 12;
 
 const START = '<!-- custom-code:js:start -->';
@@ -325,8 +325,10 @@ if (args.stage >= 2) {
     !text.includes('{{inboundWebhookRequest.email}}') || 'spec still references {{inboundWebhookRequest.email}}');
 
   check('(u1) "Capture member email" snippet trims and lowercases the saved member email', () => {
-    const a = runNamed('capture', { memberEmail: '  Sorrel.Own@Example.NET ', hintPatientId: 'pat-abc' });
+    const tok = 'adhoc_' + 'b2'.repeat(32);
+    const a = runNamed('capture', { memberEmail: '  Sorrel.Own@Example.NET ', hintPatientId: 'pat-abc', memberToken: tok });
     if (!a || a.memberEmail !== 'sorrel.own@example.net' || a.emailCheck !== 'ok') return 'got ' + JSON.stringify(a);
+    if (a.memberToken !== tok) return 'memberToken not passed through unchanged';
     const b = runNamed('capture', {});
     if (!b || b.memberEmail !== '' || b.emailCheck !== 'empty') return 'missing input gave ' + JSON.stringify(b);
     return true;
@@ -390,6 +392,42 @@ if (args.stage >= 2) {
       if (!out || out.emailCheck !== want) return JSON.stringify(input) + ' gave ' + JSON.stringify(out) + ', want ' + want;
     }
     return true;
+  });
+
+  // ---- review WR-03: reuse only a complete member token that is not the owner's ----
+  check('(y1) "Compare with owner" tokenCheck: none, reuse only a distinct adhoc_ + 64 hex, else foreign', () => {
+    const mine = 'adhoc_' + 'c3'.repeat(32);
+    const owner32 = 'd4'.repeat(16);
+    const base = { ownerEmail: 'owner@example.com', memberEmail: 'member@example.net', ownerToken: owner32 };
+    const cases = [
+      [{ memberToken: '' }, 'none'],
+      [{}, 'none'],
+      [{ memberToken: '   ' }, 'none'],
+      [{ memberToken: mine }, 'reuse'],
+      [{ memberToken: mine, ownerToken: '' }, 'reuse'],
+      [{ memberToken: owner32 }, 'foreign'],
+      [{ memberToken: mine, ownerToken: mine }, 'foreign'],
+      [{ memberToken: 'adhoc_' }, 'foreign'],
+      [{ memberToken: 'adhoc_123' }, 'foreign'],
+      [{ memberToken: mine.toUpperCase().replace('ADHOC_', 'adhoc_') }, 'foreign'],
+      [{ memberToken: mine + ' ' }, 'foreign'],
+      [{ memberToken: '{{custom_code.memberToken}}' }, 'foreign'],
+    ];
+    for (const [extra, want] of cases) {
+      const input = Object.assign({}, base, extra);
+      const out = runNamed('compare', input);
+      if (!out || out.tokenCheck !== want) return JSON.stringify(extra).slice(0, 80) + ' gave ' + JSON.stringify(out) + ', want ' + want;
+      if (out.emailCheck !== 'different') return 'emailCheck changed to ' + out.emailCheck;
+    }
+    return true;
+  });
+
+  check('(y2) 4.6 branches on tokenCheck: none mints, reuse sends, anything else is R-11', () => {
+    const s4 = section(H2[4]) || '';
+    const s46 = s4.slice(s4.indexOf('4.6 **Member token'), s4.indexOf('1. **Custom Code**, action name = "Mint member hub token"'));
+    if (!s46) return '4.6 head not found';
+    for (const x of ['`tokenCheck` is `none`', '`tokenCheck` is `reuse`', 'R-11']) if (!s46.includes(x)) return '4.6 head lacks ' + x;
+    return !/Consent Hub Token is empty/.test(s46) || '4.6 still branches on a native "Consent Hub Token is empty" condition';
   });
 
   // ---- review CR-02: post-condition after the token save ----
