@@ -979,6 +979,8 @@
     }
     state.ctx = next;
     state.generation += 1;
+    // An open menu belongs to the old context (D-06).
+    closeMenu('context', false);
     // Timers from the previous context die with it (BTN-06): a cooldown for an
     // old element must never flip a new one. Pending re-renders and mount
     // waits belong to the old route too; the new route starts them afresh.
@@ -1022,6 +1024,8 @@
   }
 
   function onNavigationSignal(evt) {
+    // Any SPA navigation closes the menu, even when the contact stays (D-06).
+    closeMenu('navigation', false);
     scheduleContextCheck(evt && evt.type ? evt.type : 'navigation');
   }
 
@@ -1467,6 +1471,16 @@
       panel.removeAttribute('hidden');
       trigger.setAttribute('aria-expanded', 'true');
       state.menu = { menuId: menu.id, menu: menu, wrapper: wrapper, trigger: trigger, panel: panel, onDocPointer: null };
+      // D-06: the single document-level listener while open, in the capture
+      // phase so a native handler that stops propagation cannot hide an
+      // outside press. A press inside the wrapper (trigger, items) is not outside.
+      var onDocPointer = function (evt) {
+        var target = evt && evt.target;
+        if (target && typeof target.nodeType === 'number' && wrapper.contains(target)) return;
+        closeMenu('outside', false);
+      };
+      document.addEventListener('pointerdown', onDocPointer, true);
+      state.menu.onDocPointer = onDocPointer;
       log('menu-open', { menuId: menu.id, items: items.length });
     }
     if (focusWhich === 'last') {
@@ -1479,6 +1493,7 @@
   function closeMenu(reason, focusTrigger) {
     var open = state.menu;
     if (!open) return;
+    if (open.onDocPointer) document.removeEventListener('pointerdown', open.onDocPointer, true);
     state.menu = null;
     open.panel.setAttribute('hidden', '');
     open.trigger.setAttribute('aria-expanded', 'false');
@@ -1550,6 +1565,13 @@
     });
   }
 
+  // D-06: the open menu's wrapper left the document (HighLevel replaced the
+  // name row, the group moved, the mount vanished): close it so its document
+  // listener does not outlive it.
+  function closeDetachedMenu() {
+    if (state.menu && !state.menu.wrapper.isConnected) closeMenu('detached', false);
+  }
+
   // The first menu wrapper directly inside the group, or null: plain buttons
   // are inserted before it so they always precede the menus.
   function firstMenuWrapper(group) {
@@ -1590,9 +1612,15 @@
     return group;
   }
 
+  // Every exit of a placement reconcile ends with the detached-menu check.
+  function renderPlacement(placement) {
+    reconcilePlacement(placement);
+    closeDetachedMenu();
+  }
+
   // Idempotent reconcile by button id + ctx. Observers and the bounded mount
   // wait re-enter here; a spurious call costs a few queries and no DOM writes.
-  function renderPlacement(placement) {
+  function reconcilePlacement(placement) {
     var mount = placement === 'header' ? adapter.findHeaderMount() : adapter.findContactMount();
     var desired = resolveButtons(state.config, state.ctx.locationId).filter(function (button) {
       return button.placement === placement;
