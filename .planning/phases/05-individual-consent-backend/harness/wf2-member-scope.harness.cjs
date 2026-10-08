@@ -102,6 +102,26 @@ function family(o) {
   const S = C(S_ID, 'Sorrel', Object.assign({ member_type: 'spouse', owner_contact_id: O_ID, email: S_EMAIL, token: ADHOC_TOKEN, phone: '+18135550101' }, o.S || {}));
   return { O, K, S, all: [O, K, S] };
 }
+// A solo membership: one owner, no dependents (members == [] -> v6 solo semantics).
+function solo(o) {
+  const Q = C('ctcSoloQuill0004', 'Quill', Object.assign({ member_type: 'owner', token: OWNER_TOKEN, email: 'quill.solo@example.org', phone: '+18135550104', dateOfBirth: '1972-11-30', membership: 'mem-solo-0002' }, o || {}));
+  return { O: Q, all: [Q] };
+}
+// Every string that would identify another family member if it reached a member's response:
+// first name, contact id, email (raw and as encoded in form_params), phone, and DOB as prefilled.
+function leakTerms(others) {
+  const out = [];
+  others.forEach(c => {
+    out.push(c.firstName, c.id);
+    if (c.email) out.push(c.email, encodeURIComponent(c.email));
+    if (c.phone) out.push(c.phone, encodeURIComponent(c.phone));
+    if (c.dateOfBirth) {
+      const d = c.dateOfBirth.split('-');
+      out.push(encodeURIComponent(d[1] + '/' + d[2] + '/' + d[0]));
+    }
+  });
+  return out.filter(Boolean);
+}
 
 // ---------------------------------------------------------------- node runners
 function makeDollar(nodes) {
@@ -275,6 +295,165 @@ function graph(wf) {
     if (!fp) return 'member card has no form_params';
     if (r.html.indexOf(FAMILY_PART1 + '?' + fp) === -1) return 'family-part-1 link with the holder form_params not found';
     return true;
+  });
+
+  // ======================================================== Task 2: expansion checks
+  // Owner byte-identity across family and solo states. Default family O carries phone
+  // and dateOfBirth (v8 prefill), so every family scenario exercises the prefill path.
+  const signedDoc = ref => ({ consent_status: 'complete', doc_ref: ref, doc_status: 'signed' });
+  const awaitingDoc = ref => ({ consent_status: 'complete', doc_ref: ref });
+  const OWNER_SCENARIOS = [
+    ['family: nobody done (owner prefill phone + DOB)', () => family()],
+    ['family: children done and signed, owner pending', () => family({ K: signedDoc('docref-K'), S: signedDoc('docref-S') })],
+    ['family: everyone complete, owner doc awaiting', () => family({ O: awaitingDoc('docref-O'), K: signedDoc('docref-K'), S: signedDoc('docref-S') })],
+    ['family: everyone complete and signed', () => family({ O: signedDoc('docref-O'), K: signedDoc('docref-K'), S: signedDoc('docref-S') })],
+    ['family: owner complete via legacy consent-complete tag', () => family({ O: { tags: ['consent-complete'], doc_ref: 'docref-O', doc_status: 'signed' }, K: signedDoc('docref-K') })],
+    ['family: one member not yet minted (no hint_patient_id) is skipped', () => family({ S: { pid: '' } })],
+    ['solo: pending', () => solo()],
+    ['solo: complete and signed', () => solo(signedDoc('docref-Q'))]
+  ];
+  await check('owner: byte-identical to v8 across ' + OWNER_SCENARIOS.length + ' scenarios', () => {
+    for (const [label, mk] of OWNER_SCENARIOS) {
+      const fam = mk();
+      const a = JSON.stringify(runWf2(behaviorCode, fam.O, fam.all, OWNER_TOKEN));
+      const b = JSON.stringify(runWf2(v8Code, fam.O, fam.all, OWNER_TOKEN));
+      if (a !== b) return 'differs in "' + label + '"';
+    }
+    return true;
+  });
+
+  // A member-scoped response: owner null, exactly the holder's card, nothing about anyone else.
+  function scopedTo(b, holderName, others) {
+    if (b.owner !== null) return 'owner is not null';
+    if (b.members.length !== 1) return 'members length ' + b.members.length;
+    if (b.members[0].first_name !== holderName) return 'card is not the holder\'s';
+    const s = JSON.stringify(b);
+    for (const t of leakTerms(others)) if (s.indexOf(t) !== -1) return 'response carries another member\'s data';
+    return true;
+  }
+  await check('member detect: owner_contact_id alone scopes the response', () => {
+    const fam = family({ S: { member_type: 'owner' } }); // bad Hint value on a dependent
+    return scopedTo(runWf2(behaviorCode, fam.S, fam.all, ADHOC_TOKEN), 'Sorrel', [fam.O, fam.K]);
+  });
+  await check('member detect: member_type other than owner alone scopes the response', () => {
+    const fam = family({ K: { owner_contact_id: '' } }); // child with no owner link written
+    return scopedTo(runWf2(behaviorCode, fam.K, fam.all, ADHOC_TOKEN), 'Kestrel', [fam.O, fam.S]);
+  });
+  await check('member detect: legacy holder with no owner link and empty member_type is scoped', () => {
+    const fam = family({ S: { member_type: '', owner_contact_id: '' } }); // phase4 FINDINGS legacy dependent shape
+    return scopedTo(runWf2(behaviorCode, fam.S, fam.all, ADHOC_TOKEN), 'Sorrel', [fam.O, fam.K]);
+  });
+
+  await check('member: holder missing from the refetch returns no cards and no family data', () => {
+    const fam = family();
+    const b = runWf2(behaviorCode, fam.S, [fam.O, fam.K], ADHOC_TOKEN);
+    if (b.owner !== null) return 'owner is not null';
+    if (b.members.length !== 0) return 'members length ' + b.members.length;
+    if (b.all_complete !== false || b.all_signed !== false) return 'completion flags not false';
+    const s = JSON.stringify(b);
+    for (const t of leakTerms([fam.O, fam.K])) if (s.indexOf(t) !== -1) return 'response carries family data';
+    return true;
+  });
+  await check('member: holder without hint_patient_id returns no cards', () => {
+    const fam = family({ S: { pid: '' } });
+    const b = runWf2(behaviorCode, fam.S, fam.all, ADHOC_TOKEN);
+    if (b.owner !== null) return 'owner is not null';
+    return b.members.length === 0 || 'members length ' + b.members.length;
+  });
+  await check('member: complete and signed holder sets all_complete and all_signed', () => {
+    const fam = family({ S: signedDoc('docref-S') }); // O and K still pending: must not matter
+    const b = runWf2(behaviorCode, fam.S, fam.all, ADHOC_TOKEN);
+    const r = scopedTo(b, 'Sorrel', [fam.O, fam.K]);
+    if (r !== true) return r;
+    if (b.members[0].status !== 'complete' || b.members[0].doc_status !== 'signed') return 'card state ' + b.members[0].status + '/' + b.members[0].doc_status;
+    return (b.all_complete === true && b.all_signed === true) || 'flags ' + b.all_complete + '/' + b.all_signed;
+  });
+  await check('member: awaiting signature exposes only the holder\'s doc_ref', () => {
+    const fam = family({ O: awaitingDoc('docref-O'), K: awaitingDoc('docref-K'), S: awaitingDoc('docref-S') });
+    const b = runWf2(behaviorCode, fam.S, fam.all, ADHOC_TOKEN);
+    const r = scopedTo(b, 'Sorrel', [fam.O, fam.K]);
+    if (r !== true) return r;
+    if (b.members[0].doc_status !== 'awaiting_signature' || b.members[0].doc_ref !== 'docref-S') return 'holder doc state wrong';
+    const s = JSON.stringify(b);
+    if (s.indexOf('docref-O') !== -1 || s.indexOf('docref-K') !== -1) return 'another member\'s doc_ref leaked';
+    return (b.all_complete === true && b.all_signed === false) || 'flags ' + b.all_complete + '/' + b.all_signed;
+  });
+
+  await check('leak: member response contains no other member\'s name, id, or email', () => {
+    const states = [{}, { O: signedDoc('docref-O'), K: awaitingDoc('docref-K'), S: awaitingDoc('docref-S') }];
+    for (const st of states) {
+      const fam = family(st);
+      for (const [holder, others] of [[fam.S, [fam.O, fam.K]], [fam.K, [fam.O, fam.S]]]) {
+        const s = JSON.stringify(runWf2(behaviorCode, holder, fam.all, ADHOC_TOKEN));
+        for (const t of leakTerms(others)) if (s.indexOf(t) !== -1) return 'holder ' + holder.firstName + ' response carries another member\'s data';
+      }
+    }
+    return true;
+  });
+
+  await check('HUB-04: member-view form_params equal the owner-view form_params for the same member', () => {
+    const fam = family();
+    const ownerView = runWf2(behaviorCode, fam.O, fam.all, OWNER_TOKEN);
+    for (const m of [fam.S, fam.K]) {
+      const mine = runWf2(behaviorCode, m, fam.all, ADHOC_TOKEN).members[0];
+      const card = ownerView.members.find(x => x.first_name === m.firstName);
+      if (!mine || !card) return 'card missing for ' + m.firstName;
+      if (!mine.form_params || mine.form_params !== card.form_params) return 'form_params differ for ' + m.firstName;
+    }
+    return true;
+  });
+
+  await check('baseline: v8 returns the whole family for a member token (the bug v9 fixes)', () => {
+    const fam = family();
+    const b = runWf2(v8Code, fam.S, fam.all, ADHOC_TOKEN);
+    const cards = (b.owner ? 1 : 0) + b.members.length;
+    return cards > 1 || 'v8 returned ' + cards + ' card(s)';
+  });
+
+  await check('hub: return visit without ?t= recovers the adhoc_ token and fetches with it', async () => {
+    if (!STATUS_URL) return 'STATUS_URL not found in hub v11';
+    const fam = family();
+    const body = runWf2(behaviorCode, fam.S, fam.all, ADHOC_TOKEN);
+    const first = await runHub(body, { search: '?t=' + ADHOC_TOKEN });
+    if (first.store.get('consentToken') !== ADHOC_TOKEN) return 'first visit did not store the exact token';
+    if (first.fetched[0] !== STATUS_URL + '?t=' + ADHOC_TOKEN) return 'first visit fetched a different URL';
+    const back = await runHub(body, { search: '', session: { consentToken: first.store.get('consentToken') } });
+    if (back.fetched.length !== 1) return 'return visit fetched ' + back.fetched.length + ' times';
+    if (back.fetched[0] !== STATUS_URL + '?t=' + ADHOC_TOKEN) return 'return visit fetched a different URL';
+    if (cardCount(back.html) !== 1 || back.html.indexOf('This link has expired') !== -1) return 'return visit did not render the one card';
+    return true;
+  });
+
+  await check('hub: no regex, length, or hex check on the token in hub v11 or wf2', () => {
+    const hits = [];
+    const tokenValidation = [
+      /\btoken\s*\.\s*(length|test|match|matchAll|search|replace|split)\b/,
+      /\.\s*(test|exec)\s*\(\s*token\b/,
+      /\/(?:[^/\\\n]|\\.)+\/[dgimsuy]*\s*\.\s*(test|exec)\s*\(\s*token\b/,
+      /\b(isHex|parseInt)\s*\(\s*token\b/
+    ];
+    hubText.split('\n').forEach((line, i) => {
+      if (!/\btoken\b/.test(line)) return;
+      if (tokenValidation.some(re => re.test(line))) hits.push('hub v11 line ' + (i + 1));
+    });
+    const cond = nodeOf(edited, 'Has Token?').parameters.conditions.conditions;
+    cond.forEach(c => {
+      if (c.operator.operation !== 'notEmpty') hits.push('Has Token? operator ' + c.operator.operation);
+      if (/\.length\b|\.test\(|\.match\(|\/[^/]+\/[dgimsuy]*\./.test(c.leftValue)) hits.push('Has Token? leftValue');
+    });
+    const jb = nodeOf(edited, 'Find Owner by Token').parameters.jsonBody;
+    if (!/operator: 'eq', value: \$\('Status Webhook'\)\.first\(\)\.json\.query\.t \}/.test(jb)) hits.push('Find Owner by Token value is not the raw query.t');
+    // every node that reads the token must be one of the two audited above
+    edited.nodes.forEach(n => {
+      if (/json\.query\.t\b|query\.t\b/.test(JSON.stringify(n.parameters)) && ['Has Token?', 'Find Owner by Token'].indexOf(n.name) === -1) hits.push('unaudited token reader: ' + n.name);
+    });
+    return hits.length === 0 || hits.join('; ');
+  });
+
+  await check('hub: v11 carries the live markers from phase0 FINDINGS item 8', () => {
+    const want = ['signPollCount <= 12 ? 5000 : 10000', 'signPollCount < 24'];
+    const miss = want.filter(w => hubText.indexOf(w) === -1);
+    return miss.length === 0 || 'missing: ' + miss.join(' | ');
   });
 
   // ---------------------------------------------------------------- report
