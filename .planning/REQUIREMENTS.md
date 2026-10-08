@@ -49,7 +49,7 @@ Inputs: `notes/actions-menu-individual-consent.md` (decisions), `notes/webhook-t
 
 - [x] **REL-01**: `test/run.mjs` and `test/harness.html` cover menu rendering, keyboard, per-item state and cooldown, scope rules, plain-button backward compatibility, no re-render loop, and the synthetic-email pre-check. The full suite is green.
 - [ ] **REL-02**: Version strings are bumped to 0.2.0 per the README release checklist. The annotated tag `v0.2.0` and the push happen only after Rob approves.
-- [ ] **REL-03**: A live-test checklist covers the inject-into-logged-in-tab run, every menu item on a real Xcelsior owner and member, and each refusal path. It includes a rollback step (snippet tag back to v0.1.2).
+- [x] **REL-03**: A live-test checklist covers the inject-into-logged-in-tab run, every menu item on a real Xcelsior owner and member, and each refusal path. It includes a rollback step (snippet tag back to v0.1.2).
 - [x] **REL-04**: The README documents the `menus[]` config shape and the consent webhook item IDs.
 
 ## Future Requirements
@@ -105,7 +105,7 @@ Deferred (see `seeds/consent-actions-hardening.md`):
 | HUB-04 | Phase 5 | Complete |
 | REL-01 | Phase 4 | Complete |
 | REL-02 | Phase 6 | Pending |
-| REL-03 | Phase 6 | Pending |
+| REL-03 | Phase 6 | Complete |
 | REL-04 | Phase 4 | Complete |
 
 **Coverage:** 29/29 v1 requirements mapped (Phase 4: 17, Phase 5: 10, Phase 6: 2). No orphans, no duplicates.

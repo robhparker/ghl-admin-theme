@@ -107,12 +107,12 @@ Plans:
   3. The checklist includes a rollback step (snippet tag back to `v0.1.2` in both URLs) that restores the plain Send Invite button with no ClinX change.
   4. The annotated tag `v0.2.0` is created and pushed only after Rob gives explicit approval; until then nothing is tagged or pushed, and after approval jsDelivr serves the v0.2.0 assets.
 
-**Plans**: 5 plans (sequential waves 1 → 5; 06-01 to 06-03 run now, 06-04 waits on Rob's consent URL, 06-05 waits on Rob's D-02 approval)
+**Plans**: 1/5 plans executed (sequential waves 1 → 5; 06-01 to 06-03 run now, 06-04 waits on Rob's consent URL, 06-05 waits on Rob's D-02 approval)
 
 Plans:
 **Wave 1**
 
-- [ ] 06-01-PLAN.md — Version bump to 0.2.0 per the README checklist (tracer), live-test checklist with rollback to v0.1.2 (REL-03, D-03), and the checklist gate that keeps staff and phase verification waiting on the live run
+- [x] 06-01-PLAN.md — Version bump to 0.2.0 per the README checklist (tracer), live-test checklist with rollback to v0.1.2 (REL-03, D-03), and the checklist gate that keeps staff and phase verification waiting on the live run
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -142,4 +142,4 @@ Phases execute in numeric order: 4 → 5 → 6 (4 and 5 are independent; 6 needs
 | 3. Accent Colors & Delivery | v0.1.0 | 2/2 | Complete | 2026-09-25 |
 | 4. Actions Menu | v0.2.0 | 3/3 | In Progress|  |
 | 5. Individual Consent Backend | v0.2.0 | 3/3 | In Progress|  |
-| 6. Release v0.2.0 | v0.2.0 | 0/5 | Planned | - |
+| 6. Release v0.2.0 | v0.2.0 | 1/5 | In Progress|  |

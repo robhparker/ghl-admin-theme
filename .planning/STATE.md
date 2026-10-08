@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v0.2.0
 milestone_name: Actions menu + Send individual consent
-current_phase: 6
+current_phase: 06
 current_phase_name: Release v0.2.0
 status: executing
-stopped_at: Completed 05-03-PLAN.md
-last_updated: "2026-10-08T14:49:45.319Z"
-last_activity: 2026-10-07
-last_activity_desc: Phase 4 execution started
-state_head: 5cf5c07a588a849e5fe13762ec4f1d88f11d46c7
+stopped_at: Completed 06-01-PLAN.md
+last_updated: "2026-10-08T15:49:35.452Z"
+last_activity: 2026-10-08
+last_activity_desc: Phase 06 execution started
+state_head: 1ba4a52c6d84748daa7f30faa5852a3db28e09ba
 progress:
   total_phases: 3
   completed_phases: 3
   total_plans: 11
-  completed_plans: 6
-  percent: 55
+  completed_plans: 7
+  percent: 64
 ---
 
 # Project State
@@ -25,16 +25,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-07)
 
 **Core value:** From an open contact record, a staff member can press one button and reliably trigger the right HighLevel workflow for that exact contact and location, with no stale context and no duplicate sends.
-**Current focus:** Phase 5 — Individual Consent Backend
+**Current focus:** Phase 06 — Release v0.2.0
 
 ## Current Position
 
-Phase: 6 (Release v0.2.0) — READY TO EXECUTE
-Plan: 3 of 3 (05-01, 05-02 complete)
+Phase: 06 (Release v0.2.0) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-10-07 — Completed 05-01 (wf2 member scope, harness 22/22)
+Last activity: 2026-10-08 — Phase 06 execution started
 
-Progress: [██████░░░░] 55%
+Progress: [██████░░░░] 64%
 
 ## Performance Metrics
 
@@ -72,6 +72,7 @@ Progress: [██████░░░░] 55%
 | Phase 05 P01 | 7min | 3 tasks | 9 files |
 | Phase 05 P02 | 7min | 3 tasks | 3 files |
 | Phase 05 P03 | 6min | 2 tasks | 8 files |
+| Phase 06 P01 | 6min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -96,6 +97,8 @@ Decisions are logged in PROJECT.md Key Decisions table (full log). Milestone v0.
 - [Phase 05]: 05-01: wf2 deliverable synced to the live v8 roster (F-1); Build Status v9 scopes member tokens (owner_contact_id set or member_type != owner; legacy fails closed); owner tokens byte-identical to v8; hub v11 unchanged (D-11)
 - [Phase 5]: 05-02: Consent workflow spec: member token adhoc_ + 64 hex from crypto only (Custom Code, runtime-tested); R-04 adds +{{contact.hint_patient_id}}@ condition (F-3); §5.4 binds the templates d6cf9af1 actually binds (LP: Longevity Family Consent Invite / Longevity Consent Invite)
 - [Phase 05]: 05-03: Q-4 (F-3) recorded resolved by 86b53d7; phase gate scopes xcelsior history to branches/tags/remotes, excluding refs/t3/checkpoints snapshots
+- [Phase 06]: 06-01: checklist-gate.cjs treats a placeholder 'deferred: <reason>' as invalid; a deferral needs a real reason
+- [Phase 06]: 06-01: RB rows are recorded after PR-01/PR-02 as the PR-03 rehearsal; an RB or PR row recorded before the pre-release rows finish is ORDER-VIOLATION
 
 ### Pending Todos
 
@@ -121,8 +124,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T03:36:57.516Z
-Stopped at: Completed 05-03-PLAN.md
+Last session: 2026-10-08T15:49:35.427Z
+Stopped at: Completed 06-01-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
