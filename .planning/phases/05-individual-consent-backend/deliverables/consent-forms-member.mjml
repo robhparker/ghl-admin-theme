@@ -1,0 +1,211 @@
+<!--
+  Consent Forms (MEMBER variant): "your own consent forms" individual send
+  Template family: Consent-Hub-Invite (transactional onboarding notification)
+
+  PURPOSE
+  Sent by the consent workflow's send-individual-consent pass branch when
+  staff use the Actions menu on a family member who has their own email
+  address. It puts the member's own hub link (their own consent_hub_token,
+  an adhoc_ token minted by the workflow if they had none) in the member's
+  hands, so they complete their own forms instead of the owner doing it.
+
+  PASTE TARGET
+  ClinX email template "Member Consent Forms". The subject
+  "Your Xcelsior consent forms" is set in the Send Email action
+  ("Member consent email") of workflow
+  "[Ready] Admin Menu: Consent Actions (webhook)" (BUILD-SPEC section 4.7).
+  Compile with build.sh first; paste the compiled consent-forms-member.html,
+  never this source and never hand-edited HTML.
+
+  AUDIENCE
+  The member themselves, never the owner. Guards R-03..R-07 in the workflow
+  keep shared, missing, owner-matching, and synthetic (+id@) addresses out,
+  so this email only ever reaches an address that belongs to the member.
+
+  THE LINK (the entire point of this email)
+    https://join.xcelsiorhealth.com/consent-hub?t={{contact.consent_hub_token}}
+  Domain must be join.xcelsiorhealth.com, bare /consent-hub path, param `t`.
+  The token is the MEMBER's own, so the hub (wf2 Build Status v9) shows only
+  this member's card. {{contact.*}} resolves to the member in context.
+
+  PRODUCTION CHECKLIST
+  - Click tracking stays OFF in the email action (Track link clicks = OFF,
+    BUILD-SPEC V-04), so the ?t= token is never rewritten.
+  - After pasting, reopen the action and confirm the template binding still
+    shows (email actions can silently lose it when edited).
+  - Real test send (test contacts only): the button must open a hub showing
+    ONLY this member's card. That needs wf2 v9 published in n8n first.
+  - Voice: calm, no urgency, no countdowns, no red (brand core section 5).
+    Patient-facing copy stays dash-free and names no platform.
+-->
+<mjml>
+  <mj-head>
+    <mj-title>Your Xcelsior Consent Forms | Xcelsior Health</mj-title>
+    <mj-preview>A short consent form just for you. About ten minutes, and your progress saves as you go.</mj-preview>
+
+    <!-- Brand fonts as progressive enhancement; Outlook and most native
+         clients render the Georgia / Arial fallbacks by design. -->
+    <mj-font name="Montserrat" href="https://fonts.googleapis.com/css?family=Montserrat:300,400,500,600,700" />
+    <mj-font name="Taviraj" href="https://fonts.googleapis.com/css?family=Taviraj:300,400,500" />
+
+    <mj-attributes>
+      <mj-all font-family="Montserrat, Arial, Helvetica, sans-serif" />
+      <mj-text color="#3a3a38" font-size="15px" line-height="1.75" padding="0" />
+      <mj-section padding="0" />
+      <mj-column padding="0" />
+    </mj-attributes>
+
+    <mj-style>
+      .serif { font-family: Taviraj, Georgia, 'Times New Roman', serif; }
+      .body-copy { font-family: Montserrat, Arial, Helvetica, sans-serif; font-size: 15px; line-height: 1.75; color: #3a3a38; margin: 0 0 12px; }
+      .body-copy strong { color: #142131; font-weight: 600; }
+      .body-copy:last-child { margin-bottom: 0; }
+
+      /* Insight box (6.4) */
+      .insight-label { font-family: Montserrat, Arial, Helvetica, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #A68563; margin: 0 0 6px; }
+      .insight-text { font-family: Montserrat, Arial, Helvetica, sans-serif; font-size: 13px; line-height: 1.7; color: #4a4845; margin: 0; }
+      .insight-text strong { color: #142131; font-weight: 600; }
+
+      /* Header pill: never allow a mid-word break */
+      .header-pill { white-space: nowrap; }
+
+      /* Footer */
+      .footer-text { font-family: Montserrat, Arial, sans-serif; font-size: 13px; line-height: 1.7; color: rgba(255,255,255,0.62); margin: 0; }
+      .footer-text strong { font-weight: 600; color: rgba(255,255,255,0.82); }
+      .footer-link { color: #C8AD8B; text-decoration: none; border-bottom: 1px solid rgba(200,173,139,0.4); }
+
+      @media only screen and (max-width: 600px) {
+        .header-title { font-size: 27px !important; }
+      }
+
+      /* Mobile stack (below MJML's 480px column breakpoint): center the
+         header logo + pill and the footer blocks so nothing sits crowded
+         against an edge. !important is needed to beat inline text-align. */
+      @media only screen and (max-width: 479px) {
+        .header-logo { text-align: center !important; }
+        .header-logo table { margin: 0 auto !important; }
+        .header-pill-td { padding-top: 14px !important; }
+        .header-pill-td div { text-align: center !important; }
+        .footer-left p, .footer-left div { text-align: center !important; }
+        .footer-right p, .footer-right div { text-align: center !important; }
+        .footer-left { padding-bottom: 12px !important; }
+        .footer-right { padding-top: 12px !important; }
+      }
+    </mj-style>
+  </mj-head>
+
+  <mj-body background-color="#eceae4" width="680px">
+
+    <!-- Hidden preheader -->
+    <mj-raw>
+      <div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#eceae4;">A short consent form just for you. About ten minutes, and your progress saves as you go.&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>
+    </mj-raw>
+
+    <!-- ============================================================
+         HEADER (6.1): Xcelsior Direct logo + status pill, dark navy
+         ============================================================ -->
+    <mj-section background-color="#142131" padding="30px 48px 10px">
+      <mj-column width="60%" vertical-align="middle">
+        <mj-image css-class="header-logo" src="https://assets.cdn.filesafe.space/Cp2XxBsRoyKS2CUf1Hwi/media/6a6cbc9ba4c8a1a2c34463df.png" alt="Xcelsior Direct" width="150px" align="left" padding="0" />
+      </mj-column>
+      <mj-column width="40%" vertical-align="middle">
+        <mj-text padding="6px 0 0" align="right" css-class="header-pill-td">
+          <span class="header-pill" style="display: inline-block; font-size: 10px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: #C8AD8B; background: transparent; border: 1px solid rgba(200,173,139,0.45); padding: 5px 12px; border-radius: 2px;">Your Forms</span>
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
+    <mj-section background-color="#142131" padding="18px 48px 30px">
+      <mj-column>
+        <mj-text padding="0">
+          <div class="serif header-title" style="font-family: Taviraj, Georgia, 'Times New Roman', serif; font-size: 34px; line-height: 1.15; color: #ffffff; font-weight: 300;">Your consent forms are <span style="color: #A68563;">ready</span></div>
+        </mj-text>
+        <mj-text padding="10px 0 0" font-size="13px" color="rgba(255,255,255,0.6)" letter-spacing="0.03em" line-height="1.7">
+          About ten minutes &nbsp;&middot;&nbsp; Progress saves as you go
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
+    <!-- ============================================================
+         GREETING + CTA: the payload, above the fold on mobile
+         ============================================================ -->
+    <mj-section background-color="#FAF9F1" padding="30px 48px 36px">
+      <mj-column>
+        <mj-text padding="0">
+          <p class="body-copy">Hi <strong>{{contact.first_name}}</strong>,</p>
+          <p class="body-copy">Your family&#8217;s Xcelsior Health membership includes a short consent and history form for you, followed by your signature on the care agreement. These forms are for you personally, so we are sending this link to your own email address.</p>
+        </mj-text>
+        <mj-button href="https://join.xcelsiorhealth.com/consent-hub?t={{contact.consent_hub_token}}" background-color="#3D7050" color="#FFFFFF" font-family="Montserrat, Arial, Helvetica, sans-serif" font-size="13px" font-weight="600" letter-spacing="0.08em" border-radius="4px" inner-padding="15px 34px" padding="22px 0 0" align="center">
+          Complete My Forms
+        </mj-button>
+      </mj-column>
+    </mj-section>
+
+    <mj-section background-color="#FAF9F1" padding="0 48px">
+      <mj-column><mj-divider border-color="#E6E5E4" border-width="1px" padding="0" /></mj-column>
+    </mj-section>
+
+    <!-- ============================================================
+         INSIGHT BOX (6.4): one calm reassurance, mirrors the hub copy
+         ============================================================ -->
+    <mj-section background-color="#FAF9F1" padding="28px 48px 40px">
+      <mj-column background-color="#F5F1E5" border-left="3px solid #A68563" padding="0">
+        <mj-text padding="16px 20px">
+          <p class="insight-label">Good to know</p>
+          <p class="insight-text">It takes about ten minutes. Your progress saves automatically, so you can come back anytime, from any device, using the button in this email.</p>
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
+    <!-- ============================================================
+         FOOTER: social row + practice info row + legal
+         (no physician name: the recipient's provider may differ)
+         ============================================================ -->
+    <mj-section background-color="#142131" padding="28px 48px 8px">
+      <mj-column>
+        <mj-text padding="0" align="center">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto;">
+            <tr>
+              <td style="padding:0 9px;"><a href="https://www.facebook.com/people/Xcelsior-Health/100070429955027/"><img src="https://assets.cdn.filesafe.space/Cp2XxBsRoyKS2CUf1Hwi/media/6a1ee577730359821047ffc1.png" width="18" height="18" alt="Facebook" style="display:inline-block;width:18px;height:18px;opacity:0.85;" /></a></td>
+              <td style="padding:0 9px;"><a href="https://www.instagram.com/xcelsior_health"><img src="https://assets.cdn.filesafe.space/Cp2XxBsRoyKS2CUf1Hwi/media/6a1ee577027d0d5be155c1b6.png" width="18" height="18" alt="Instagram" style="display:inline-block;width:18px;height:18px;opacity:0.85;" /></a></td>
+              <td style="padding:0 9px;"><a href="https://www.linkedin.com/company/xcelsior-health"><img src="https://assets.cdn.filesafe.space/Cp2XxBsRoyKS2CUf1Hwi/media/6a1ee5776103bdfedd8ab56e.png" width="18" height="18" alt="LinkedIn" style="display:inline-block;width:18px;height:18px;opacity:0.85;" /></a></td>
+            </tr>
+          </table>
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
+    <mj-section background-color="#142131" padding="16px 48px 4px">
+      <mj-column width="38%" vertical-align="middle">
+        <mj-text padding="0" css-class="footer-left">
+          <p class="footer-text" style="margin:0 0 4px;"><strong>Xcelsior Health</strong></p>
+          <p class="footer-text" style="margin:0 0 2px;"><a href="https://xcelsiorhealth.com" class="footer-link">xcelsiorhealth.com</a></p>
+          <p class="footer-text" style="margin:0;">813-605-1977</p>
+        </mj-text>
+      </mj-column>
+      <mj-column width="24%" vertical-align="middle">
+        <mj-image src="https://assets.cdn.filesafe.space/Cp2XxBsRoyKS2CUf1Hwi/media/6a1ee6ea1b531ff70a83f3e7.png" alt="Xcelsior Health" width="50px" align="center" padding="0" />
+      </mj-column>
+      <mj-column width="38%" vertical-align="middle">
+        <mj-text padding="0" align="right" css-class="footer-right">
+          <p class="footer-text" style="margin:0 0 2px;text-align:right;">2506 S. Macdill Avenue</p>
+          <p class="footer-text" style="margin:0 0 2px;text-align:right;">Suite A</p>
+          <p class="footer-text" style="margin:0;text-align:right;">Tampa, FL 33629</p>
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
+    <mj-section background-color="#142131" padding="20px 48px 34px">
+      <mj-column>
+        <mj-divider border-color="rgba(255,255,255,0.10)" border-width="1px" padding="0 0 20px" />
+        <mj-text padding="0" align="center" font-size="11px" color="rgba(255,255,255,0.4)" line-height="1.6">
+          The button in this email opens a personal, secure link to your forms. If you have any questions, or if you were not expecting this email, please call our office and we will be glad to help.
+        </mj-text>
+        <mj-text padding="14px 0 0" align="center" font-size="12px" color="rgba(255,255,255,0.48)" line-height="1.6">
+          Copyright &copy; 2026 Xcelsior Health Inc, All rights reserved.
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
+  </mj-body>
+</mjml>
