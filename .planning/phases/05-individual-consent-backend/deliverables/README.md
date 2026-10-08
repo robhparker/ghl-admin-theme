@@ -328,7 +328,7 @@ Test contacts only, never a real patient. Record each result in the Phase 6 run 
 | R-03 | Send individual consent on a contact without `family-member` | | | | |
 | R-04 | Member with empty, synthetic-tagged, or `+<hint_patient_id>@` email | | | | |
 | R-05 | Member with empty Owner Contact ID or Hint Membership ID, or a deleted owner | | | | |
-| R-06 | Member whose email equals the owner's | | | | |
+| R-06 | Member whose saved email equals the owner's saved email; repeat with the member's email in different case (must still refuse), and with an owner who has no saved email (second Note text) | | | | |
 | R-07 | Member whose Consent Status is `complete` | | | | |
 | R-08 | Resend on a member whose owner is missing, or on a non-owner without an owner link | | | | |
 | R-09 | Resend where the owner has no Consent Hub Token | | | | |

@@ -125,10 +125,34 @@ function snippetCode() {
   return lines.slice(open + 1, close).join('\n');
 }
 
-function runSnippet(code, cryptoArg, requireArg) {
+function runSnippet(code, cryptoArg, requireArg, inputData) {
   // eslint-disable-next-line no-new-func
   const fn = new Function('inputData', 'crypto', 'require', 'let output;\n' + code + '\nreturn output;');
-  return fn({}, cryptoArg, requireArg);
+  return fn(inputData || {}, cryptoArg, requireArg);
+}
+
+// Named Custom Code regions (review fixes): <!-- custom-code:NAME:start --> ... <!-- custom-code:NAME:end -->
+function namedSnippet(name) {
+  const s = '<!-- custom-code:' + name + ':start -->';
+  const e = '<!-- custom-code:' + name + ':end -->';
+  const a = text.indexOf(s);
+  const b = text.indexOf(e);
+  if (a < 0 || b < 0 || b < a) throw new Error('custom-code:' + name + ' region markers not found');
+  if (text.indexOf(s, a + 1) >= 0) throw new Error('custom-code:' + name + ' region appears twice');
+  const m = text.slice(a + s.length, b).match(/\n```js\n([\s\S]*?)\n```\n/);
+  if (!m) throw new Error('js fence not found inside custom-code:' + name);
+  return m[1];
+}
+// Run a named snippet the way ClinX does: inputData in, output out. No crypto, no require.
+function runNamed(name, inputData) {
+  return runSnippet(namedSnippet(name), undefined, undefined, inputData);
+}
+function allRegions() {
+  const re = /<!-- custom-code:([a-z]+):start -->([\s\S]*?)<!-- custom-code:\1:end -->/g;
+  const out = [];
+  let m;
+  while ((m = re.exec(text))) out.push({ name: m[1], body: m[2] });
+  return out;
 }
 
 const TOKEN_RE = /^adhoc_[0-9a-f]{64}$/;
@@ -281,6 +305,46 @@ if (args.stage >= 2) {
     const r = region();
     if (r === null) return 'region missing';
     return !/Math\s*\.\s*random/.test(r) || 'region references Math random';
+  });
+
+  // ---- review CR-01: R-06 compares SAVED emails only, never the payload email ----
+  check('(t) no guard reads the payload email: {{inboundWebhookRequest.email}} appears nowhere', () =>
+    !text.includes('{{inboundWebhookRequest.email}}') || 'spec still references {{inboundWebhookRequest.email}}');
+
+  check('(u1) "Capture member email" snippet trims and lowercases the saved member email', () => {
+    const a = runNamed('capture', { memberEmail: '  Sorrel.Own@Example.NET ' });
+    if (!a || a.memberEmail !== 'sorrel.own@example.net') return 'got ' + JSON.stringify(a);
+    const b = runNamed('capture', {});
+    if (!b || b.memberEmail !== '') return 'missing input gave ' + JSON.stringify(b);
+    return true;
+  });
+
+  check('(u2) "Compare with owner" passes only two different, readable saved emails (fail closed)', () => {
+    const cases = [
+      [{ ownerEmail: 'owner@example.com', memberEmail: 'member@example.net' }, 'different'],
+      [{ ownerEmail: 'Owner@Example.com ', memberEmail: 'owner@example.com' }, 'same'],
+      [{ ownerEmail: 'owner@example.com', memberEmail: ' OWNER@EXAMPLE.COM' }, 'same'],
+      [{ ownerEmail: '', memberEmail: 'member@example.net' }, 'unknown'],
+      [{ ownerEmail: 'owner@example.com', memberEmail: '' }, 'unknown'],
+      [{ ownerEmail: 'owner@example.com' }, 'unknown'],
+      [{ ownerEmail: 'owner@example.com', memberEmail: '{{custom_code.memberEmail}}' }, 'unknown'],
+      [{ ownerEmail: 'owner@example.com', memberEmail: 'not an email' }, 'unknown'],
+    ];
+    for (const [input, want] of cases) {
+      const out = runNamed('compare', input);
+      if (!out || out.emailCheck !== want) return JSON.stringify(input) + ' gave ' + JSON.stringify(out) + ', want ' + want;
+    }
+    return true;
+  });
+
+  check('(u3) every Custom Code region is free of Math random and payload reads', () => {
+    const regions = allRegions();
+    if (regions.length < 3) return 'found ' + regions.length + ' custom-code regions, want at least 3';
+    for (const r of regions) {
+      if (/Math\s*\.\s*random/.test(r.body)) return r.name + ' references Math random';
+      if (/inboundWebhookRequest/.test(r.body)) return r.name + ' reads the webhook payload';
+    }
+    return true;
   });
 }
 

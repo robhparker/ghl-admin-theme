@@ -15,7 +15,7 @@ This spec builds ONE new workflow, "[Ready] Admin Menu: Consent Actions (webhook
 
 0.2 **Email template "Member Consent Forms".** Marketing -> Emails -> Templates -> New -> Code editor. Name = "Member Consent Forms". Paste the compiled `Email-Templates/Consent-Hub-Invite/consent-forms-member.html` (never the `.mjml` source). Save, close, reopen, and confirm the preview renders the Xcelsior header, the button, and the footer. The workflow step in §4 uses the subject "Your Xcelsior consent forms".
 
-0.3 **Premium actions.** The Inbound Webhook trigger and the Custom Code action are Premium. The Find Contact action is already in use in the Send Invite workflow (3dff9d94), so it is available on this location. Custom Code availability is checked in §4.6 (V-06).
+0.3 **Premium actions.** The Inbound Webhook trigger and the Custom Code action are Premium. The Find Contact action is already in use in the Send Invite workflow (3dff9d94), so it is available on this location. Custom Code is first used in §4.4 ("Capture member email"); its availability is V-06 (§4.6).
 
 0.4 **Fields and tags this spec reads or writes.** All exist on the location (phase0 FINDINGS, 2026-08-24). Pick them by name in the ClinX pickers; never type a field id.
 
@@ -55,7 +55,7 @@ Tags: `family-member`, `synthetic-email`, `consent-pending` (added in §4.7), `l
 | `buttonId` | `send-individual-consent` or `resend-consent-hub` | §3 branch |
 | `requestId` | a per-click id from the client | every Note and notification |
 | `sentAt` | ISO 8601 time of the click | not used |
-| `email` | the email shown on the record at click time | §4.4 owner compare only |
+| `email` | the email shown on the record at click time | never used. Every guard reads the email saved on the contact record (§4.4) |
 | `phone` | the phone shown on the record | never used |
 | `source` | `ghl-customizer` | not used |
 
@@ -123,17 +123,44 @@ Why the third condition: wf1 never applies the `synthetic-email` tag. Its Tag De
 
 A missing member Consent Hub Token is NOT a refusal. Step 4.6 mints one on the first send, which is how CONS-02's token condition is met.
 
-4.4 **R-06, email equals the owner's (D-04 #4).**
-1. **Find Contact**, action name = "Find owner (email compare)" -> match Contact ID (`id`) is `{{contact.owner_contact_id}}`. Multi-path on.
-2. **Contact not found** -> restore the member (Find Contact -> id == `{{inboundWebhookRequest.contactId}}`) -> refuse with R-05's text plus a suffix: Note = "Legacy member without an owner link. Needs backfill before an individual consent can be sent. (owner contact not found)". Notification with the same text. End.
-3. **Contact found** -> the context is now the owner. If/Else, action name = "Shares the owner's email": Branch "Same email" -> Email (the owner's `{{contact.email}}`) is (equals) `{{inboundWebhookRequest.email}}` (the member email shown on the record when staff clicked). None = different emails.
-4. On BOTH outcomes, the first action is **Find Contact**, action name = "Restore member" -> id == `{{inboundWebhookRequest.contactId}}`, which switches the context back to the member. (Its own "not found" path cannot happen, because §2 found this id seconds earlier; route it to the R-01 notification and End.)
-5. "Same email", after the restore -> refuse: Note = "Member's email matches the owner's. Use Resend Consent Hub link on the owner." Notification with the same text. End.
-6. None (different), after the restore -> 4.5.
+4.4 **R-06, email equals the owner's (D-04 #4).** Both sides of this compare are emails saved on contact records: the owner's saved email against the member's saved email, trimmed and lowercased. The webhook payload `email` is never used here or anywhere else. It is whatever the browser sent: it can be missing, a different address read off the page, an unsaved edit, or anything a caller of the public URL typed. 4.7 mails the member's saved address, so the guard must compare that address.
+1. **Custom Code**, action name = "Capture member email" (the context is still the member) -> Language = JavaScript -> Input properties: `memberEmail` = `{{contact.email}}` -> Code = the block below, pasted exactly. Click **Test your Code** (see 4.6 step 2 for why).
 
-verify in ClinX UI (V-05): how ClinX exposes the found-contact context. Check three things on the run log of the first Phase 6 test: (a) after "Find owner (email compare)", `{{contact.email}}` is the owner's; (b) after "Restore member", `{{contact.*}}`, the Note, and the Send Email recipient are the member again; (c) after a Find Contact that finds nothing, the context is still the member (the R-05 Note lands on the member either way, because 4.4 step 2 restores explicitly). Also record whether the equals compare is case-sensitive (test with the owner's email typed in different case on a test member). If ClinX compares case-sensitively, write that in §10 and accept it: staff-typed emails are almost always lowercase. If (a) or (b) differ: use the D-04 alternative below.
+<!-- custom-code:capture:start -->
+```js
+// Capture the member's SAVED email before the context moves to the owner (review CR-01).
+// Trimmed and lowercased so the owner compare in "Compare with owner" is case-insensitive.
+var email = String(inputData.memberEmail || '').trim().toLowerCase();
+output = { memberEmail: email };
+```
+<!-- custom-code:capture:end -->
 
-The payload `email` is the on-screen value at click time, while 4.7 sends to the email saved on the record. If staff edited the email and did not save, the two can differ, so staff should save the record before pressing the item.
+2. **Find Contact**, action name = "Find owner (email compare)" -> match Contact ID (`id`) is `{{contact.owner_contact_id}}`. Multi-path on.
+3. **Contact not found** -> restore the member (Find Contact -> id == `{{inboundWebhookRequest.contactId}}`) -> refuse with R-05's text plus a suffix: Note = "Legacy member without an owner link. Needs backfill before an individual consent can be sent. (owner contact not found)". Notification with the same text. End.
+4. **Contact found** -> the context is now the owner. **Custom Code**, action name = "Compare with owner" -> Language = JavaScript -> Input properties: `ownerEmail` = `{{contact.email}}` (the owner's saved email, because the context is the owner), `memberEmail` = the "Capture member email" output `memberEmail` (insert it from the merge-field picker, V-07) -> Code = the block below, pasted exactly. Click **Test your Code**.
+
+<!-- custom-code:compare:start -->
+```js
+// Compare the OWNER's saved email with the MEMBER's saved email (review CR-01).
+// emailCheck = 'different' (continue), 'same' (R-06), or 'unknown' (R-06: an email is
+// missing, or an earlier output did not resolve). Fail closed: only 'different' passes.
+var looksLikeEmail = function (s) { return /^[^\s@{}]+@[^\s@{}]+\.[^\s@{}]+$/.test(s); };
+var o = String(inputData.ownerEmail || '').trim().toLowerCase();
+var m = String(inputData.memberEmail || '').trim().toLowerCase();
+var emailCheck = (!looksLikeEmail(o) || !looksLikeEmail(m)) ? 'unknown' : (o === m ? 'same' : 'different');
+output = { emailCheck: emailCheck };
+```
+<!-- custom-code:compare:end -->
+
+5. **Find Contact**, action name = "Restore member" -> id == `{{inboundWebhookRequest.contactId}}`, which switches the context back to the member. (Its own "not found" path cannot happen, because §2 found this id seconds earlier; route it to the R-01 notification and End.)
+6. **If/Else**, action name = "Shares the owner's email", on the "Compare with owner" output `emailCheck` (the context is the member again, so every refusal Note below lands on the member):
+   - Branch "Different": `emailCheck` is `different` -> 4.5.
+   - Branch "Same email": `emailCheck` is `same` -> refuse: Note = "Member's email matches the owner's. Use Resend Consent Hub link on the owner." Notification with the same text. End.
+   - None (any other value, including an output that did not resolve) -> refuse with R-06's second text: Note = "Could not confirm the member's email differs from the owner's. Check that both records have a saved email, then press again." Notification with the same text. End.
+
+verify in ClinX UI (V-05): how ClinX exposes the found-contact context. Check four things on the run log of the first Phase 6 test: (a) after "Find owner (email compare)", the "Compare with owner" input `ownerEmail` is the owner's saved email; (b) after "Restore member", `{{contact.*}}`, the Note, and the Send Email recipient are the member again; (c) after a Find Contact that finds nothing, the context is still the member (the R-05 Note lands on the member either way, because 4.4 step 3 restores explicitly); (d) the "Compare with owner" input `memberEmail` shows the member's saved email (not blank, not merge-tag text), so a Custom Code output survives a context switch. Case does not matter: both sides are lowercased in code. If (a), (b), or (d) differ: use the D-04 alternative below. If (d) alone differs, the guard fails closed (every send refuses with R-06's second text), so nothing reaches the owner meanwhile.
+
+Staff should still save the record before pressing the item: an unsaved edit on screen is neither compared nor mailed.
 
 D-04's acceptable alternative: drop 4.4 entirely and rely on 4.2's synthetic checks. Residual risk: staff typed the owner's real email by hand onto the member record (wf1 never does this; Build Dependents swaps a shared signup email for the synthetic key). The member email then reaches the owner's inbox with a member-only link.
 
@@ -174,7 +201,7 @@ output = { token: 'adhoc_' + hex };
 
 verify in ClinX UI (V-06): Custom Code is available on this location's plan (it is a Premium action). If it differs (the action is missing or locked): do not build 4.6 another way; stop and tell Rob.
 
-verify in ClinX UI (V-07): the Custom Code output variable name and merge syntax. HighLevel documents `output = { ... }` but not how later steps reference it. In the Update Contact Field value, open the merge-field picker, find the Custom Code step's `token`, insert it, and write the exact inserted text into §10. If it differs (no picker entry): re-run Test your Code, then reopen the picker; if `token` still does not appear, stop and tell Rob.
+verify in ClinX UI (V-07): the Custom Code output variable name and merge syntax. HighLevel documents `output = { ... }` but not how later steps reference it. In the Update Contact Field value, open the merge-field picker, find the Custom Code step's `token`, insert it, and write the exact inserted text into §10. Do the same for "Capture member email" `memberEmail` as an input of "Compare with owner" (§4.4 step 4): an output must be pickable in a later step even after a Find Contact moved the context. If it differs (no picker entry): re-run Test your Code, then reopen the picker; if the output still does not appear, stop and tell Rob.
 
 verify in ClinX UI (V-08): crypto is available in the Custom Code runtime, meaning Test your Code returns `adhoc_` plus 64 hex characters and no error. Math.random is not acceptable as a fallback, because the token is the only key to the member's hub. If neither crypto source works, do not publish: stop and tell Rob. Selecting Python with `secrets.token_hex(32)` (prefixed with `adhoc_`) is a cryptographic alternative Rob may approve.
 
@@ -269,7 +296,7 @@ Why four leaves: D-06 says use the same email the Consents Needed workflow sends
 
 What this workflow changes for the accepted risk AR-03-01 (D-14):
 
-- **Volume grows; disclosure does not.** This adds a second public Inbound Webhook URL (the first is Send Invite's). Anyone holding it can post any `contactId` and `buttonId` and make the workflow send consent emails, so spam or confusing-email volume can grow. Disclosure does not grow: mail only ever goes to the address on file for the resolved contact (the member's own email, or the owner's), and every guard (R-01 to R-09) runs server-side in ClinX, whatever the client sent. The admin-theme 60 s cooldown per item is the only throttle.
+- **Volume grows; disclosure does not.** This adds a second public Inbound Webhook URL (the first is Send Invite's). Anyone holding it can post any `contactId` and `buttonId` and make the workflow send consent emails, so spam or confusing-email volume can grow. Disclosure does not grow: mail only ever goes to the address on file for the resolved contact (the member's own email, or the owner's), and every guard (R-01 to R-09) runs server-side in ClinX on values saved on the contact records. No guard reads the payload `email` or `phone`; only `contactId` (which record) and `buttonId` (which action) come from the request. The admin-theme 60 s cooldown per item is the only throttle.
 - **No patient data in URLs** beyond the opaque hub token in the email link. The webhook payload is unchanged from v0.1.2. No new PHI flows through n8n: wf2 already receives the token and returns card data, and v9 reduces what a member token can see to that member's own card.
 - **Tokens** are 256-bit cryptographic random values (32 bytes from web crypto or Node crypto, never Math random) with the `adhoc_` prefix. The test token shown by Test your Code is never stored.
 - **Notes and notifications** carry the reason, the staff fix, the buttonId, the requestId, and the contact id only. No names, dates of birth, contact details, or clinical data.
@@ -286,8 +313,8 @@ Every refusal follows §0.5: restore the clicked contact if needed, Note, Intern
 | R-02 | §3.2, None branch | `buttonId` is neither `send-individual-consent` nor `resend-consent-hub` | "Consent action failed: unknown action ({{inboundWebhookRequest.buttonId}}). No email sent. Check the Actions menu item id in the admin-theme config." | §0.5 format with the Note text | Rob checks the item id in `config/agency-config.json` |
 | R-03 | §4.1, A | Contact Tags does not include `family-member` | "Not a family member. Use Resend Consent Hub link on the owner." | §0.5 format with the Note text | Use Resend Consent Hub link on the owner |
 | R-04 | §4.2, A | Tag `synthetic-email`, OR Email empty, OR Email contains `+{{contact.hint_patient_id}}@` | "Member has no own email. Enter their real email first, or use Resend Consent Hub link on the owner." | §0.5 format with the Note text | Enter the member's real email and save, or use Resend Consent Hub link on the owner |
-| R-05 | §4.3 and §4.4 step 2, A | Owner Contact ID empty OR Hint Membership ID empty; or the owner contact is not found (Note gets the suffix " (owner contact not found)") | "Legacy member without an owner link. Needs backfill before an individual consent can be sent." | §0.5 format with the Note text | This is a legacy member: Rob backfills the owner link and membership id first |
-| R-06 | §4.4 step 5, A | Owner's Email equals `{{inboundWebhookRequest.email}}` | "Member's email matches the owner's. Use Resend Consent Hub link on the owner." | §0.5 format with the Note text | Use Resend Consent Hub link on the owner, or give the member their own email |
+| R-05 | §4.3 and §4.4 step 3, A | Owner Contact ID empty OR Hint Membership ID empty; or the owner contact is not found (Note gets the suffix " (owner contact not found)") | "Legacy member without an owner link. Needs backfill before an individual consent can be sent." | §0.5 format with the Note text | This is a legacy member: Rob backfills the owner link and membership id first |
+| R-06 | §4.4 step 6, A | "Compare with owner": the owner's saved Email equals the member's saved Email (trimmed, lowercased); second text when either is missing or did not resolve | "Member's email matches the owner's. Use Resend Consent Hub link on the owner." Second text: "Could not confirm the member's email differs from the owner's. Check that both records have a saved email, then press again." | §0.5 format with the Note text | Use Resend Consent Hub link on the owner, or give the member their own email; for the second text, save an email on both records |
 | R-07 | §4.5, A | Consent Status is `complete` | "Already complete. Nothing to send." | §0.5 format with the Note text | None needed; the member's forms are done |
 | R-08 | §5.2 step 2 and §5.3 step 1, B | Member's owner not found, or the contact has no owner link and is not an owner | "No owner found for this member. Check the owner link or use the owner's own record." | §0.5 format with the Note text | Open the owner's record and press Resend there, or ask Rob to fix the owner link |
 | R-09 | §5.2 step 4 and §5.3 step 2, B | The owner's Consent Hub Token is empty | "The owner has no Consent Hub link (legacy or never invited). Needs a hub token before a link can be resent." | §0.5 format with the Note text | Rob mints or backfills the owner's hub token (legacy owners have none) |
@@ -302,9 +329,9 @@ Tick each while building (or in the Phase 6 live run where the check needs a rea
 | V-02 (D-07, required) | §3.1 | How `{{inboundWebhookRequest.buttonId}}` appears in the If/Else picker | Stop; a workaround changes D-01 | |
 | V-03 (D-07, required) | §1.4 | The captured trigger sample includes `buttonId` | Re-send the sample; if still missing, do not continue | |
 | V-04 (D-07, required) | §5.4, §4.7 | Track link clicks OFF on every Send Email action (four in §5.4, one or two in §4.7) | Turn off, save, reload, reopen; never publish with tracking on | |
-| V-05 (D-04 #4, required) | §4.4, §5.2 | Find Contact switches the context to the found contact; "Restore member" switches back; a failed Find Contact leaves the member; equals compare case sensitivity | Use the D-04 alternative (drop §4.4) and accept the named residual risk | |
+| V-05 (D-04 #4, required) | §4.4, §5.2 | Find Contact switches the context to the found contact; "Restore member" switches back; a failed Find Contact leaves the member; the "Capture member email" output still resolves after the switch | Use the D-04 alternative (drop §4.4) and accept the named residual risk | |
 | V-06 (D-05a, required) | §4.6 | Custom Code is available on the plan (Premium) | Stop and tell Rob | |
-| V-07 (D-05a, required) | §4.6 step 3 | Custom Code output variable name and the merge syntax inserted for `token` (write it here) | Re-test the code; if no picker entry, stop and tell Rob | |
+| V-07 (D-05a, required) | §4.4 step 4, §4.6 step 3 | Custom Code output variable name and the merge syntax inserted for `token` and `memberEmail` (write it here) | Re-test the code; if no picker entry, stop and tell Rob | |
 | V-08 (D-05a, required) | §4.6 step 2 | Test your Code returns `adhoc_` plus 64 hex, so crypto exists in the runtime | Do not publish; stop and tell Rob (Python `secrets.token_hex(32)` only with Rob's approval) | |
 | V-09 (D-05a, required) | §4.6 to §4.7 | The token written by Update Contact Field appears in the next Send Email's link | Add a Find Contact by `{{inboundWebhookRequest.contactId}}` after the write, test again | |
 | V-10 (planner addition) | §4.2 | A "contains" value resolves the merge field `+{{contact.hint_patient_id}}@` per contact | Delete the third condition; accept the plus-addressing residual risk | |
