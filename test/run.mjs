@@ -4836,8 +4836,8 @@ check('unit: resolveMenus applies menu scope, item scope, and per-item overrides
 
 check('unit: isSyntheticEmail matches the +digits@ dedupe pattern only', () => {
   const api = throwawayApi();
-  for (const v of ['owner+12@example.test', 'a+0@b.c']) assert.equal(api.isSyntheticEmail(v), true, v);
-  for (const v of ['owner+tag@example.test', 'jane@example.test', 'owner+@x.y', '', null, 42, undefined]) {
+  for (const v of ['owner+12@example.test', 'a+0@b.c', 'ryan+pat-EXAMPLEa1B2c@example.test', 'adam+pat-EXAMPLEd4E5f-4@example.test']) assert.equal(api.isSyntheticEmail(v), true, v);
+  for (const v of ['owner+tag@example.test', 'jane@example.test', 'owner+@x.y', 'owner+pat@x.y', 'owner+pat-@x.y', '', null, 42, undefined]) {
     assert.equal(api.isSyntheticEmail(v), false, String(v));
   }
 });

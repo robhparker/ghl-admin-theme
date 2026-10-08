@@ -88,7 +88,9 @@
   var THEME_TOKENS = Object.freeze(['primary', 'sidebarBg', 'sidebarText', 'navActive']);
   var HEX_COLOR_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
   // D-16: the dedupe address HighLevel/Hint writes for a shared signup email (owner+12@...).
-  var SYNTHETIC_EMAIL_RE = /\+\d+@/;
+  // wf1 dedupe keys: local+<hint_patient_id>@domain, e.g. +pat-EXAMPLEa1B2c@
+  // or +pat-EXAMPLEd4E5f-4@ (live), plus the older numeric form +12@.
+  var SYNTHETIC_EMAIL_RE = /\+(?:\d+|pat-[A-Za-z0-9_-]+)@/;
   var MIN_CONTRAST = 4.5;
   var SAFE_TEXT_COLORS = Object.freeze(['#ffffff', '#101828']);
   var CSS_VARS = Object.freeze({
