@@ -4679,10 +4679,57 @@ check('unit: validateConfig accepts menus and enforces one id namespace across b
   const { scope: _omit, ...noScope } = tScoped();
   assert.equal(api.validateConfig(withItems([noScope])).ok, true, 'an item without scope');
   assert.equal(api.validateConfig(withItems([{ ...tInvite(), action: { type: 'script' } }])).ok, true, 'an unknown action type');
-  assert.equal(api.validateConfig(withItems([{ ...tConsent(), requires: 'garbage' }])).ok, true, 'an unknown requires shape');
+  assert.equal(api.validateConfig(withItems([tConsent()])).ok, true, 'requires { email: "real" } validates');
   assert.equal(api.validateConfig(withItems([{ ...tInvite(), placement: 'header' }])).ok, true, 'item placement is ignored');
   assert.equal(api.validateConfig(withItems([tConsent(), tScoped()])).ok, true);
   assert.deepEqual(plain(errorsOf({ ...base, buttons: [base.buttons[0], base.buttons[0]] })), ['buttons[1].id is duplicated'], 'buttons-only messages unchanged');
+});
+
+// Review 04 WR-02: the requires guard fails closed. Anything other than
+// exactly { email: 'real' } invalidates the config instead of silently
+// dropping the D-16 protection.
+check('review 04 WR-02: validateConfig rejects any requires other than exactly { email: "real" }', () => {
+  const api = throwawayApi();
+  const base = loadFixture();
+  delete base.menus;
+  const withItems = (items) => ({ ...base, menus: [testMenu({ items })] });
+  const MSG = 'menus[0].items[1].requires must be { "email": "real" } when present';
+  const bad = [
+    ['"Real"', { email: 'Real' }],
+    ['true', { email: true }],
+    ['an unknown key', { emails: 'real' }],
+    ['an extra key beside email', { email: 'real', phone: 'real' }],
+    ['a bare string', 'real'],
+    ['the string "garbage"', 'garbage'],
+    ['true at the top', true],
+    ['null', null],
+    ['an empty object', {}],
+    ['an array', [{ email: 'real' }]],
+  ];
+  for (const [what, requires] of bad) {
+    const result = api.validateConfig(withItems([tInvite(), { ...tConsent(), requires }]));
+    assert.equal(result.ok, false, `requires ${what} must fail validation`);
+    assert.ok(result.errors.includes(MSG), `requires ${what} names the field (${JSON.stringify(result.errors)})`);
+  }
+  assert.equal(api.validateConfig(withItems([tInvite(), tConsent()])).ok, true, 'exactly { email: "real" } validates');
+  const { requires: _omit, ...noRule } = tConsent();
+  assert.equal(api.validateConfig(withItems([tInvite(), noRule])).ok, true, 'an item without requires validates');
+  const plainBad = { ...base, buttons: [...base.buttons, { id: 'plainRule', label: 'Plain', placement: 'contact', scope: 'all', requires: { email: 'Real' }, action: { type: 'handler', handler: 'copyContactId' } }] };
+  assert.ok(api.validateConfig(plainBad).errors.includes(`buttons[${base.buttons.length}].requires must be { "email": "real" } when present`), 'plain buttons are held to the same rule');
+});
+
+scenario('review 04 WR-02: a config whose requires is misconfigured is never adopted, so nothing sends', async () => {
+  const shim = createShim({ pathname: CONTACT_PATH, search: '?ghlc-debug=1', fixture: loadFixture() });
+  shim.buildShell({ sidebarMode: 'location', contact: SYNTHETIC_CONTACT });
+  shim.setConfigResponse({ status: 200, body: withMenu({ items: [tInvite(), { ...tConsent(), requires: { email: 'Real' } }, tCopy()] }) });
+  const GHLC = shim.run(src);
+  await GHLC.__test.boot();
+  await shim.flush();
+  assert.equal(shim.document.querySelectorAll('[data-ghlc-button-id="tConsent"]').length, 0, 'the consent item is never rendered');
+  assert.equal(shim.document.querySelectorAll('.ghlc-menu').length, 0, 'no menu from a rejected config');
+  assert.equal(logCount(shim, 'config-invalid'), 1);
+  assert.equal(shim.fetchLog.length, 0, 'nothing is sent');
+  assert.equal(shim.errors.length, 0);
 });
 
 check('unit: resolveMenus applies menu scope, item scope, and per-item overrides', () => {

@@ -26,7 +26,8 @@
  *                              scope: 'all' | string[], items: MenuItem[] }>
  *   MenuItem       object   a button definition without placement: { id, label, icon?, scope?, action,
  *                           requires?: { email: 'real' } }. scope defaults to the menu's. requires makes the item
- *                           unavailable while the open record's email is empty or synthetic (+digits@). Ids are
+ *                           unavailable while the open record's email is empty or synthetic (+digits@); any other
+ *                           requires value is a validation error. Ids are
  *                           unique across buttons and every menu's items; locations[id].buttons[itemId] overrides an item.
  *   Action         object   { type: 'link', href: string, target?: string }
  *                         | { type: 'webhook', url: string, extraFields?: object, cooldownMs?: number }
@@ -692,6 +693,16 @@
     if (button.icon !== undefined && typeof button.icon !== 'string') {
       errors.push(where + '.icon must be a string when present');
     }
+    // Review 04 WR-02: a guard rule fails closed. The only rule is exactly
+    // { email: 'real' }; any other present value ("Real", true, an unknown
+    // key, a string) is a validation error, never a silently skipped guard.
+    if (button.requires !== undefined && !isRealEmailRule(button.requires)) {
+      errors.push(where + '.requires must be { "email": "real" } when present');
+    }
+  }
+
+  function isRealEmailRule(rule) {
+    return isPlainObject(rule) && Object.keys(rule).length === 1 && hasOwn(rule, 'email') && rule.email === 'real';
   }
 
   // D-01: a menu is { id, label, icon?, placement: 'contact', scope, items[] }.
@@ -1841,13 +1852,15 @@
 
   /**
    * D-16 optional per-item rule `requires: { email: 'real' }`: the open
-   * record's email must be present and not a synthetic dedupe address. Any
-   * other shape is ignored (unknown is never invalid), so records without
-   * the rule always pass without touching the DOM.
+   * record's email must be present and not a synthetic dedupe address.
+   * Records without the rule always pass without touching the DOM. Any other
+   * present shape is rejected by validateButton; should one ever get here it
+   * fails closed (review 04 WR-02).
    */
   function meetsRequires(button) {
-    var rule = button ? button.requires : null;
-    if (!isPlainObject(rule) || !hasOwn(rule, 'email') || rule.email !== 'real') return true;
+    var rule = button ? button.requires : undefined;
+    if (rule === undefined) return true;
+    if (!isRealEmailRule(rule)) return false;
     var region = adapter.findContactRegion();
     var email = region ? adapter.readContactEmail(region) : null;
     return email !== null && !isSyntheticEmail(email);

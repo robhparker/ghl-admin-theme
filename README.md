@@ -95,7 +95,7 @@ The config is a JSON document with `schemaVersion` `1`. Field names below are th
 | `menus[].placement` | string | yes | Must be `contact`. |
 | `menus[].scope` | `all` or array | yes | The locations the menu appears in. |
 | `menus[].items` | array | yes | Button definitions without `placement` (the menu supplies it). An item's `scope` is optional and defaults to the menu's. |
-| `menus[].items[].requires` | object | no | `{ "requires": { "email": "real" } }` makes the item `unavailable` ("Needs the member's own email") while the record's email is empty or synthetic (`+<digits>@`, HighLevel's dedupe pattern). |
+| `menus[].items[].requires` | object | no | `{ "requires": { "email": "real" } }` makes the item `unavailable` ("Needs the member's own email") while the record's email is empty or synthetic (`+<digits>@`, HighLevel's dedupe pattern). It must be exactly `{ "email": "real" }` (lowercase, no other keys); any other value fails validation and the whole config is ignored, so a typo never silently removes the guard. |
 
 ### Action types
 
