@@ -32,21 +32,6 @@
   },
   "buttons": [
     {
-      "id": "sendInvite",
-      "label": "Send Invite",
-      "icon": "send",
-      "placement": "contact",
-      "scope": "all",
-      "action": {
-        "type": "webhook",
-        "url": "https://services.leadconnectorhq.com/hooks/Cp2XxBsRoyKS2CUf1Hwi/webhook-trigger/bde416ab-a074-4946-bf99-7266eb1b0f4e",
-        "cooldownMs": 10000,
-        "extraFields": {
-          "source": "ghl-customizer"
-        }
-      }
-    },
-    {
       "id": "helpCenter",
       "label": "Help Center",
       "icon": "external",
@@ -57,6 +42,68 @@
         "href": "https://help.gohighlevel.com/",
         "target": "_blank"
       }
+    }
+  ],
+  "menus": [
+    {
+      "id": "xcelsiorActions",
+      "label": "Actions",
+      "icon": "menu",
+      "placement": "contact",
+      "scope": ["Cp2XxBsRoyKS2CUf1Hwi"],
+      "items": [
+        {
+          "id": "sendInvite",
+          "label": "Send Invite",
+          "icon": "send",
+          "action": {
+            "type": "webhook",
+            "url": "https://services.leadconnectorhq.com/hooks/Cp2XxBsRoyKS2CUf1Hwi/webhook-trigger/bde416ab-a074-4946-bf99-7266eb1b0f4e",
+            "cooldownMs": 60000,
+            "extraFields": {
+              "source": "ghl-customizer"
+            }
+          }
+        },
+        {
+          "id": "send-individual-consent",
+          "label": "Send individual consent",
+          "icon": "mail",
+          "requires": {
+            "email": "real"
+          },
+          "action": {
+            "type": "webhook",
+            "url": "",
+            "cooldownMs": 60000,
+            "extraFields": {
+              "source": "ghl-customizer"
+            }
+          }
+        },
+        {
+          "id": "resend-consent-hub",
+          "label": "Resend Consent Hub link",
+          "icon": "mail",
+          "action": {
+            "type": "webhook",
+            "url": "",
+            "cooldownMs": 60000,
+            "extraFields": {
+              "source": "ghl-customizer"
+            }
+          }
+        },
+        {
+          "id": "copyContactId",
+          "label": "Copy contact ID",
+          "icon": "copy",
+          "action": {
+            "type": "handler",
+            "handler": "copyContactId"
+          }
+        }
+      ]
     }
   ]
 }

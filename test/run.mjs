@@ -309,18 +309,43 @@ check('config: both JSON files parse, validate, use HTTPS webhooks, and carry no
   for (const [label, cfg] of [['sample', sample], ['fixture', fixture]]) {
     const result = api.validateConfig(cfg);
     assert.deepEqual(plain(result), { ok: true, errors: [] }, `${label} config must validate`);
-    for (const b of cfg.buttons) {
-      if (b.action.type === 'webhook') assert.ok(api.isSafeHttpsUrl(b.action.url), `${label}: ${b.id} url must be https`);
+    // Every webhook on a plain button or a menu item is https, or exactly ''
+    // (D-15: an empty url renders "Not configured" and never sends).
+    const actions = [...cfg.buttons, ...(Array.isArray(cfg.menus) ? cfg.menus.flatMap((m) => m.items) : [])];
+    for (const b of actions) {
+      if (b.action.type === 'webhook') assert.ok(b.action.url === '' || api.isSafeHttpsUrl(b.action.url), `${label}: ${b.id} url must be https or exactly ''`);
     }
     for (const key of collectKeys(cfg)) {
       assert.ok(!SECRET_KEY_RE.test(key), `${label}: key "${key}" looks like a secret`);
     }
   }
-  const invite = sample.buttons.find((b) => b.id === 'sendInvite');
-  assert.ok(invite, 'sample must ship a sendInvite button');
-  assert.equal(invite.placement, 'contact');
+  // Phase 4 (D-12, D-13): Send Invite moved into the Xcelsior-only Actions
+  // menu; the plain buttons keep only the Help Center header link.
+  assert.deepEqual(sample.buttons.map((b) => b.id), ['helpCenter'], 'sample buttons hold only the Help Center link');
+  assert.ok(!sample.buttons.some((b) => b.placement === 'contact'), 'no sample plain button renders on contact records (D-13)');
+  assert.equal(sample.menus.length, 1, 'sample ships exactly one menu');
+  const menu = sample.menus[0];
+  assert.equal(menu.id, 'xcelsiorActions');
+  assert.equal(menu.label, 'Actions');
+  assert.equal(menu.icon, 'menu');
+  assert.equal(menu.placement, 'contact');
+  assert.deepEqual(menu.scope, ['Cp2XxBsRoyKS2CUf1Hwi'], 'the menu is scoped to Xcelsior Health only (D-13)');
+  assert.deepEqual(menu.items.map((i) => i.id), ['sendInvite', 'send-individual-consent', 'resend-consent-hub', 'copyContactId'], 'D-12 item order');
+  assert.deepEqual(menu.items.map((i) => i.label), ['Send Invite', 'Send individual consent', 'Resend Consent Hub link', 'Copy contact ID']);
+  const [invite, consent, hub, copy] = menu.items;
   assert.equal(invite.action.type, 'webhook');
-  assert.ok(/^https:\/\/services\.leadconnectorhq\.com\/hooks\/[A-Za-z0-9]+\/webhook-trigger\/[0-9a-f-]{36}$/.test(invite.action.url) || invite.action.url.includes('REPLACE_ME'), 'sample config points at a HighLevel Inbound Webhook trigger URL (or the placeholder)');
+  assert.equal(invite.action.url, 'https://services.leadconnectorhq.com/hooks/Cp2XxBsRoyKS2CUf1Hwi/webhook-trigger/bde416ab-a074-4946-bf99-7266eb1b0f4e', 'the Send Invite trigger URL is unchanged');
+  for (const item of [invite, consent, hub]) {
+    assert.equal(item.action.type, 'webhook', `${item.id} is a webhook`);
+    assert.equal(item.action.cooldownMs, 60000, `${item.id} cools down for 60 s (D-10)`);
+    assert.deepEqual(item.action.extraFields, { source: 'ghl-customizer' }, `${item.id} adds no payload field (D-14)`);
+  }
+  assert.equal(consent.action.url, '', 'Send individual consent stays "Not configured" until Phase 6 (D-15)');
+  assert.equal(hub.action.url, '', 'Resend Consent Hub link stays "Not configured" until Phase 6 (D-15)');
+  assert.deepEqual(consent.requires, { email: 'real' }, 'Send individual consent needs a real email (D-16)');
+  assert.equal(hub.requires, undefined, 'Resend Consent Hub link has no requires rule');
+  assert.deepEqual(copy.action, { type: 'handler', handler: 'copyContactId' });
+  for (const item of menu.items) assert.ok(!('placement' in item), `${item.id}: items take placement from the menu`);
   assert.ok(sample.buttons.some((b) => b.placement === 'header' && b.action.type === 'link'), 'sample must ship a header link button');
 
   // Phase 2: the sample declares the sidebar mount and no agency logo (native fallback, A-02).
@@ -3243,9 +3268,14 @@ const SAMPLE_LOC_A = `${CDN}test/fixtures/logos/loc-a.svg`;
 const SAMPLE_XCELSIOR_LOGO = 'https://msgsndr-private.storage.googleapis.com/locationPhotos/096434c9-83e6-42da-9644-8a93aed64980.png';
 const SAMPLE_PRIMARY = '#0f766e';
 const SAMPLE_XCELSIOR_PRIMARY = '#2d3e50';
+const SAMPLE_XCELSIOR_CONTACT_PATH = `/v2/location/${SAMPLE_XCELSIOR}/contacts/detail/c1`;
+const SAMPLE_INVITE_URL = 'https://services.leadconnectorhq.com/hooks/Cp2XxBsRoyKS2CUf1Hwi/webhook-trigger/bde416ab-a074-4946-bf99-7266eb1b0f4e';
+const SAMPLE_ITEM_IDS = ['sendInvite', 'send-individual-consent', 'resend-consent-hub', 'copyContactId'];
+const SAMPLE_ITEM_LABELS = ['Send Invite', 'Send individual consent', 'Resend Consent Hub link', 'Copy contact ID'];
+const PAYLOAD_KEYS = ['buttonId', 'contactId', 'email', 'locationId', 'phone', 'requestId', 'sentAt', 'source'];
 const SAMPLE_LEAKS = ['leadconnectorhq', 'hooks/', 'jsdelivr', 'Dummy Clinic', '#0f766e', '#0b3b3a', 'Xcelsior', '#2d3e50', 'msgsndr', 'googleapis', 'locationPhotos'];
 
-scenario('sample: the shipped config boots at Dummy Clinic with its logo override, theme, header link, and Send Invite', async () => {
+scenario('sample: the shipped config boots at Dummy Clinic with its logo override, theme, and header link, and no contact actions', async () => {
   const sample = JSON.parse(sampleText);
   // The shim origin is https://app.gohighlevel.com, so the https jsDelivr logo
   // URLs pass isSafeImageUrl and the image stub loads them on the next turn.
@@ -3255,7 +3285,7 @@ scenario('sample: the shipped config boots at Dummy Clinic with its logo overrid
   assert.deepEqual(plain(GHLC.__test.resolveBranding(sample, SAMPLE_LOC)[0]), { tier: 'location', src: SAMPLE_LOC_A, alt: 'Dummy Clinic' });
   logoIs(shell.logo, { src: SAMPLE_LOC_A, alt: 'Dummy Clinic', tier: 'location' });
 
-  // Buttons: the Help Center header link and a ready Send Invite on the contact record.
+  // Buttons: the Help Center header link, and no contact actions at Dummy Clinic (D-13).
   const header = headerGroup(shim);
   assert.ok(header, 'the header group rendered in the header controls');
   const help = header.querySelector('[data-ghlc-button-id="helpCenter"]');
@@ -3263,21 +3293,20 @@ scenario('sample: the shipped config boots at Dummy Clinic with its logo overrid
   assert.equal(help.tagName, 'A');
   assert.equal(help.getAttribute('href'), 'https://help.gohighlevel.com/');
   assert.equal(help.getAttribute('target'), '_blank');
-  const contact = contactGroup(shim);
-  assert.ok(contact, 'the contact group rendered on the contact record');
-  const inviteEl = contact.querySelector('[data-ghlc-button-id="sendInvite"]');
-  assert.ok(inviteEl, 'Send Invite renders in the contact group');
-  assert.equal(inviteEl.getAttribute('data-state'), 'ready');
+  assert.equal(contactGroup(shim), null, 'no contact group at Dummy Clinic: Send Invite is Xcelsior-only (D-13)');
+  assert.equal(shim.document.querySelectorAll('.ghlc-menu').length, 0, 'no Actions menu at Dummy Clinic');
+  for (const id of SAMPLE_ITEM_IDS) assert.equal(byId(shim, id), null, `no ${id} at Dummy Clinic`);
 
   // Theme: Dummy Clinic's four tokens on the groups and the sidebar, no fallback, nothing ignored.
   const groups = groupsOf(shim);
-  assert.equal(groups.length, 2, 'header and contact groups');
+  assert.equal(groups.length, 1, 'header group only');
   for (const group of groups) assert.equal(varOf(group, '--ghlc-primary'), SAMPLE_PRIMARY);
   assert.deepEqual(sidebarVars(shell.sidebar), { bg: '#0b3b3a', text: '#e6fffa', nav: '#115e59' });
   assert.equal(shell.sidebar.getAttribute('data-ghlc-theme'), 'sidebar-bg sidebar-text');
   const report = GHLC.verify();
   assert.deepEqual(plain(report.theme), { root: true, applied: ALL_TOKENS, navActive: 1, ignored: 0, fallback: false });
-  assert.deepEqual(plain(report.config.buttonIds), ['sendInvite', 'helpCenter']);
+  assert.deepEqual(plain(report.config.buttonIds), ['helpCenter']);
+  assert.deepEqual(plain(report.config.menuIds), ['xcelsiorActions']);
   assert.equal(report.config.loaded, true);
   assert.equal(report.config.enabled, true);
   assert.equal(report.config.schemaVersion, 1);
@@ -3302,6 +3331,155 @@ scenario('sample: the shipped config boots at Dummy Clinic with its logo overrid
   assert.equal(shim.document.querySelectorAll('[data-ghlc-theme]').length, 0, 'no element carries a theme marker on the agency route');
 
   assertNoLeak(shim.console.lines, SAMPLE_LEAKS, 'sample');
+  assert.equal(shim.errors.length, 0);
+});
+
+// Phase 4 (Plan 04-03): the shipped Xcelsior Actions menu, proved against the
+// exact served file. Bodies run after the whole file is evaluated, so the menu
+// helpers declared below (same, menuParts, bootMenu, MENU_CONSENT_HOOK) are in scope.
+
+scenario('sample: an Xcelsior contact record shows one Actions menu with the four items in order; Send Invite posts the unchanged payload and cools down 60 s', async () => {
+  const sample = JSON.parse(sampleText);
+  const { shim } = await bootWithConfig(sample, { pathname: SAMPLE_XCELSIOR_CONTACT_PATH });
+  const written = [];
+  shim.window.navigator.clipboard = { writeText: async (t) => { written.push(t); } };
+
+  const menus = shim.document.querySelectorAll('.ghlc-menu');
+  assert.equal(menus.length, 1, 'exactly one Actions menu');
+  const parts = menuParts(shim, 'xcelsiorActions');
+  same(parts.wrapper, menus[0], 'the one menu is xcelsiorActions');
+  const group = contactGroup(shim);
+  assert.ok(group, 'the contact group rendered on the Xcelsior record');
+  same(parts.wrapper.parentNode, group, 'the menu lives directly inside the contact group');
+  const elementChildren = [...group.childNodes].filter((n) => n.nodeType === 1);
+  assert.equal(elementChildren.length, 1, 'the menu is the contact group\'s only element: no plain contact button (D-13)');
+  same(elementChildren[0], parts.wrapper);
+  assert.equal(label(parts.trigger), 'Actions');
+  assert.ok(parts.trigger.querySelector('.ghlc-btn__icon svg'), 'the trigger carries the menu icon');
+  assert.equal(varOf(group, '--ghlc-primary'), SAMPLE_XCELSIOR_PRIMARY);
+  assert.deepEqual(parts.items.map((i) => i.getAttribute('data-ghlc-button-id')), SAMPLE_ITEM_IDS, 'D-12 order');
+  assert.deepEqual(parts.items.map((i) => label(i)), SAMPLE_ITEM_LABELS);
+  const [invite, consent, hub, copy] = parts.items;
+  for (const item of [consent, hub]) {
+    assert.equal(item.getAttribute('data-state'), 'unavailable', `${item.getAttribute('data-ghlc-button-id')} is unavailable`);
+    assert.equal(item.getAttribute('title'), 'Not configured', 'D-15');
+  }
+  assert.equal(invite.getAttribute('data-state'), 'ready');
+  assert.equal(copy.getAttribute('data-state'), 'ready');
+
+  // Send Invite: open with Enter, activate, one POST with the v0.1.2 payload to the unchanged trigger URL.
+  parts.trigger.focus();
+  shim.pressKey(parts.trigger, 'Enter');
+  assert.ok(isOpen(parts), 'Enter opens the menu');
+  same(shim.document.activeElement, invite, 'Send Invite is the first enabled item');
+  invite.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 1, 'exactly one POST');
+  const call = shim.fetchLog[0];
+  assert.equal(call.url, SAMPLE_INVITE_URL);
+  assert.equal(call.method, 'POST');
+  assert.deepEqual(Object.keys(call.bodyJson).sort(), PAYLOAD_KEYS, 'the payload keys are unchanged (D-14)');
+  assert.equal(call.bodyJson.buttonId, 'sendInvite');
+  assert.equal(call.bodyJson.contactId, 'c1');
+  assert.equal(call.bodyJson.locationId, SAMPLE_XCELSIOR);
+  assert.equal(call.bodyJson.source, 'ghl-customizer');
+  assert.equal(label(parts.trigger), 'Actions · Workflow triggered');
+
+  // ITEM-06: a 60 s cooldown on Send Invite.
+  await shim.advanceTimers(59999);
+  assert.equal(invite.getAttribute('data-state'), 'queued', 'Send Invite still refuses repeat presses at 59.999 s');
+  await shim.advanceTimers(1);
+  assert.equal(invite.getAttribute('data-state'), 'ready', 'Send Invite is ready again at 60 s');
+
+  // D-15: both consent items are inert.
+  parts.trigger.click();
+  consent.click();
+  hub.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 1, 'the consent items never POST while their url is empty');
+
+  // ITEM-05: Copy contact ID.
+  if (!isOpen(parts)) parts.trigger.click();
+  copy.click();
+  await shim.flush();
+  assert.deepEqual(written, ['c1']);
+  assert.equal(label(parts.trigger), 'Actions · Contact ID copied');
+
+  const header = headerGroup(shim);
+  assert.ok(header && header.querySelector('[data-ghlc-button-id="helpCenter"]'), 'the header group still holds Help Center');
+  assertNoLeak(shim.console.lines, SAMPLE_LEAKS, 'sample xcelsior');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('sample: with the consent URL filled in, both consent items post the standard payload with their own buttonId, and a synthetic email disables only Send individual consent', async () => {
+  // MENU_CONSENT_HOOK stands in for the Phase 6 consent URL (the shim intercepts any /hooks/ URL).
+  const filled = () => {
+    const clone = JSON.parse(sampleText);
+    for (const item of clone.menus[0].items) {
+      if (item.id === 'send-individual-consent' || item.id === 'resend-consent-hub') item.action.url = MENU_CONSENT_HOOK;
+    }
+    return clone;
+  };
+  const stateOf = (parts, id) => parts.items.find((i) => i.getAttribute('data-ghlc-button-id') === id);
+  {
+    const { shim } = await bootMenu(filled(), { contact: { email: 'owner+12@example.test', phone: '+15555550100' }, pathname: SAMPLE_XCELSIOR_CONTACT_PATH });
+    const parts = menuParts(shim, 'xcelsiorActions');
+    const consent = stateOf(parts, 'send-individual-consent');
+    const hub = stateOf(parts, 'resend-consent-hub');
+    const invite = stateOf(parts, 'sendInvite');
+    assertNeedsReal(consent, 'send-individual-consent');
+    assert.equal(hub.getAttribute('data-state'), 'ready');
+    assert.equal(invite.getAttribute('data-state'), 'ready');
+    parts.trigger.click();
+    hub.click();
+    await shim.flush();
+    assert.equal(shim.fetchLog.length, 1, 'Resend Consent Hub link posts once');
+    assert.equal(shim.fetchLog[0].url, MENU_CONSENT_HOOK);
+    assert.deepEqual(Object.keys(shim.fetchLog[0].bodyJson).sort(), PAYLOAD_KEYS);
+    assert.equal(shim.fetchLog[0].bodyJson.buttonId, 'resend-consent-hub', 'ITEM-04');
+    parts.trigger.click();
+    consent.click();
+    await shim.flush();
+    assert.equal(shim.fetchLog.length, 1, 'a synthetic email never sends individual consent (ITEM-07)');
+    assertNoLeak(shim.console.lines, SAMPLE_LEAKS, 'sample consent synthetic');
+    assert.equal(shim.errors.length, 0);
+  }
+  {
+    const { shim } = await bootMenu(filled(), { contact: JANE, pathname: SAMPLE_XCELSIOR_CONTACT_PATH });
+    const parts = menuParts(shim, 'xcelsiorActions');
+    const consent = stateOf(parts, 'send-individual-consent');
+    assert.equal(consent.getAttribute('data-state'), 'ready');
+    parts.trigger.click();
+    consent.click();
+    await shim.flush();
+    assert.equal(shim.fetchLog.length, 1);
+    assert.equal(shim.fetchLog[0].url, MENU_CONSENT_HOOK);
+    assert.deepEqual(Object.keys(shim.fetchLog[0].bodyJson).sort(), PAYLOAD_KEYS);
+    assert.equal(shim.fetchLog[0].bodyJson.buttonId, 'send-individual-consent', 'ITEM-03');
+    assert.equal(shim.fetchLog[0].bodyJson.email, JANE.email);
+    assertNoLeak(shim.console.lines, SAMPLE_LEAKS, 'sample consent real');
+    assert.equal(shim.errors.length, 0);
+  }
+  {
+    const { shim } = await bootMenu(filled(), { contact: { phone: '+15555550100' }, pathname: SAMPLE_XCELSIOR_CONTACT_PATH });
+    const parts = menuParts(shim, 'xcelsiorActions');
+    assertNeedsReal(stateOf(parts, 'send-individual-consent'), 'send-individual-consent (phone only)');
+    assertNoLeak(shim.console.lines, SAMPLE_LEAKS, 'sample consent phone-only');
+    assert.equal(shim.errors.length, 0);
+  }
+});
+
+scenario('sample: no Xcelsior action renders at any other location or at agency level (D-13)', async () => {
+  const sample = JSON.parse(sampleText);
+  const { shim } = await bootWithConfig(sample, { pathname: '/v2/location/someOtherLoc/contacts/detail/c1' });
+  assert.equal(contactGroup(shim), null, 'no contact group at an unconfigured location');
+  assert.equal(shim.document.querySelectorAll('.ghlc-menu').length, 0, 'no Actions menu');
+  for (const id of SAMPLE_ITEM_IDS) assert.equal(byId(shim, id), null, `no ${id} at an unconfigured location`);
+  const header = headerGroup(shim);
+  assert.ok(header && header.querySelector('[data-ghlc-button-id="helpCenter"]'), 'the header group holds Help Center');
+  await go(shim, '/v2/agency/dashboard');
+  assert.equal(groupsOf(shim).length, 0, 'no groups on agency pages');
+  assertNoLeak(shim.console.lines, SAMPLE_LEAKS, 'sample other');
   assert.equal(shim.errors.length, 0);
 });
 
