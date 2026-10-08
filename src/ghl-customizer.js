@@ -1373,6 +1373,77 @@
       // Link items navigate natively; the menu just closes.
       if (itemEl && itemEl.tagName === 'A') closeMenu('activate', false);
     });
+    // Key events from the trigger and the items bubble here; nothing listens
+    // for keys at the document level.
+    wrapper.addEventListener('keydown', function (evt) {
+      onMenuKeydown(wrapper, menu, evt);
+    });
+  }
+
+  // Wraps the index and focuses that item (roving focus, D-05).
+  function focusMenuItem(items, index) {
+    if (!items.length) return;
+    var i = ((index % items.length) + items.length) % items.length;
+    items[i].focus();
+  }
+
+  /**
+   * WAI-ARIA menu button keyboard model (D-05), by the event's key name only.
+   * Enter and Space are deliberately not handled: the native button turns
+   * them into a click, which opens the menu (trigger) or reaches onButtonClick
+   * through bindClick (item). Handling them here as well would double-send.
+   * Unavailable items are reachable by arrows and inert on activation.
+   */
+  function onMenuKeydown(wrapper, menu, evt) {
+    if (!evt) return;
+    var key = evt.key;
+    var target = evt.target;
+    var trigger = wrapper.querySelector(OWN.menuTriggerSel);
+    var panel = wrapper.querySelector(OWN.menuPanelSel);
+    if (!trigger || !panel) return;
+    var open = !!state.menu && state.menu.wrapper === wrapper;
+    if (target === trigger) {
+      if (key === 'ArrowDown') {
+        evt.preventDefault();
+        if (open) focusFirstEnabled(menuItemEls(panel));
+        else openMenu(wrapper, menu, 'first');
+      } else if (key === 'ArrowUp') {
+        evt.preventDefault();
+        if (open) focusMenuItem(menuItemEls(panel), -1);
+        else openMenu(wrapper, menu, 'last');
+      } else if (key === 'Escape' && open) {
+        evt.preventDefault();
+        closeMenu('escape', true);
+      } else if (key === 'Tab' && open) {
+        // Not prevented: the browser's Tab moves on from the trigger.
+        closeMenu('tab', true);
+      }
+      return;
+    }
+    var itemEl = target && typeof target.closest === 'function' ? target.closest(OWN.menuItemSel) : null;
+    if (!itemEl || !panel.contains(itemEl)) return;
+    var items = menuItemEls(panel);
+    var index = items.indexOf(itemEl);
+    if (key === 'ArrowDown') {
+      evt.preventDefault();
+      focusMenuItem(items, index + 1);
+    } else if (key === 'ArrowUp') {
+      evt.preventDefault();
+      focusMenuItem(items, index - 1);
+    } else if (key === 'Home') {
+      evt.preventDefault();
+      focusMenuItem(items, 0);
+    } else if (key === 'End') {
+      evt.preventDefault();
+      focusMenuItem(items, items.length - 1);
+    } else if (key === 'Escape') {
+      evt.preventDefault();
+      closeMenu('escape', true);
+    } else if (key === 'Tab') {
+      // Not prevented: focus parks on the trigger first, so the browser's Tab
+      // continues from there instead of from a now-hidden item.
+      closeMenu('tab', true);
+    }
   }
 
   function focusFirstEnabled(items) {
