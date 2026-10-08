@@ -61,10 +61,17 @@ The whole live change, v8 to v9 (generated with `diff -u` from `proposals/2026-0
 ```diff
 --- a/build-status-v8-live.js
 +++ b/build-status-v9-member-scope.js
-@@ -1,3 +1,21 @@
+@@ -1,3 +1,29 @@
 +// v9: MEMBER SCOPE (2026-10-07). Changes vs v8:
-+//   * The token holder is the contact 'Find Owner by Token' returned (contacts[0]) -
-+//     the same record Extract Owner used, so own.ownerId is the HOLDER's id, whoever that is.
++//   * Token backstop (code review CR-03, 2026-10-08), before both paths: ?t= must be 16 to
++//     256 characters, any value starting 'adhoc' must be the full 'adhoc_' plus 64 lowercase
++//     hex, and EXACTLY ONE 'Find Owner by Token' hit may store that exact value, which must be
++//     the contact Extract Owner used. Otherwise the body is empty (owner null, no members),
++//     which hub v11 shows as its could-not-load message. This does not depend on how the
++//     contacts-search 'eq' filter matches. A well-formed single-match request passes it
++//     untouched, so owner responses stay byte-identical to v8.
++//   * The token holder is that single exact hit - the same record Extract Owner used, so
++//     own.ownerId is the HOLDER's id, whoever that is.
 +//   * The holder is a MEMBER when owner_contact_id is non-empty OR member_type (trimmed,
 +//     lowercased) is not 'owner' - the n8n/README role rule (2026-08-25: owner = empty
 +//     owner_contact_id plus member_type 'owner'). A legacy holder with neither field set
@@ -78,17 +85,26 @@ The whole live change, v8 to v9 (generated with `diff -u` from `proposals/2026-0
 +//   * Owner tokens skip the member-scope block and run the v8 code below UNCHANGED, so
 +//     owner responses are byte-identical to v8.
 +//   * Ad hoc member tokens ('adhoc_' plus 64 hex) minted by the ClinX consent workflow need
-+//     no change anywhere in wf2: Has Token? only tests notEmpty, and Find Owner by Token
-+//     passes the raw value to an 'eq' contacts-search filter.
++//     no change anywhere else in wf2: Has Token? only tests notEmpty, and Find Owner by Token
++//     passes the raw value to an 'eq' contacts-search filter. The backstop above is the only
++//     place that validates the token.
  // v8: PART-1 PREFILL. Changes vs v7:
  //   * formParamsFor adds demographic params for the Part 1 querystring: phone, and
  //     date_of_birth as MM/DD/YYYY (the form IGNORES ISO dates - probe-proven
-@@ -67,6 +85,28 @@
+@@ -67,6 +93,36 @@
    if (!signed) out.doc_ref = docRef;
    return out;
  };
++// --- v9 token backstop (see header) ------------------------------------------
++const sw = $('Status Webhook').first().json;
++const q = String(sw.query && sw.query.t ? sw.query.t : '');
++const hits = ($('Find Owner by Token').first().json.contacts || []).filter(h => String(val(h, 'consent_hub_token')) === q);
++const wellFormed = q.length >= 16 && q.length <= 256 && (!/^adhoc/i.test(q) || /^adhoc_[0-9a-f]{64}$/.test(q));
++if (!wellFormed || hits.length !== 1 || hits[0].id !== own.ownerId) {
++  return [{ json: { body: { practice: practice, owner_first_name: '', owner: null, members: [], all_complete: false, all_signed: false } } }];
++}
 +// --- v9 member scope (see header) --------------------------------------------
-+const holder = ($('Find Owner by Token').first().json.contacts || [])[0] || {};
++const holder = hits[0];
 +const holderIsMember = String(val(holder, 'owner_contact_id') || '') !== '' || String(val(holder, 'member_type') || '').trim().toLowerCase() !== 'owner';
 +if (holderIsMember) {
 +  const members = [];
@@ -121,8 +137,15 @@ Paste everything between the fences, exactly. This is the Build Status `jsCode` 
 <!-- build-status-v9:start -->
 ```js
 // v9: MEMBER SCOPE (2026-10-07). Changes vs v8:
-//   * The token holder is the contact 'Find Owner by Token' returned (contacts[0]) -
-//     the same record Extract Owner used, so own.ownerId is the HOLDER's id, whoever that is.
+//   * Token backstop (code review CR-03, 2026-10-08), before both paths: ?t= must be 16 to
+//     256 characters, any value starting 'adhoc' must be the full 'adhoc_' plus 64 lowercase
+//     hex, and EXACTLY ONE 'Find Owner by Token' hit may store that exact value, which must be
+//     the contact Extract Owner used. Otherwise the body is empty (owner null, no members),
+//     which hub v11 shows as its could-not-load message. This does not depend on how the
+//     contacts-search 'eq' filter matches. A well-formed single-match request passes it
+//     untouched, so owner responses stay byte-identical to v8.
+//   * The token holder is that single exact hit - the same record Extract Owner used, so
+//     own.ownerId is the HOLDER's id, whoever that is.
 //   * The holder is a MEMBER when owner_contact_id is non-empty OR member_type (trimmed,
 //     lowercased) is not 'owner' - the n8n/README role rule (2026-08-25: owner = empty
 //     owner_contact_id plus member_type 'owner'). A legacy holder with neither field set
@@ -136,8 +159,9 @@ Paste everything between the fences, exactly. This is the Build Status `jsCode` 
 //   * Owner tokens skip the member-scope block and run the v8 code below UNCHANGED, so
 //     owner responses are byte-identical to v8.
 //   * Ad hoc member tokens ('adhoc_' plus 64 hex) minted by the ClinX consent workflow need
-//     no change anywhere in wf2: Has Token? only tests notEmpty, and Find Owner by Token
-//     passes the raw value to an 'eq' contacts-search filter.
+//     no change anywhere else in wf2: Has Token? only tests notEmpty, and Find Owner by Token
+//     passes the raw value to an 'eq' contacts-search filter. The backstop above is the only
+//     place that validates the token.
 // v8: PART-1 PREFILL. Changes vs v7:
 //   * formParamsFor adds demographic params for the Part 1 querystring: phone, and
 //     date_of_birth as MM/DD/YYYY (the form IGNORES ISO dates - probe-proven
@@ -207,8 +231,16 @@ const docStateFor = (c) => {
   if (!signed) out.doc_ref = docRef;
   return out;
 };
+// --- v9 token backstop (see header) ------------------------------------------
+const sw = $('Status Webhook').first().json;
+const q = String(sw.query && sw.query.t ? sw.query.t : '');
+const hits = ($('Find Owner by Token').first().json.contacts || []).filter(h => String(val(h, 'consent_hub_token')) === q);
+const wellFormed = q.length >= 16 && q.length <= 256 && (!/^adhoc/i.test(q) || /^adhoc_[0-9a-f]{64}$/.test(q));
+if (!wellFormed || hits.length !== 1 || hits[0].id !== own.ownerId) {
+  return [{ json: { body: { practice: practice, owner_first_name: '', owner: null, members: [], all_complete: false, all_signed: false } } }];
+}
 // --- v9 member scope (see header) --------------------------------------------
-const holder = ($('Find Owner by Token').first().json.contacts || [])[0] || {};
+const holder = hits[0];
 const holderIsMember = String(val(holder, 'owner_contact_id') || '') !== '' || String(val(holder, 'member_type') || '').trim().toLowerCase() !== 'owner';
 if (holderIsMember) {
   const members = [];
@@ -286,12 +318,13 @@ Member tokens are `adhoc_` plus 64 lowercase hex (32 cryptographic bytes), minte
 |---|---|---|
 | wf2 `Has Token?` | `notEmpty` on `query.t` only; `adhoc_` passes | admin-theme harness `wf2-member-scope.harness.cjs`, check `token:` |
 | wf2 `Find Owner by Token` | Passes the raw `query.t` as the `eq` value of a `consent_hub_token` contacts search; no transform | same check; COMPLETION-PATH "What the member-held token touches" |
+| wf2 `Build Status` v9 (token backstop, code review CR-03) | The only validator. `?t=` must be 16 to 256 characters; a value starting `adhoc` must be exactly `adhoc_` plus 64 lowercase hex; exactly one search hit may store exactly that value, and it must be the contact `Extract Owner` used. Otherwise the response is empty (owner null, no members) and the hub shows its could-not-load message. It does not rely on how the search `eq` matches | harness `backstop:` checks (`?t=adhoc`, `?t=adhoc_`, truncated, mismatched stored token, two holders, malformed stored value) |
 | Hub v11 read, encode, sessionStorage | `params.get('t')`, `sessionStorage` save and recovery, `encodeURIComponent` (leaves letters, digits, and `_` unchanged); no regex, length, or hex test | harness `hub:` checks; COMPLETION-PATH D-11 section, lines 16-18 and 34 |
 | Member email link | `https://join.xcelsiorhealth.com/consent-hub?t={{contact.consent_hub_token}}`, the member's own token; click tracking OFF so it is never rewritten | admin-theme `email-check.cjs` (`link:` and `header:` checks); BUILD-SPEC V-04, V-09 |
 | wf1 idempotency | `Check Idempotency` reads the token from the Upsert Owner response (the owner's record), so a member token cannot trip `already`; `Build Dependents` never writes the field | BUILD-SPEC §4.8; COMPLETION-PATH |
 | wf3 recount | No reference to `consent_hub_token`; keys on `contact_id`, `owner_contact_id`, `hint_membership_id` | `n8n/3-consent-completed.json` (0 references) |
 
-The one thing only a live run can prove: that the GHL contacts search `eq` filter matches a value containing `adhoc_` (the underscore). Phase 6 check 1 below covers it; a member hub that shows the not-found page means it did not match.
+The one thing only a live run can prove: that the GHL contacts search `eq` filter matches a value containing `adhoc_` (the underscore). Phase 6 check 1 below covers it; a member hub that shows the not-found page means it did not match. The reverse risk (the search returning a contact for a partial or prefix value such as `?t=adhoc`) is closed in code by the Build Status backstop, and Phase 6 checks 6 to 8 confirm it live.
 
 ## Rollback
 
@@ -316,6 +349,9 @@ Test contacts only, never a real patient. Record each result in the Phase 6 run 
 3. The owner's hub is unchanged (same cards and states as before the publish).
 4. After the member completes Part 3 and signs, the owner's hub shows them complete.
 5. Before testing v9, set `member_type` to `owner` on any sandbox or test token holder you will use whose `member_type` and `owner_contact_id` are both empty (6 of 10 holders in the 2026-08-25 pull, all sandbox or test contacts). v9 fails closed on that shape and their hubs would show the could-not-load message.
+6. Negative (code review CR-03): open `https://join.xcelsiorhealth.com/consent-hub?t=adhoc` and `...?t=adhoc_` in a private window. Both must show "We could not load your consent forms" (or "This link has expired"), never a card.
+7. Negative: open the test member's real link with the last character removed, and again with one character changed. Both must show the could-not-load message.
+8. Negative: open a test owner's real link with one character changed. It must show the could-not-load message, not the family.
 
 **Build checks** (BUILD-SPEC §10, record each result there): V-01 found-contact context, V-02 buttonId in the If/Else picker, V-03 buttonId in the trigger sample, V-04 Track link clicks OFF on every Send Email, V-05 Find Contact context switching and restore, V-06 Custom Code available, V-07 Custom Code output merge syntax, V-08 crypto in the Custom Code runtime, V-09 the email link carries exactly the token saved on the member (`?t=adhoc_` plus 64 hex) and "Verify saved token" logged `ok`, V-10 the `+{{contact.hint_patient_id}}@` contains-value resolves per contact, V-11 no workflow triggers on a Consent Hub Token change, V-12 what a Custom Code runtime error does to a run (throwaway probe workflow only).
 

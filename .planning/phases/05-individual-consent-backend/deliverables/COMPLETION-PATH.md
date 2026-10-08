@@ -4,7 +4,7 @@ Proposal folder: `hint-api/proposals/2026-10-07-individual-consent/` (2026-10-07
 `wf2-consent-hub-status.member-scope.json` (the edited wf2) and `wf2-member-scope.diff` (its diff
 against `n8n/2-consent-hub-status.json`). Offline proof: the admin-theme harness
 `.planning/phases/05-individual-consent-backend/harness/wf2-member-scope.harness.cjs`, which ends
-`PASS 22/22`.
+`PASS 31/31`.
 
 ## Result
 
@@ -26,7 +26,7 @@ File paths are relative to `hint-api/`. "v11" means `ghl/consent-hub-v11-ELEMENT
 |---|---|---|---|---|
 | 1. Member clicks the email link `https://join.xcelsiorhealth.com/consent-hub?t=<member token>` | Hub page v11 on funnel "Family Consent Hub" | funnel `Oz0f515BAOp3gkwNlpbO`, page `8y71OTd9m7RjNgRA6EyC` | v11 lines 16-18: `token = params.get('t')`, then `sessionStorage.setItem('consentToken', token)`. Harness: `ok - hub: v11 renders the member response as one family-part-1 card` | no |
 | 2. Hub fetches status with the member token | wf2 Consent Hub Status: Has Token?, Find Owner by Token, Extract Owner, Find Members, List Members, Refetch Member | `RxnpkyL0jng8hVx7` | v11 line 34 `fetch(STATUS_URL + '?t=' + encodeURIComponent(token))`. Has Token? is `notEmpty` only; Find Owner by Token searches `consent_hub_token eq <t>` and returns the member (the holder). Extract Owner's `ownerId` is the holder; Find Members uses the holder's `hint_membership_id`, which is the family's. Harness: `ok - token: adhoc_ token passes Has Token? and reaches Find Owner by Token unchanged` | no |
-| 3. wf2 builds the member view | wf2 node `Build Status` v9 | `RxnpkyL0jng8hVx7` | `harness/build-status-v9.js` member-scope block: holder is a member (`owner_contact_id` set or `member_type` not `owner`), so the body is `owner: null` plus one card. Harness: `ok - member: adhoc_ member token returns only the holder's card`, `ok - leak: member response contains no other member's name, id, or email` | **yes (v8 to v9)** |
+| 3. wf2 builds the member view | wf2 node `Build Status` v9 | `RxnpkyL0jng8hVx7` | `harness/build-status-v9.js` token backstop: exactly one search hit stores exactly this token and it is the contact Extract Owner used (otherwise an empty could-not-load body). Then the member-scope block: holder is a member (`owner_contact_id` set or `member_type` not `owner`), so the body is `owner: null` plus one card. Harness: `ok - member: adhoc_ member token returns only the holder's card`, `ok - leak: member response contains no other member's name, id, or email` | **yes (v8 to v9)** |
 | 4. Hub renders one card; member clicks "Complete consent" | Hub page v11 member card | page `8y71OTd9m7RjNgRA6EyC` | v11 lines 78-96 render `members`; line 83 `href = FAMILY_PART1_URL + '?' + m.form_params` (`https://join.xcelsiorhealth.com/family-part-1?...`). form_params carry the member's own contact_id, email, names, hint_patient_id, member_type, and prefill | no |
 | 5. Family Part 1, Part 2, Part 3 | Funnel steps Family Part 1 / 2 / 3 | `pZOnhyMAxryvLiW675mI`, `3j2clPHt1Q6u6oIccvJx`, `vlGvMKVj0e1GLVTH6oZm` | `GHL_Family_Consent_Flow_Design.md` Appendix E: Part 1 and Part 2 redirect on submit with `{{contact.id}}` and `{{contact.email}}` of the submitting contact; rehearsed 2026-07-30 with every hop resolving to the dependent, not the browser-session contact | no |
 | 6. The forms write to the member's contact | Form "Family Consent - Adult" (and its Part 1-3 clones) | `T5tWa7nLM8QgMQHu6D8P` | Design §5.5: hidden fields `email`, `hint_patient_id`, `member_type` come from form_params; Email is Hidden and is the routing key; Sticky Contact OFF, so the browser's cookie contact is never used. Appendix E: the three clones keep these routing settings. The member's own email (real, or wf1's synthetic `+pat-<id>@` key) matches the member contact | no |
@@ -42,15 +42,20 @@ File paths are relative to `hint-api/`. "v11" means `ghl/consent-hub-v11-ELEMENT
 - **wf2 `Find Owner by Token`**: passes the raw `query.t` as the `eq` value of a `consent_hub_token`
   contacts search. No transform, so `adhoc_<64 hex>` is matched as stored (harness `token:` check).
   Whether GHL's contacts search `eq` finds a value with an underscore is a live check (below).
-- **wf2 `Extract Owner`**: takes `contacts[0]`, the holder. It throws if the holder has no
+- **wf2 `Extract Owner`**: takes `contacts[0]`. Build Status v9 then accepts it as the holder only if it is the
+  one search hit whose stored token equals `?t=` exactly (code review CR-03). It throws if the holder has no
   `hint_membership_id`. The consent workflow's guard 3 refuses to mint for a member without one, so
   a member token always has it.
-- **wf2 `Build Status` v9**: reads the holder from `Find Owner by Token` and returns only the
-  holder's card. It reads `owner_contact_id` through the runtime custom-field map, so it does not need
+- **wf2 `Build Status` v9**: first runs the token backstop (code review CR-03). `?t=` must be 16 to 256
+  characters, a value starting `adhoc` must be exactly `adhoc_` plus 64 lowercase hex, and exactly one
+  `Find Owner by Token` hit may store exactly that value, which must be the contact Extract Owner used.
+  Otherwise it returns the empty body (owner null, no members) and the hub shows its could-not-load
+  message, whatever the search `eq` matched. It then returns only the holder's card. It reads `owner_contact_id` through the runtime custom-field map, so it does not need
   that field in Build CF Map's required list (the field exists live, phase0 FINDINGS item 7).
 - **Hub v11**: reads, stores, recovers, and URL-encodes the token without validating it. The harness
-  scans the hub and wf2 for regex, length, or hex tests on the token and finds none:
-  `ok - hub: no regex, length, or hex check on the token in hub v11 or wf2`. `encodeURIComponent`
+  scans the hub, Has Token?, and Find Owner by Token for regex, length, or hex tests on the token and finds
+  none (Build Status's backstop is the one audited validator):
+  `ok - hub: no regex, length, or hex check on the token in hub v11, Has Token?, or Find Owner by Token`. `encodeURIComponent`
   leaves `adhoc_` plus hex unchanged (letters, digits, and `_` are unreserved).
 - **wf1 `Check Idempotency`**: reads `consent_hub_token` only from the `Upsert Owner` response, which
   is the owner's record (`n8n/1-hint-membership-fanout.json`, Check Idempotency lines 4-18,
@@ -95,7 +100,8 @@ Harness lines for the hub:
 ```
 ok - hub: v11 renders the member response as one family-part-1 card
 ok - hub: return visit without ?t= recovers the adhoc_ token and fetches with it
-ok - hub: no regex, length, or hex check on the token in hub v11 or wf2
+ok - hub: no regex, length, or hex check on the token in hub v11, Has Token?, or Find Owner by Token
+ok - backstop: hub v11 shows its could-not-load message for the empty body
 ok - hub: v11 carries the live markers from phase0 FINDINGS item 8
 ```
 
@@ -130,3 +136,9 @@ re-paste with a member-mode copy swap, using the solo-mode swap from `HANDOFF-ow
    so their hubs would show the could-not-load message. Real owners are fine: wf1 stamps
    `member_type` owner on every owner since 2026-08-24, and the backfill stamped the rest. If any of
    those 6 are still used for testing, set their `member_type` to `owner` first.
+6. Negative (code review CR-03): `consent-hub?t=adhoc` and `consent-hub?t=adhoc_` must both show the
+   could-not-load (or expired) message, never a card.
+7. Negative: the test member's real link with the last character removed, and with one character
+   changed, must show the could-not-load message.
+8. Negative: a test owner's real link with one character changed must show the could-not-load message,
+   not the family.

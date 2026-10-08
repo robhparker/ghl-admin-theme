@@ -7,8 +7,9 @@
 #   (3) the xcelsior repo has no staged, committed, or tracked-modified file from this phase
 #   (4) all three phase harnesses pass
 #   (5) no deliverable carries a live-looking PIT (pit- plus 8 hex)
-#   (6) the proposal README has its ten H2s in order, the required strings, every file name, and a
-#       Build Status v9 paste block equal to the JSON Build Status jsCode
+#   (6) the proposal README has its ten H2s in order, the required strings, every file name, a
+#       Build Status v9 paste block equal to the JSON Build Status jsCode, a v8->v9 diff block equal
+#       to a fresh diff, and (code review CR-03) the negative token live checks, also in COMPLETION-PATH
 #
 # Read-only: runs no git write command anywhere. Never stops at the first failure.
 # Prints "ok - ..." / "not ok - ...: reason" lines, then "PASS n/n" or "FAIL k/n"; exit 0 only on PASS.
@@ -111,7 +112,7 @@ NODE_JS="$(mktemp -t check-phase05)"
 trap 'rm -f "$NODE_JS"' EXIT
 cat > "$NODE_JS" <<'NODE'
 const fs = require('fs');
-const [readmePath, jsonPath] = process.argv.slice(2);
+const [readmePath, jsonPath, v8Path, v9Path, completionPath] = process.argv.slice(2);
 const out = [];
 let r;
 try { r = fs.readFileSync(readmePath, 'utf8'); } catch (e) { console.log('not ok - readme: cannot read: ' + e.message); process.exit(0); }
@@ -162,9 +163,26 @@ else if (code === null) out.push('not ok - readme: paste block: cannot read Buil
 else out.push(m[1].replace(/\n+$/, '') === code.replace(/\n+$/, '')
   ? 'ok - readme: v9 paste block equals the JSON Build Status jsCode'
   : 'not ok - readme: paste block differs from the JSON Build Status jsCode');
+// The README v8->v9 diff block must equal a fresh `diff -u` of the live v8 file against v9.
+const { spawnSync } = require('child_process');
+const dm = r.match(/\n```diff\n([\s\S]*?)\n```\n/);
+const fresh = spawnSync('diff', ['-u', '--label', 'a/build-status-v8-live.js', '--label', 'b/build-status-v9-member-scope.js', v8Path, v9Path], { encoding: 'utf8' });
+if (!dm) out.push('not ok - readme: diff block: not found');
+else if (fresh.status !== 1) out.push('not ok - readme: diff block: diff exited ' + fresh.status);
+else out.push(dm[1].replace(/\n+$/, '') === fresh.stdout.replace(/\n+$/, '')
+  ? 'ok - readme: v8->v9 diff block equals a fresh diff of the v8 file against build-status-v9.js'
+  : 'not ok - readme: diff block: differs from a fresh diff -u v8 v9');
+
+// Code review CR-03: the negative live checks are written down for Phase 6 in both documents.
+let cp = '';
+try { cp = fs.readFileSync(completionPath, 'utf8'); } catch (e) { cp = ''; }
+const neg = ['?t=adhoc`', '?t=adhoc_`', 'last character removed', 'one character changed'];
+const nmiss = [['README', r], ['COMPLETION-PATH', cp]].flatMap(([label, t]) => neg.filter((x) => !t.includes(x)).map((x) => label + ' ' + x));
+out.push(nmiss.length ? 'not ok - readme: negative token live checks: missing ' + JSON.stringify(nmiss)
+  : 'ok - readme: negative token live checks (?t=adhoc, ?t=adhoc_, truncated, changed) in README and COMPLETION-PATH');
 console.log(out.join('\n'));
 NODE
-README_OUT="$(node "$NODE_JS" "$PROP/README.md" "$PROP/wf2-consent-hub-status.member-scope.json")"
+README_OUT="$(node "$NODE_JS" "$PROP/README.md" "$PROP/wf2-consent-hub-status.member-scope.json" "$X/hint-api/proposals/2026-08-11-part1-prefill/build-status-v8-PROPOSED.js" "$H/build-status-v9.js" "$PROP/COMPLETION-PATH.md")"
 while IFS= read -r line; do
   [ -z "$line" ] && continue
   case "$line" in

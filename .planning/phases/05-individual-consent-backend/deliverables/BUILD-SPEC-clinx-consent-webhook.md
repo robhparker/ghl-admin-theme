@@ -232,7 +232,7 @@ verify in ClinX UI (V-12): what a Custom Code runtime error does to a run. Test 
 
 verify in ClinX UI (V-11): no other workflow triggers on a Consent Hub Token change. Automation -> Workflows -> filter by trigger type Contact Changed (and any custom-field-changed trigger) and confirm none watches Consent Hub Token. If one does: do not publish until Rob has read that workflow.
 
-**F-2, token format.** wf1 mints owner tokens with `crypto.randomBytes(16).toString('hex')` (32 hex characters) in Build Dependents and in Prep Owner Update (Solo). This member token is `adhoc_` plus 64 hex per D-05a (32 bytes, 70 characters in total, the same lowercase hex alphabet). No consumer checks the token's length or format (Plan 05-01 harness: wf2 Has Token? and Find Owner by Token, and hub v11's `?t=` reading). The prefix means a member token can never equal a wf1 owner token, makes it recognizable in contact records and logs, and is URL-safe.
+**F-2, token format.** wf1 mints owner tokens with `crypto.randomBytes(16).toString('hex')` (32 hex characters) in Build Dependents and in Prep Owner Update (Solo). This member token is `adhoc_` plus 64 hex per D-05a (32 bytes, 70 characters in total, the same lowercase hex alphabet). Hub v11, wf2 Has Token?, and Find Owner by Token pass the token through unchecked (Plan 05-01 harness). The one validator is wf2 Build Status v9's token backstop (code review CR-03): `?t=` must be 16 to 256 characters, a value starting `adhoc` must be exactly `adhoc_` plus 64 lowercase hex, and exactly one contact may store exactly that value, so a partial value such as `?t=adhoc` or a token shared by two contacts opens nothing. The prefix means a member token can never equal a wf1 owner token, makes it recognizable in contact records and logs, and is URL-safe.
 
 4.7 **Pass (D-05).** The context is the member.
 1. **Add Contact Tag** -> `consent-pending` (adding a tag the contact already has is a no-op).
@@ -246,7 +246,7 @@ This branch never changes `consent_status` or any owner field, because the compl
 - wf1 **Check Idempotency** reads `consent_hub_token` and `hint_membership_id` from the Upsert Owner response, which is the owner's record, so a member's token can never trip `already`.
 - wf1 **Build Dependents** never writes `consent_hub_token` (its upsert body carries hint_patient_id, hint_membership_id, member_type, and owner_contact_id only), so a re-signup leaves the member token alone.
 - wf3 (`n8n/3-consent-completed.json`) has 0 `consent_hub_token` references, and its **Compute Completion** counts dependents found by `hint_membership_id` against the owner, so the member's completion still lands on the owner's hub.
-- wf2 finds the holder by exact token match, and Build Status v9 scopes a member-held token to that member's card (Plan 05-01).
+- wf2 Build Status v9 accepts a holder only when exactly one contact stores exactly the requested token (code review CR-03), and scopes a member-held token to that member's card (Plan 05-01).
 
 ## 5. Branch B: resend-consent-hub
 

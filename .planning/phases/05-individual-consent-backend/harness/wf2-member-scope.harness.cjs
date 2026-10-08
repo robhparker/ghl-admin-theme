@@ -66,6 +66,7 @@ const CF = {};
 const hex = (n, seed) => { let s = ''; let x = seed; while (s.length < n) { x = (x * 1103515245 + 12345) % 2147483648; s += (x % 16).toString(16); } return s; };
 const OWNER_TOKEN = hex(32, 7);
 const ADHOC_TOKEN = 'adhoc_' + hex(64, 11);
+const ADHOC_TOKEN_K = 'adhoc_' + hex(64, 13); // Kestrel's own member token (holder-K scenarios)
 const MEMBERSHIP = 'mem-family-0001';
 
 // contact factory: shape of GET /contacts/{id}.contact and of contacts/search results
@@ -88,7 +89,7 @@ function C(id, first, o) {
   c.customFields = Object.keys(f).filter(k => f[k] !== '').map(k => ({ id: CF['contact.' + k], value: f[k] }));
   return c;
 }
-// The family: owner O, child K (synthetic email, DOB), spouse S (own email, adhoc_ token, phone).
+// The family: owner O, child K (synthetic email, DOB, adhoc_ token), spouse S (own email, adhoc_ token, phone).
 const O_ID = 'ctcOwnerOdessa01';
 const K_ID = 'ctcChildKestrel2';
 const S_ID = 'ctcSpouseSorrel3';
@@ -98,7 +99,7 @@ const S_EMAIL = 'sorrel.own@example.net';
 function family(o) {
   o = o || {};
   const O = C(O_ID, 'Odessa', Object.assign({ member_type: 'owner', token: OWNER_TOKEN, email: O_EMAIL, phone: '+18135550100', dateOfBirth: '1980-04-02' }, o.O || {}));
-  const K = C(K_ID, 'Kestrel', Object.assign({ member_type: 'child', owner_contact_id: O_ID, email: K_EMAIL, dateOfBirth: '2015-06-09' }, o.K || {}));
+  const K = C(K_ID, 'Kestrel', Object.assign({ member_type: 'child', owner_contact_id: O_ID, email: K_EMAIL, dateOfBirth: '2015-06-09', token: ADHOC_TOKEN_K }, o.K || {}));
   const S = C(S_ID, 'Sorrel', Object.assign({ member_type: 'spouse', owner_contact_id: O_ID, email: S_EMAIL, token: ADHOC_TOKEN, phone: '+18135550101' }, o.S || {}));
   return { O, K, S, all: [O, K, S] };
 }
@@ -139,7 +140,11 @@ function evalExpr(expr, $) {
 //   holder: the contact contacts/search returns for the token
 //   fresh:  the contacts Refetch Member returns (one GET per membership member)
 function runWf2(code, holder, fresh, token) {
-  const search = { contacts: holder ? [holder] : [], total: holder ? 1 : 0 };
+  return runWf2Hits(code, holder ? [holder] : [], fresh, token);
+}
+// Same, with the exact list of contacts the search returns (to model fuzzy or duplicate matches).
+function runWf2Hits(code, hits, fresh, token) {
+  const search = { contacts: hits, total: hits.length };
   const nodes = {
     'Status Webhook': [{ json: { query: { t: token || '' } } }],
     'Config': [{ json: { PRACTICE_NAME: 'Xcelsior Health', FUNNEL_ORIGIN: 'https://join.xcelsiorhealth.com', PIT: 'PASTE_GHL_PIT_TOKEN_HERE' } }],
@@ -337,7 +342,7 @@ function graph(wf) {
   });
   await check('member detect: member_type other than owner alone scopes the response', () => {
     const fam = family({ K: { owner_contact_id: '' } }); // child with no owner link written
-    return scopedTo(runWf2(behaviorCode, fam.K, fam.all, ADHOC_TOKEN), 'Kestrel', [fam.O, fam.S]);
+    return scopedTo(runWf2(behaviorCode, fam.K, fam.all, ADHOC_TOKEN_K), 'Kestrel', [fam.O, fam.S]);
   });
   await check('member detect: legacy holder with no owner link and empty member_type is scoped', () => {
     const fam = family({ S: { member_type: '', owner_contact_id: '' } }); // phase4 FINDINGS legacy dependent shape
@@ -383,8 +388,10 @@ function graph(wf) {
     const states = [{}, { O: signedDoc('docref-O'), K: awaitingDoc('docref-K'), S: awaitingDoc('docref-S') }];
     for (const st of states) {
       const fam = family(st);
-      for (const [holder, others] of [[fam.S, [fam.O, fam.K]], [fam.K, [fam.O, fam.S]]]) {
-        const s = JSON.stringify(runWf2(behaviorCode, holder, fam.all, ADHOC_TOKEN));
+      for (const [holder, others, tok] of [[fam.S, [fam.O, fam.K], ADHOC_TOKEN], [fam.K, [fam.O, fam.S], ADHOC_TOKEN_K]]) {
+        const b = runWf2(behaviorCode, holder, fam.all, tok);
+        if (b.members.length !== 1 || b.members[0].first_name !== holder.firstName) return 'holder ' + holder.firstName + ' did not get exactly their own card';
+        const s = JSON.stringify(b);
         for (const t of leakTerms(others)) if (s.indexOf(t) !== -1) return 'holder ' + holder.firstName + ' response carries another member\'s data';
       }
     }
@@ -394,8 +401,8 @@ function graph(wf) {
   await check('HUB-04: member-view form_params equal the owner-view form_params for the same member', () => {
     const fam = family();
     const ownerView = runWf2(behaviorCode, fam.O, fam.all, OWNER_TOKEN);
-    for (const m of [fam.S, fam.K]) {
-      const mine = runWf2(behaviorCode, m, fam.all, ADHOC_TOKEN).members[0];
+    for (const [m, tok] of [[fam.S, ADHOC_TOKEN], [fam.K, ADHOC_TOKEN_K]]) {
+      const mine = runWf2(behaviorCode, m, fam.all, tok).members[0];
       const card = ownerView.members.find(x => x.first_name === m.firstName);
       if (!mine || !card) return 'card missing for ' + m.firstName;
       if (!mine.form_params || mine.form_params !== card.form_params) return 'form_params differ for ' + m.firstName;
@@ -424,7 +431,7 @@ function graph(wf) {
     return true;
   });
 
-  await check('hub: no regex, length, or hex check on the token in hub v11 or wf2', () => {
+  await check('hub: no regex, length, or hex check on the token in hub v11, Has Token?, or Find Owner by Token', () => {
     const hits = [];
     const tokenValidation = [
       /\btoken\s*\.\s*(length|test|match|matchAll|search|replace|split)\b/,
@@ -443,11 +450,90 @@ function graph(wf) {
     });
     const jb = nodeOf(edited, 'Find Owner by Token').parameters.jsonBody;
     if (!/operator: 'eq', value: \$\('Status Webhook'\)\.first\(\)\.json\.query\.t \}/.test(jb)) hits.push('Find Owner by Token value is not the raw query.t');
-    // every node that reads the token must be one of the two audited above
+    // every node that reads the token must be one of the three audited readers: the two pass-through
+    // nodes above, and Build Status, whose only use of it is the CR-03 exact-match backstop
     edited.nodes.forEach(n => {
-      if (/json\.query\.t\b|query\.t\b/.test(JSON.stringify(n.parameters)) && ['Has Token?', 'Find Owner by Token'].indexOf(n.name) === -1) hits.push('unaudited token reader: ' + n.name);
+      if (/json\.query\.t\b|query\.t\b/.test(JSON.stringify(n.parameters)) && ['Has Token?', 'Find Owner by Token', 'Build Status'].indexOf(n.name) === -1) hits.push('unaudited token reader: ' + n.name);
     });
     return hits.length === 0 || hits.join('; ');
+  });
+
+  // ======================================================== code review CR-03: token backstop
+  // Build Status must not trust the contacts-search 'eq' result: the holder is the ONE hit whose
+  // stored consent_hub_token equals ?t= exactly, and it must be the contact Extract Owner used.
+  const EMPTY = { practice: 'Xcelsior Health', owner_first_name: '', owner: null, members: [], all_complete: false, all_signed: false };
+  const isEmpty = b => sameJson(b, EMPTY) || 'expected the empty could-not-load body, got ' + JSON.stringify(b).slice(0, 120);
+  await check('backstop: Build Status reads ?t= only for the exact-match, single-hit test', () => {
+    const code = nodeOf(edited, 'Build Status').parameters.jsCode;
+    const reads = code.split('\n').filter(l => /query\.t\b/.test(l));
+    if (reads.length !== 1) return 'Build Status reads query.t on ' + reads.length + ' lines';
+    if (!/\.filter\(h => String\(val\(h, 'consent_hub_token'\)\) === q\)/.test(code)) return 'no exact === filter on the stored consent_hub_token';
+    if (!/hits\.length !== 1/.test(code) || !/hits\[0\]\.id !== own\.ownerId/.test(code)) return 'uniqueness or Extract Owner identity test missing';
+    const iGuard = code.indexOf('hits.length !== 1');
+    const iMember = code.indexOf('if (holderIsMember)');
+    const iOwner = code.indexOf('let owner = null;');
+    return (iGuard > 0 && iGuard < iMember && iGuard < iOwner) || 'backstop does not run before both paths';
+  });
+  await check('backstop: ?t=adhoc and ?t=adhoc_ return the empty body even if the search returns a member', () => {
+    const fam = family();
+    for (const t of ['adhoc', 'adhoc_', 'ADHOC_', 'adhoc_' + 'f'.repeat(10)]) {
+      const r = isEmpty(runWf2Hits(behaviorCode, [fam.S], fam.all, t));
+      if (r !== true) return '?t=' + t + ': ' + r;
+    }
+    return true;
+  });
+  await check('backstop: a truncated or extended real member token returns the empty body', () => {
+    const fam = family();
+    for (const t of [ADHOC_TOKEN.slice(0, -1), ADHOC_TOKEN.slice(0, 20), ADHOC_TOKEN + '0', ADHOC_TOKEN.toUpperCase()]) {
+      const r = isEmpty(runWf2Hits(behaviorCode, [fam.S], fam.all, t));
+      if (r !== true) return r;
+    }
+    return true;
+  });
+  await check('backstop: a search hit whose stored token differs from ?t= is refused (owner and member)', () => {
+    const fam = family();
+    // GHL 'eq' returning a near match: the owner for an owner-like token with one character changed,
+    // and Sorrel for Kestrel's token
+    const nearOwner = OWNER_TOKEN.slice(0, -1) + (OWNER_TOKEN.slice(-1) === 'a' ? 'b' : 'a');
+    let r = isEmpty(runWf2Hits(behaviorCode, [fam.O], fam.all, nearOwner));
+    if (r !== true) return 'owner near match: ' + r;
+    r = isEmpty(runWf2Hits(behaviorCode, [fam.S], fam.all, ADHOC_TOKEN_K));
+    return r === true || 'member mismatch: ' + r;
+  });
+  await check('backstop: two contacts holding the same token return the empty body', () => {
+    const fam = family();
+    const twin = C('ctcOtherFamily05', 'Wren', { member_type: 'spouse', owner_contact_id: 'ctcOtherOwner006', token: ADHOC_TOKEN, membership: 'mem-other-0003', email: 'wren@example.org' });
+    let r = isEmpty(runWf2Hits(behaviorCode, [fam.S, twin], fam.all, ADHOC_TOKEN));
+    if (r !== true) return 'member twins: ' + r;
+    // an owner and a member sharing the owner's token (copied by hand) must never render the family
+    const fam2 = family({ S: { token: OWNER_TOKEN } });
+    r = isEmpty(runWf2Hits(behaviorCode, [fam2.O, fam2.S], fam2.all, OWNER_TOKEN));
+    return r === true || 'owner/member twins: ' + r;
+  });
+  await check('backstop: an exact hit that is not the contact Extract Owner used is refused', () => {
+    const fam = family();
+    const fuzzy = C('ctcFuzzyFirst007', 'Ash', { member_type: 'owner', token: 'adhoc_' + hex(64, 17), membership: 'mem-other-0004', email: 'ash@example.org' });
+    return isEmpty(runWf2Hits(behaviorCode, [fuzzy, fam.S], fam.all, ADHOC_TOKEN));
+  });
+  await check('backstop: a malformed adhoc value stored on a contact is refused even on an exact match', () => {
+    // e.g. a failed mint that wrote a constant (CR-02), or a hand-typed value
+    for (const bad of ['adhoc_' + 'f'.repeat(10), 'adhoc_' + 'F'.repeat(64), 'adhoc_' + 'a'.repeat(63) + 'z', 'adhoc-' + 'a'.repeat(64), 'adhoc_{{custom_code.token}}']) {
+      const fam = family({ S: { token: bad } });
+      const r = isEmpty(runWf2Hits(behaviorCode, [fam.S], fam.all, bad));
+      if (r !== true) return JSON.stringify(bad) + ': ' + r;
+    }
+    return true;
+  });
+  await check('backstop: a too-short token returns the empty body', () => {
+    const fam = family({ O: { token: 'abc123' } });
+    return isEmpty(runWf2Hits(behaviorCode, [fam.O], fam.all, 'abc123'));
+  });
+  await check('backstop: hub v11 shows its could-not-load message for the empty body', async () => {
+    const fam = family();
+    const body = runWf2Hits(behaviorCode, [fam.S], fam.all, 'adhoc_');
+    const r = await runHub(body, { search: '?t=adhoc_' });
+    if (cardCount(r.html) !== 0) return 'rendered ' + cardCount(r.html) + ' card(s)';
+    return r.html.indexOf('We could not load your consent forms') !== -1 || 'could-not-load message not shown';
   });
 
   await check('hub: v11 carries the live markers from phase0 FINDINGS item 8', () => {
