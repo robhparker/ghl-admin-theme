@@ -1,6 +1,6 @@
 {
   "name": "ghl-customizer",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Configuration-driven browser customization layer for a HighLevel agency workspace. Vanilla JS, no build step.",
