@@ -580,6 +580,24 @@ if (args.stage >= 3) {
     return miss.length ? 'section 8 missing ' + JSON.stringify(miss) : true;
   });
 
+  check('(z1) run-log checks happen in a pilot gate that cannot email a real patient (code review WR-06)', () => {
+    const s6 = section(H2[6]) || '';
+    const req = ['pilot gate', 'back to Draft immediately', 'before its URL goes into the admin-theme config', 'mailbox A', 'mailbox B', 'never a real patient'];
+    const miss = req.filter((x) => !s6.toLowerCase().includes(x.toLowerCase()));
+    if (miss.length) return 'section 6 missing ' + JSON.stringify(miss);
+    const lines = text.split('\n');
+    for (const v of ['V-01', 'V-05', 'V-09']) {
+      const marker = lines.find((l) => l.startsWith('verify in ClinX UI (' + v + ')'));
+      if (!marker) return v + ' marker missing';
+      if (!/pilot gate/.test(marker)) return v + ' marker does not run in the pilot gate';
+      if (!/Draft immediately/.test(marker)) return v + ' marker fallback is not "back to Draft immediately"';
+      if (/do not publish/i.test(marker)) return v + ' marker still says do not publish (it is only observable after Publish)';
+      const row = lines.find((l) => l.startsWith('| ' + v + ' '));
+      if (!row || !/Draft immediately/.test(row)) return v + ' checklist row fallback is not "Back to Draft immediately"';
+    }
+    return true;
+  });
+
   check('(r) section 11 mentions Draft and adhoc_', () => {
     const s11 = section(H2[11]);
     if (s11 === null) return 'section 11 missing';
