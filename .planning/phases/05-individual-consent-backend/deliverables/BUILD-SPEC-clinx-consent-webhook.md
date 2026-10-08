@@ -100,6 +100,104 @@ verify in ClinX UI (V-02): how `{{inboundWebhookRequest.buttonId}}` appears in t
 - Internal Notification with the same text.
 - End.
 
+## 4. Branch A: send-individual-consent
+
+Goal (D-04, D-05, D-05a): email the member staff clicked on a link to their own consent forms, but only when the member has their own email, a working owner link, and forms still to do. The guards run in D-04 order. The first guard that matches refuses and ends, using the §0.5 pattern with the exact text given here. The context at the start of this branch is the clicked contact (the member).
+
+4.1 **R-03, not a family member (D-04 #1).** If/Else, action name = "Is a family member": Branch "Not a member" -> Contact Tags does not include `family-member` -> refuse (§0.5, no restore needed): Note = "Not a family member. Use Resend Consent Hub link on the owner." Notification with the same text. End. None -> 4.2.
+
+Owners never carry `family-member`, and neither do legacy (backfilled) dependents, whose tags the 2026-08-25 backfill left untouched, so both stop here. wf1 dependents carry it (Tag Dependent).
+
+4.2 **R-04, no own email (D-04 #2, plus one planner addition).** If/Else, action name = "Has own email": Branch "No own email" -> conditions joined with OR:
+- Contact Tags includes `synthetic-email` (D-04 #2)
+- Email is empty (D-04 #2)
+- Email contains `+{{contact.hint_patient_id}}@` (planner addition to D-04 #2, same refusal message)
+
+-> refuse (§0.5, no restore needed): Note = "Member has no own email. Enter their real email first, or use Resend Consent Hub link on the owner." Notification with the same text. End. None -> 4.3.
+
+verify in ClinX UI (V-10): the "contains" value field accepts the merge field `+{{contact.hint_patient_id}}@` and resolves it per contact (a member whose Hint Patient ID is `pat-abc` is checked against `+pat-abc@`, not the literal text). Check it in Phase 6 with a test member whose email is a synthetic address. If it differs (the value is compared literally, or the field rejects merge fields): delete the third condition, keep the two D-04 conditions alone, and accept the residual risk stated below.
+
+Why the third condition: wf1 never applies the `synthetic-email` tag. Its Tag Dependent node writes only `family-member` and `consent-pending`. The tag exists only on the 17 contacts the 2026-08-26 unified review tagged (testing/2026-08-26-unified-review/unified-summary.md). wf1's Build Dependents gives every dependent without their own real email the synthetic address `ownerlocal+<hint_patient_id>@ownerdomain` (production ids look like `pat-…`, sandbox ids like `sbx-pat-…`). Such a member has a non-empty email and no tag, so the two D-04 conditions alone let it through. Residual risk if V-10 forces the two conditions alone: the member email goes to the synthetic address, and plus-addressing delivers it to the owner's inbox. The owner then gets a link that opens only the member's card (wf2 v9): a confusing email, not a disclosure. The admin-theme client also pre-checks synthetic addresses before posting (`/\+(?:\d+|pat-[A-Za-z0-9_-]+)@/`, admin-theme commit 86b53d7), but the client check is advisory and this server-side guard is the one that counts.
+
+4.3 **R-05, legacy member (D-04 #3).** If/Else, action name = "Has owner link": Branch "Legacy" -> conditions joined with OR: Owner Contact ID is empty OR Hint Membership ID is empty -> refuse (§0.5, no restore needed): Note = "Legacy member without an owner link. Needs backfill before an individual consent can be sent." Notification with the same text. End. None -> 4.4.
+
+A missing member Consent Hub Token is NOT a refusal. Step 4.6 mints one on the first send, which is how CONS-02's token condition is met.
+
+4.4 **R-06, email equals the owner's (D-04 #4).**
+1. **Find Contact**, action name = "Find owner (email compare)" -> match Contact ID (`id`) is `{{contact.owner_contact_id}}`. Multi-path on.
+2. **Contact not found** -> restore the member (Find Contact -> id == `{{inboundWebhookRequest.contactId}}`) -> refuse with R-05's text plus a suffix: Note = "Legacy member without an owner link. Needs backfill before an individual consent can be sent. (owner contact not found)". Notification with the same text. End.
+3. **Contact found** -> the context is now the owner. If/Else, action name = "Shares the owner's email": Branch "Same email" -> Email (the owner's `{{contact.email}}`) is (equals) `{{inboundWebhookRequest.email}}` (the member email shown on the record when staff clicked). None = different emails.
+4. On BOTH outcomes, the first action is **Find Contact**, action name = "Restore member" -> id == `{{inboundWebhookRequest.contactId}}`, which switches the context back to the member. (Its own "not found" path cannot happen, because §2 found this id seconds earlier; route it to the R-01 notification and End.)
+5. "Same email", after the restore -> refuse: Note = "Member's email matches the owner's. Use Resend Consent Hub link on the owner." Notification with the same text. End.
+6. None (different), after the restore -> 4.5.
+
+verify in ClinX UI (V-05): how ClinX exposes the found-contact context. Check three things on the run log of the first Phase 6 test: (a) after "Find owner (email compare)", `{{contact.email}}` is the owner's; (b) after "Restore member", `{{contact.*}}`, the Note, and the Send Email recipient are the member again; (c) after a Find Contact that finds nothing, the context is still the member (the R-05 Note lands on the member either way, because 4.4 step 2 restores explicitly). Also record whether the equals compare is case-sensitive (test with the owner's email typed in different case on a test member). If ClinX compares case-sensitively, write that in §10 and accept it: staff-typed emails are almost always lowercase. If (a) or (b) differ: use the D-04 alternative below.
+
+The payload `email` is the on-screen value at click time, while 4.7 sends to the email saved on the record. If staff edited the email and did not save, the two can differ, so staff should save the record before pressing the item.
+
+D-04's acceptable alternative: drop 4.4 entirely and rely on 4.2's synthetic checks. Residual risk: staff typed the owner's real email by hand onto the member record (wf1 never does this; Build Dependents swaps a shared signup email for the synthetic key). The member email then reaches the owner's inbox with a member-only link.
+
+4.5 **R-07, already complete (D-04 #5).** If/Else, action name = "Already complete": Branch "Complete" -> Consent Status is `complete` -> refuse (§0.5; the context is the member after 4.4's restore): Note = "Already complete. Nothing to send." Notification with the same text. End. None -> 4.6. Use the value the Form Submitted workflow a56137e1 writes (`complete`, design §5.8); if Consent Status shows as a dropdown, pick that option.
+
+4.6 **Member token (D-05a).** If/Else, action name = "Member has a hub token": Branch "No token" -> Consent Hub Token is empty -> steps 1-4 below, then 4.7. None (a token exists) -> reuse it, write nothing (the member's link never changes) -> 4.7. HighLevel branches do not rejoin, so under None either add a Go To action pointing at 4.7's first action (if the plan offers Go To) or repeat 4.7's three actions there.
+
+1. **Custom Code**, action name = "Mint member hub token" -> Language = JavaScript -> Input properties = none (no `inputData` keys) -> Code = the block below, pasted exactly.
+
+<!-- custom-code:js:start -->
+```js
+// Mint a member Consent Hub Token: "adhoc_" + 64 lowercase hex (32 cryptographic random bytes).
+// Cryptographic sources only. If neither exists, throw: do not publish, stop and tell Rob.
+var bytes = null;
+if (typeof crypto !== 'undefined' && crypto && typeof crypto.getRandomValues === 'function') {
+  bytes = crypto.getRandomValues(new Uint8Array(32));
+} else if (typeof require === 'function') {
+  try {
+    bytes = require('crypto').randomBytes(32);
+  } catch (e) {
+    bytes = null;
+  }
+}
+if (!bytes || bytes.length !== 32) {
+  throw new Error('No cryptographic random source in this runtime. Do not publish: stop and tell Rob.');
+}
+var hex = '';
+for (var i = 0; i < bytes.length; i++) {
+  hex += (bytes[i] < 16 ? '0' : '') + bytes[i].toString(16);
+}
+output = { token: 'adhoc_' + hex };
+```
+<!-- custom-code:js:end -->
+
+2. Click **Test your Code**. It is mandatory: HighLevel gives later steps no output from code that was never tested. The test result shows a sample `adhoc_` token. It is not written to any contact; do not copy it anywhere.
+3. **Update Contact Field**, action name = "Save member hub token" -> field = Consent Hub Token -> value = the Custom Code output `token`.
+4. Continue to 4.7.
+
+verify in ClinX UI (V-06): Custom Code is available on this location's plan (it is a Premium action). If it differs (the action is missing or locked): do not build 4.6 another way; stop and tell Rob.
+
+verify in ClinX UI (V-07): the Custom Code output variable name and merge syntax. HighLevel documents `output = { ... }` but not how later steps reference it. In the Update Contact Field value, open the merge-field picker, find the Custom Code step's `token`, insert it, and write the exact inserted text into §10. If it differs (no picker entry): re-run Test your Code, then reopen the picker; if `token` still does not appear, stop and tell Rob.
+
+verify in ClinX UI (V-08): crypto is available in the Custom Code runtime, meaning Test your Code returns `adhoc_` plus 64 hex characters and no error. Math.random is not acceptable as a fallback, because the token is the only key to the member's hub. If neither crypto source works, do not publish: stop and tell Rob. Selecting Python with `secrets.token_hex(32)` (prefixed with `adhoc_`) is a cryptographic alternative Rob may approve.
+
+verify in ClinX UI (V-09): the Update Contact Field value is visible to the next Send Email. In the first Phase 6 test send, the email's button link must end in `?t=adhoc_` plus 64 hex. If it differs (empty or stale token in the link): add a Find Contact -> id == `{{inboundWebhookRequest.contactId}}` right after "Save member hub token" to reload the member, and test again.
+
+verify in ClinX UI (V-11): no other workflow triggers on a Consent Hub Token change. Automation -> Workflows -> filter by trigger type Contact Changed (and any custom-field-changed trigger) and confirm none watches Consent Hub Token. If one does: do not publish until Rob has read that workflow.
+
+**F-2, token format.** wf1 mints owner tokens with `crypto.randomBytes(16).toString('hex')` (32 hex characters) in Build Dependents and in Prep Owner Update (Solo). This member token is `adhoc_` plus 64 hex per D-05a (32 bytes, 70 characters in total, the same lowercase hex alphabet). No consumer checks the token's length or format (Plan 05-01 harness: wf2 Has Token? and Find Owner by Token, and hub v11's `?t=` reading). The prefix means a member token can never equal a wf1 owner token, makes it recognizable in contact records and logs, and is URL-safe.
+
+4.7 **Pass (D-05).** The context is the member.
+1. **Add Contact Tag** -> `consent-pending` (adding a tag the contact already has is a no-op).
+2. **Send Email**, action name = "Member consent email" -> Template = "Member Consent Forms" -> Subject = "Your Xcelsior consent forms" -> recipient = the member in context -> From Name blank, From Email blank -> Track link clicks = OFF (V-04). Save, then reopen the action and confirm the template still renders in the preview.
+3. **Add Note** -> "Individual consent email sent by staff via Actions menu (request {{inboundWebhookRequest.requestId}})".
+4. End.
+
+This branch never changes `consent_status` or any owner field, because the completion path (Form Submitted a56137e1, then wf3) does that.
+
+4.8 **Side effects checked (D-05a confirmations).** A member holding an `adhoc_` token breaks nothing downstream:
+- wf1 **Check Idempotency** reads `consent_hub_token` and `hint_membership_id` from the Upsert Owner response, which is the owner's record, so a member's token can never trip `already`.
+- wf1 **Build Dependents** never writes `consent_hub_token` (its upsert body carries hint_patient_id, hint_membership_id, member_type, and owner_contact_id only), so a re-signup leaves the member token alone.
+- wf3 (`n8n/3-consent-completed.json`) has 0 `consent_hub_token` references, and its **Compute Completion** counts dependents found by `hint_membership_id` against the owner, so the member's completion still lands on the owner's hub.
+- wf2 finds the holder by exact token match, and Build Status v9 scopes a member-held token to that member's card (Plan 05-01).
+
 ## 5. Branch B: resend-consent-hub
 
 Goal (D-06): send the owner the same Consent Hub Invite the Consents Needed workflow ("Family Consent - Consents Needed Email", `d6cf9af1-7fed-4182-a8d6-69ca2725d427`) sends, whether staff clicked on the owner or on a member.
