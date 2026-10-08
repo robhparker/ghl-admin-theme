@@ -18,6 +18,12 @@ findings:
   info: 5
   total: 8
 status: issues_found
+fixes:
+  fixed_at: 2026-10-08T01:27:53Z
+  fixed: [WR-01, WR-02, IN-02, IN-03, IN-04]
+  deferred: [WR-03]
+  skipped: [IN-01, IN-05]
+  tests_after: 164/164
 ---
 
 # Phase 4: Code Review Report
@@ -136,8 +142,24 @@ The D-07 guarantee is therefore unproven in both the shim and the harness. It re
 **Issue:** Activation closes the menu immediately, but the trigger flashes only when the result arrives. Until the response comes back (up to the fetch timeout), staff see an unchanged "Actions" button and no "Sending..." state (D-09). The state gate still prevents a duplicate send, but the lack of feedback invites repeated attempts and confusion.
 **Fix:** Call `flashTrigger(el, 'submitting', 'Sending...', '')` (without a timeout, or with the result flash replacing it) when an item enters `submitting`, and add a matching `[data-ghlc-flash="submitting"]` style.
 
+## Fixes applied
+
+**Applied:** 2026-10-08 by gsd-code-fixer, in an isolated git worktree on a temporary branch that was fast-forwarded onto `main`. Each fix was verified there with `node test/run.mjs` (zero-dependency, so the result is the same as in the main checkout). Suite: `PASS 158/158` before the fixes, `PASS 164/164` after. Every new test was confirmed to fail with the source change reverted. The D-03 byte-for-byte v0.1.2 snapshot test still passes, as do all static checks (ES2019, forbidden tokens, ten section markers, adapter-only selectors, ghlc-scoped CSS).
+
+| Finding | Status | Commit | What changed |
+|---------|--------|--------|--------------|
+| WR-01 | fixed (needs human verification, since this is a state-handling change) | `cc30703` | `runWebhook` records the send in `state.inflight[ctx\|id]` when it starts. A new `settleBoundState` helper (used by `createButtonEl`, `refreshRequires`, and `recoverNoContactFields`) renders a re-created control as `submitting` while that send is in flight, and as `queued` while its cooldown runs. When the result lands, the cooldown is recorded against the contact even if the sending element is gone. A same-contact, current-generation replacement that shows Sending… (`findLiveControl`) takes the result and the trigger flash. Results for other contexts are still discarded. `recoverNoContactFields` previously reset to `ready` without checking the cooldown; it now honors it too. New scenarios rebuild the name row mid-send for a plain button and for a menu item, and each proves exactly one POST inside 60 s and a reopened guard after 60 s. |
+| WR-02 | fixed | `3cbdd97` | `validateButton` rejects any present `requires` other than exactly `{ "email": "real" }`: `"Real"`, `true`, an unknown key, an extra key, a string, `null`, `{}`, or an array. The config is then invalid and is not adopted, which is the existing convention. `meetsRequires` also fails closed on an unrecognised rule. The README row and the schema comment document this. Tests cover all of the shapes above, plain buttons, and an end-to-end case in which a misconfigured config renders nothing and sends nothing. |
+| IN-03 | fixed | `2dbf6c9` | The panel id is now `ghlc-menupanel-<id>` and the trigger id is `ghlc-menutrigger-<id>`. A new scenario shows that menus `a` and `a-trigger` get four distinct ids and that their ARIA links resolve. |
+| IN-04 | fixed | `5ca798c` | The README override row now says that for a menu item, `true` (or an object) only overrides the item's own scope, and that the menu's `scope` still decides where the menu appears. |
+| IN-02 | fixed (trivial) | `3f68875` | `onMenuKeydown` consumes every key it handles (`preventDefault` + `stopPropagation`). Tab and unhandled keys still bubble. A new scenario checks this with a document-level keydown listener. |
+| WR-03 | deferred | — | This needs live verification against HighLevel's real overflow ancestors, so it becomes a Phase 6 live-test item. The harness `.hx-tight` realism change and any `position: fixed` or Popover rework depend on that result. |
+| IN-01 | skipped | — | Not risk-free. A `focusout` close also fires with `relatedTarget === null` when someone clicks non-focusable panel padding, which would close the menu unexpectedly. It needs a design and a live check. |
+| IN-05 | skipped | — | Not trivial. It adds a new trigger flash state plus CSS. Defer it to a UX pass. |
+
 ---
 
 _Reviewed: 2026-10-07_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: quick_
+_Fixes applied: 2026-10-08 (gsd-code-fixer)_
