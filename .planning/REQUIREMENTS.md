@@ -31,12 +31,12 @@ Inputs: `notes/actions-menu-individual-consent.md` (decisions), `notes/webhook-t
 
 ### Consent workflow (ClinX 365 build spec)
 
-- [ ] **CONS-01**: A step-by-step build spec covers one new Inbound Webhook workflow for both consent items: its trigger, Find Contact by `{{inboundWebhookRequest.contactId}}` (never email or phone), a "not found" branch with an internal notification, and a branch on `{{inboundWebhookRequest.buttonId}}`.
-- [ ] **CONS-02**: The individual-consent branch refuses unless all of these hold: the contact has the `family-member` tag; it lacks the `synthetic-email` tag; its email differs from the owner's; it has `owner_contact_id` and `consent_hub_token`; and `consent_status` is not `complete`.
-- [ ] **CONS-03**: Each refusal writes a contact Note and an internal notification that state the reason and the staff fix. Shared or synthetic email points staff to "Resend Consent Hub link" on the owner. A legacy member without an owner link or token is called out as such.
-- [ ] **CONS-04**: On pass, the individual-consent branch adds `consent-pending` and sends the member email "Your Xcelsior consent forms" to the member's own address, linking to their own `consent_hub_token`.
-- [ ] **CONS-05**: The resend-hub branch re-sends the Family Consent Hub Invite to the owner. On a member record it first does Find Contact by `{{contact.owner_contact_id}}`; on the owner's record it sends directly. It refuses with a Note when no owner or token resolves.
-- [ ] **CONS-06**: The spec renames "WEBHOOK TEST Send Hint JOIN LINK & Reminders" for production, leaving its trigger and steps unchanged. It includes the reload-after-save check (trigger multi-selects revert silently). It marks "verify in ClinX UI" on whether `{{contact.*}}` after Find Contact is the found contact.
+- [x] **CONS-01**: A step-by-step build spec covers one new Inbound Webhook workflow for both consent items: its trigger, Find Contact by `{{inboundWebhookRequest.contactId}}` (never email or phone), a "not found" branch with an internal notification, and a branch on `{{inboundWebhookRequest.buttonId}}`.
+- [x] **CONS-02**: The individual-consent branch refuses unless all of these hold: the contact has the `family-member` tag; it lacks the `synthetic-email` tag; its email differs from the owner's; it has `owner_contact_id` and `consent_hub_token`; and `consent_status` is not `complete`.
+- [x] **CONS-03**: Each refusal writes a contact Note and an internal notification that state the reason and the staff fix. Shared or synthetic email points staff to "Resend Consent Hub link" on the owner. A legacy member without an owner link or token is called out as such.
+- [x] **CONS-04**: On pass, the individual-consent branch adds `consent-pending` and sends the member email "Your Xcelsior consent forms" to the member's own address, linking to their own `consent_hub_token`.
+- [x] **CONS-05**: The resend-hub branch re-sends the Family Consent Hub Invite to the owner. On a member record it first does Find Contact by `{{contact.owner_contact_id}}`; on the owner's record it sends directly. It refuses with a Note when no owner or token resolves.
+- [x] **CONS-06**: The spec renames "WEBHOOK TEST Send Hint JOIN LINK & Reminders" for production, leaving its trigger and steps unchanged. It includes the reload-after-save check (trigger multi-selects revert silently). It marks "verify in ClinX UI" on whether `{{contact.*}}` after Find Contact is the found contact.
 
 ### Hub and member email
 
@@ -93,12 +93,12 @@ Deferred (see `seeds/consent-actions-hardening.md`):
 | ITEM-05 | Phase 4 | Complete |
 | ITEM-06 | Phase 4 | Complete |
 | ITEM-07 | Phase 4 | Complete |
-| CONS-01 | Phase 5 | Pending |
-| CONS-02 | Phase 5 | Pending |
-| CONS-03 | Phase 5 | Pending |
-| CONS-04 | Phase 5 | Pending |
-| CONS-05 | Phase 5 | Pending |
-| CONS-06 | Phase 5 | Pending |
+| CONS-01 | Phase 5 | Complete |
+| CONS-02 | Phase 5 | Complete |
+| CONS-03 | Phase 5 | Complete |
+| CONS-04 | Phase 5 | Complete |
+| CONS-05 | Phase 5 | Complete |
+| CONS-06 | Phase 5 | Complete |
 | HUB-01 | Phase 5 | Complete |
 | HUB-02 | Phase 5 | Pending |
 | HUB-03 | Phase 5 | Pending |
