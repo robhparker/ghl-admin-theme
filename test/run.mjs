@@ -4239,6 +4239,108 @@ scenario("menu items: a late result for a previous contact never lands on the ne
   assert.equal(shim.errors.length, 0);
 });
 
+// Review 04 WR-01: HighLevel rebuilds the name row while a POST is in flight.
+// The replacement must not be ready, must take the result, and must keep the
+// full 60 s guard; exactly one POST for the whole window.
+scenario('review 04 WR-01: a plain button rebuilt mid-send never POSTs again within 60 s', async () => {
+  const fixture = loadFixture();
+  fixture.buttons.find((b) => b.id === 'sendInvite').action.cooldownMs = 60000;
+  const { shim } = await bootContactPage({ fixture });
+  shim.setFetchMode('hold');
+  const first = invite(shim);
+  first.click();
+  assert.equal(first.getAttribute('data-state'), 'submitting');
+  shim.setContact(JANE);
+  await shim.flush();
+  const mid = invite(shim);
+  assert.notEqual(mid, first, 'the button was recreated by the re-render');
+  assert.equal(first.isConnected, false);
+  assert.equal(mid.getAttribute('data-ghlc-ctx'), 'locA|c1');
+  assert.equal(mid.getAttribute('data-state'), 'submitting', 'the replacement shows the in-flight send');
+  assert.ok(mid.disabled);
+  assert.equal(label(mid), 'Sending…');
+  mid.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 1, 'no second POST while the first is in flight');
+  shim.setFetchMode('ok');
+  shim.releaseFetch();
+  await shim.flush();
+  assert.equal(mid.getAttribute('data-state'), 'queued', 'the result lands on the replacement');
+  assert.equal(label(mid), 'Workflow triggered');
+  assert.equal(logCount(shim, 'webhook-discarded'), 0);
+  mid.click();
+  await shim.flush();
+  await shim.advanceTimers(1000);
+  shim.setContact(JANE);
+  await shim.flush();
+  const after = invite(shim);
+  assert.notEqual(after, mid, 'rebuilt again after the result');
+  assert.equal(after.getAttribute('data-state'), 'queued', 'the 60 s guard survives the second rebuild');
+  after.click();
+  await shim.flush();
+  await shim.advanceTimers(58998);
+  after.click();
+  await shim.flush();
+  assert.equal(after.getAttribute('data-state'), 'queued');
+  assert.equal(shim.fetchLog.length, 1, 'exactly one POST inside the 60 s window');
+  await shim.advanceTimers(2);
+  assert.equal(after.getAttribute('data-state'), 'ready', 'the cooldown expires 60 s after the result');
+  after.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 2, 'the guard reopens after 60 s');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('review 04 WR-01: a menu item rebuilt mid-send never POSTs again within 60 s', async () => {
+  const { shim } = await bootMenu();
+  shim.setFetchMode('hold');
+  const before = menuParts(shim);
+  const first = before.items[0];
+  before.trigger.click();
+  first.click();
+  assert.equal(first.getAttribute('data-state'), 'submitting');
+  shim.setContact(JANE);
+  await shim.flush();
+  const parts = menuParts(shim);
+  const mid = parts.items[0];
+  assert.ok(parts.wrapper !== before.wrapper && mid !== first, 'the menu was recreated by the re-render');
+  assert.equal(first.isConnected, false);
+  assert.equal(mid.getAttribute('data-ghlc-button-id'), 'tInvite');
+  assert.equal(mid.getAttribute('data-state'), 'submitting', 'the replacement item shows the in-flight send');
+  assert.equal(mid.getAttribute('aria-disabled'), 'true');
+  assert.equal(mid.getAttribute('aria-busy'), 'true');
+  parts.trigger.click();
+  mid.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 1, 'no second POST while the first is in flight');
+  assert.ok(isOpen(parts), 'an inert activation leaves the menu open');
+  shim.pressKey(mid, 'Escape');
+  shim.setFetchMode('ok');
+  shim.releaseFetch();
+  await shim.flush();
+  assert.equal(mid.getAttribute('data-state'), 'queued', 'the result lands on the replacement item');
+  assert.equal(label(parts.trigger), 'Actions · Workflow triggered', 'the live trigger flashes the result');
+  assert.equal(logCount(shim, 'webhook-discarded'), 0);
+  await shim.advanceTimers(1000);
+  shim.setContact(JANE);
+  await shim.flush();
+  const again = menuParts(shim);
+  const after = again.items[0];
+  assert.ok(after !== mid, 'rebuilt again after the result');
+  assert.equal(after.getAttribute('data-state'), 'queued', 'the 60 s guard survives the second rebuild');
+  again.trigger.click();
+  after.click();
+  await shim.flush();
+  await shim.advanceTimers(58998);
+  after.click();
+  await shim.flush();
+  assert.equal(after.getAttribute('data-state'), 'queued');
+  assert.equal(shim.fetchLog.length, 1, 'exactly one POST inside the 60 s window');
+  await shim.advanceTimers(2);
+  assert.equal(after.getAttribute('data-state'), 'ready', 'the cooldown expires 60 s after the result');
+  assert.equal(shim.errors.length, 0);
+});
+
 scenario('menu items: a stale click on an item is refused and sends nothing', async () => {
   const { shim } = await bootMenu();
   const parts = menuParts(shim);

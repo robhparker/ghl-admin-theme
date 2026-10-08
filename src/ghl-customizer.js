@@ -896,6 +896,10 @@
     // Lives in state, not on the element, so a native re-render of the region
     // inside the cooldown window recreates the button still disabled.
     cooldowns: Object.create(null),
+    // Review 04 WR-01: webhook sends in flight, keyed like cooldowns. Set when
+    // the POST starts and cleared when it settles, so a control re-rendered
+    // mid-send renders Sending… (inert) instead of ready.
+    inflight: Object.create(null),
     ready: null,
     hooksInstalled: false,
     navTimer: null,
@@ -1285,16 +1289,26 @@
       markNeedsRealEmail(el);
     } else {
       bindClick(button, el);
-      var until = state.cooldowns[ctxKey() + '|' + button.id];
-      if (action.kind === 'webhook' && until && until > Date.now()) {
-        // Re-rendered inside a cooldown window: stay queued for the remainder.
-        setState(el, 'queued', { message: MSG_COOLDOWN_RESTORED });
-        startCooldown(action, el, until - Date.now());
-      } else {
-        setState(el, 'ready');
-      }
+      settleBoundState(action, button.id, el);
     }
     return el;
+  }
+
+  // The state a bound control takes when it is rendered or recovered: a
+  // webhook whose send for this ctx|id is still in flight shows Sending…
+  // (review 04 WR-01); one inside a cooldown window stays queued for the
+  // remainder; anything else is ready.
+  function settleBoundState(action, buttonId, el) {
+    var key = ctxKey() + '|' + buttonId;
+    var until = state.cooldowns[key];
+    if (action.kind === 'webhook' && state.inflight[key]) {
+      setState(el, 'submitting');
+    } else if (action.kind === 'webhook' && until && until > Date.now()) {
+      setState(el, 'queued', { message: MSG_COOLDOWN_RESTORED });
+      startCooldown(action, el, until - Date.now());
+    } else {
+      setState(el, 'ready');
+    }
   }
 
   // The click listener is attached at most once per element (data-ghlc-bound).
@@ -1314,7 +1328,8 @@
     if (!contactFieldsReadable()) return;
     el.removeAttribute('data-' + NS + '-reason');
     bindClick(button, el);
-    setState(el, 'ready');
+    // Review 04 WR-01: an in-flight send or a running cooldown still holds.
+    settleBoundState(resolveAction(button), button.id, el);
     cancelContactFieldsWait();
   }
 
@@ -1323,7 +1338,9 @@
   // button and a hidden role=menu panel of native menuitem controls. Each
   // item is a normal button record, so resolveAction, bindClick, runWebhook,
   // startCooldown, and refuseStaleClick apply unchanged. The panel is hidden,
-  // never detached, so an in-flight result still lands on its item.
+  // never detached, so an in-flight result still lands on its item; if
+  // HighLevel rebuilds the name row mid-send, the same-contact replacement
+  // renders Sending… and takes the result instead (findLiveControl).
 
   function menuItemIds(menu) {
     return menu.items.map(function (item) { return item.id; }).join(',');
@@ -1858,14 +1875,7 @@
       if (!meetsRequires(button)) return;
       el.removeAttribute('data-' + NS + '-reason');
       bindClick(button, el);
-      var action = resolveAction(button);
-      var until = state.cooldowns[ctxKey() + '|' + button.id];
-      if (action.kind === 'webhook' && until && until > Date.now()) {
-        setState(el, 'queued', { message: MSG_COOLDOWN_RESTORED });
-        startCooldown(action, el, until - Date.now());
-      } else {
-        setState(el, 'ready');
-      }
+      settleBoundState(resolveAction(button), button.id, el);
       return;
     }
     if (reason) return;
@@ -1971,35 +1981,66 @@
       return Promise.resolve();
     }
     var payload = buildPayload(button, action, email, phone);
+    // Review 04 WR-01: the send is recorded against ctx|id when it starts, so
+    // a control HighLevel re-renders mid-send comes back Sending… (inert).
+    var key = el.getAttribute('data-' + NS + '-ctx') + '|' + button.id;
+    state.inflight[key] = true;
     setState(el, 'submitting');
     log('webhook-start', { buttonId: button.id, generation: gen });
     return sendWebhook(action.url, payload).then(function (result) {
+      delete state.inflight[key];
+      var queued = result.outcome === 'ok' || result.outcome === 'unconfirmed';
+      // The cooldown belongs to the contact, not the element: record it even
+      // when the element that sent is gone, so no replacement can resend.
+      if (queued) state.cooldowns[key] = Date.now() + action.cooldownMs;
+      var target = el;
       if (gen !== state.generation || !el.isConnected) {
-        log('webhook-discarded', { buttonId: button.id, generation: gen });
-        return;
+        // A same-contact replacement rendered while the send was in flight
+        // shows Sending…; it takes the result. Other contexts never do.
+        target = findLiveControl(key, button.id);
+        if (!target) {
+          log('webhook-discarded', { buttonId: button.id, generation: gen });
+          return;
+        }
       }
       var cooldownMs;
-      var item = isMenuItem(el);
+      var item = isMenuItem(target);
       if (result.outcome === 'ok') {
-        setState(el, 'queued');
-        if (item) flashTrigger(el, 'ok', 'Workflow triggered', '');
-        cooldownMs = startCooldown(action, el);
+        setState(target, 'queued');
+        if (item) flashTrigger(target, 'ok', 'Workflow triggered', '');
+        cooldownMs = startCooldown(action, target);
         log('webhook-queued', { buttonId: button.id, generation: gen, cooldownMs: cooldownMs });
       } else if (result.outcome === 'unconfirmed') {
-        setState(el, 'queued', { label: 'Sent (unconfirmed)', message: MSG_UNCONFIRMED });
-        if (item) flashTrigger(el, 'ok', 'Sent (unconfirmed)', MSG_UNCONFIRMED);
-        cooldownMs = startCooldown(action, el);
+        setState(target, 'queued', { label: 'Sent (unconfirmed)', message: MSG_UNCONFIRMED });
+        if (item) flashTrigger(target, 'ok', 'Sent (unconfirmed)', MSG_UNCONFIRMED);
+        cooldownMs = startCooldown(action, target);
         log('webhook-unconfirmed', { buttonId: button.id, generation: gen, cooldownMs: cooldownMs });
       } else if (result.outcome === 'network') {
-        setState(el, 'failed', { message: result.message });
-        if (item) flashTrigger(el, 'failed', 'Failed', result.message);
+        setState(target, 'failed', { message: result.message });
+        if (item) flashTrigger(target, 'failed', 'Failed', result.message);
         log('webhook-network', { buttonId: button.id, status: 0 });
       } else {
-        setState(el, 'failed', { message: result.message });
-        if (item) flashTrigger(el, 'failed', 'Failed', result.message);
+        setState(target, 'failed', { message: result.message });
+        if (item) flashTrigger(target, 'failed', 'Failed', result.message);
         log('webhook-failed', { buttonId: button.id, status: result.status || 0 });
       }
     });
+  }
+
+  // The on-screen control for ctx|id in the current generation that is
+  // waiting on an in-flight send (rendered Sending… by settleBoundState), or null.
+  function findLiveControl(key, buttonId) {
+    var found = null;
+    findGroups('contact').forEach(function (group) {
+      Array.prototype.slice.call(group.querySelectorAll(OWN.buttonSel)).forEach(function (el) {
+        if (found || el.getAttribute('data-' + NS + '-button-id') !== buttonId) return;
+        if (el.getAttribute('data-' + NS + '-ctx') + '|' + buttonId !== key) return;
+        if (el.getAttribute('data-' + NS + '-generation') !== String(state.generation)) return;
+        if (el.getAttribute('data-state') !== 'submitting') return;
+        found = el;
+      });
+    });
+    return found;
   }
 
   // Runs a registry handler with the same stale-click and generation guards
