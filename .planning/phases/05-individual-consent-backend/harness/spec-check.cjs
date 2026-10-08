@@ -598,6 +598,14 @@ if (args.stage >= 3) {
     return true;
   });
 
+  check('(z2) 5.3 never treats an adhoc_ token holder as an owner (code review IN-02)', () => {
+    const s5 = section(H2[5]) || '';
+    const s53 = s5.slice(s5.indexOf('5.3 **Owner path**'), s5.indexOf('5.4 **Send the same invite'));
+    if (!s53) return '5.3 not found';
+    if (/Member Type is `owner` OR Consent Hub Token is not empty\./.test(s53)) return '5.3 still accepts any token as owner';
+    return /Consent Hub Token is not empty AND Consent Hub Token does not contain `adhoc_`/.test(s53) || '5.3 lacks the adhoc_ exclusion';
+  });
+
   check('(r) section 11 mentions Draft and adhoc_', () => {
     const s11 = section(H2[11]);
     if (s11 === null) return 'section 11 missing';
