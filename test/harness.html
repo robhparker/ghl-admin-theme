@@ -36,6 +36,8 @@
     #record-details-lhs label { display: block; margin-top: 10px; font-size: 12px; color: #667085; }
     #record-details-lhs input { width: 100%; box-sizing: border-box; padding: 4px 6px; font: inherit; font-size: 13px; }
     #delete-contact-trigger { cursor: pointer; color: #98a2b3; }
+    /* "Tighten name row": a short, tinted name row so the open Actions panel visibly overlays it (D-07). */
+    #record-details-lhs .hx-name-row.hx-tight { height: 24px; background: #fef0c7; }
     .hx-placeholder { padding: 24px; background: #ffffff; border: 1px dashed #d0d5dd; border-radius: 8px; color: #667085; }
     .hx-panel { margin-top: 24px; padding: 16px; background: #ffffff; border: 1px solid #eaecf0; border-radius: 8px; }
     .hx-panel h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: #667085; }
@@ -59,6 +61,10 @@
     <code>GHLC.verify().theme</code>). The fixture themes Location A (dark sidebar, orange buttons, grey
     active item) and Location B (an invalid primary falls back to the agency teal; a white-on-near-white
     sidebar pair falls back to dark text); Location C, Z, and the agency view keep the native sidebar.
+    Location M contacts show the <strong>Actions menu</strong> (click, Enter, Space, or ArrowDown to open;
+    arrows, Home, End, Esc, Tab), with a "Not configured" item and a consent item that is unavailable for a
+    synthetic email; the <strong>Actions menu</strong> controls flip the email without a DOM mutation and
+    tighten the name row to show the panel is not clipped.
   </div>
 
   <div class="hx-layout">
@@ -90,6 +96,8 @@
             <button type="button" data-hx-go="/v2/location/locA/contacts/detail/cY">Location A · Contact Y</button>
             <button type="button" data-hx-go="/v2/location/locA/dashboard">Location A · Dashboard</button>
             <button type="button" data-hx-go="/v2/location/locB/contacts/detail/cZ">Location B · Contact Z</button>
+            <button type="button" data-hx-go="/v2/location/locM/contacts/detail/cX">Location M · Contact X (Actions menu)</button>
+            <button type="button" data-hx-go="/v2/location/locM/contacts/detail/cS">Location M · Contact S (synthetic email)</button>
             <button type="button" data-hx-go="/v2/location/locC/dashboard">Location C · broken logo</button>
             <button type="button" data-hx-go="/v2/location/locZ/dashboard">Location Z · unconfigured</button>
             <button type="button" data-hx-go="/v2/agency/dashboard">Agency dashboard</button>
@@ -113,6 +121,12 @@
             <button type="button" id="hx-toggle-sidebar">Collapse/expand sidebar</button>
             <button type="button" id="hx-replace-sidebar">Replace whole sidebar</button>
             <button type="button" id="hx-toggle-nav">Toggle active nav item</button>
+          </div>
+
+          <h3>Actions menu</h3>
+          <div class="hx-row">
+            <button type="button" id="hx-clip-name-row">Tighten name row</button>
+            <button type="button" id="hx-synthetic-email">Toggle synthetic email (no mutation)</button>
           </div>
 
           <h3>Webhook stub</h3>
@@ -200,8 +214,10 @@
       var CONTACTS = {
         cX: { name: 'Contact X', email: 'x@example.test', phone: '+15555550001' },
         cY: { name: 'Contact Y', email: 'y@example.test', phone: '+15555550002' },
-        cZ: { name: 'Contact Z', email: 'z@example.test', phone: '+15555550003' }
+        cZ: { name: 'Contact Z', email: 'z@example.test', phone: '+15555550003' },
+        cS: { name: 'Contact S (synthetic email)', email: 'owner+12@example.test', phone: '+15555550004' }
       };
+      var SYNTHETIC_EMAIL = 'owner+12@example.test';
 
       var main = document.getElementById('hx-main');
       // The sidebar can be replaced wholesale by the "Replace whole sidebar"
@@ -404,6 +420,27 @@
         if (!old || !m) { hxLog({ time: new Date().toISOString(), harness: 'no contact toolbar to re-render' }); return; }
         old.replaceWith(buildContactBlock(m[2]));
         hxLog({ time: new Date().toISOString(), harness: 're-rendered contact toolbar' });
+      });
+      // Actions menu (Phase 4). Toggles a class on the current name row so the
+      // open panel can be seen overlaying a short row instead of stretching it or
+      // being cut by it (D-07). Looked up fresh: the contact block is rebuilt on navigation.
+      document.getElementById('hx-clip-name-row').addEventListener('click', function () {
+        var row = document.querySelector('#record-details-lhs .hx-name-row');
+        if (!row) { hxLog({ time: new Date().toISOString(), harness: 'hx-clip-name-row: no contact block (open a contact first)' }); return; }
+        var tight = row.classList.toggle('hx-tight');
+        hxLog({ time: new Date().toISOString(), harness: 'hx-clip-name-row: name row ' + (tight ? 'tightened to 24px' : 'restored') + '; open the Actions menu to see the panel overlay it' });
+      });
+      // Sets the email input's value property only: no attribute or child changes,
+      // so no MutationObserver fires. The requires rule is re-read when the menu opens.
+      document.getElementById('hx-synthetic-email').addEventListener('click', function () {
+        var input = document.querySelector('#record-details-lhs [id="contact.email"] input');
+        var m = CONTACT_RE.exec(location.pathname);
+        if (!input || !m) { hxLog({ time: new Date().toISOString(), harness: 'hx-synthetic-email: no contact email field (open a contact first)' }); return; }
+        var own = (CONTACTS[m[2]] || { email: '' }).email;
+        // Contact S's own address is already synthetic, so its "real" side is a stand-in address.
+        if (own === SYNTHETIC_EMAIL) own = 'member@example.test';
+        input.value = input.value === SYNTHETIC_EMAIL ? own : SYNTHETIC_EMAIL;
+        hxLog({ time: new Date().toISOString(), harness: 'hx-synthetic-email: email is now ' + (input.value === SYNTHETIC_EMAIL ? 'synthetic' : 'the contact\'s own') + ' (no DOM mutation); reopen the Actions menu to re-evaluate the consent item' });
       });
       document.getElementById('hx-route-event').addEventListener('click', function () {
         window.dispatchEvent(new CustomEvent('routeChangeEvent'));

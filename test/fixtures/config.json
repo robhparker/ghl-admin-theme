@@ -110,5 +110,59 @@
         "handler": "copyContactId"
       }
     }
+  ],
+  "menus": [
+    {
+      "id": "harnessActions",
+      "label": "Actions",
+      "icon": "menu",
+      "placement": "contact",
+      "scope": ["locM"],
+      "items": [
+        {
+          "id": "menuInvite",
+          "label": "Send Invite (harness)",
+          "icon": "send",
+          "action": {
+            "type": "webhook",
+            "url": "https://services.leadconnectorhq.com/hooks/TEST-MENU",
+            "cooldownMs": 5000,
+            "extraFields": { "source": "ghlc-harness" }
+          }
+        },
+        {
+          "id": "menuConsent",
+          "label": "Send consent (harness)",
+          "icon": "mail",
+          "requires": { "email": "real" },
+          "action": {
+            "type": "webhook",
+            "url": "https://services.leadconnectorhq.com/hooks/TEST-CONSENT",
+            "cooldownMs": 5000,
+            "extraFields": { "source": "ghlc-harness" }
+          }
+        },
+        {
+          "id": "menuHub",
+          "label": "Resend hub link (harness)",
+          "icon": "mail",
+          "action": {
+            "type": "webhook",
+            "url": "",
+            "cooldownMs": 5000,
+            "extraFields": { "source": "ghlc-harness" }
+          }
+        },
+        {
+          "id": "menuCopy",
+          "label": "Copy contact ID",
+          "icon": "copy",
+          "action": {
+            "type": "handler",
+            "handler": "copyContactId"
+          }
+        }
+      ]
+    }
   ]
 }

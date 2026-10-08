@@ -266,6 +266,8 @@ check('readme: README.md documents install, hosting, config schema, and rollback
     'schemaVersion', 'enabled', 'logoMount', 'primary', 'sidebarBg', 'sidebarText', 'navActive', '#rrggbb', '4.5:1',
     'Inbound Webhook', 'email', 'phone', 'requestId', 'cooldownMs', 'extraFields', 'copyContactId',
     '?ghlc-debug=1', 'GHLC.verify()', 'npm test', 'npm run serve', 'git tag', 'NOTICE.md',
+    // Phase 4 (REL-04): menus[], the requires rule, "Not configured", and the consent item IDs.
+    'menus', 'xcelsiorActions', 'send-individual-consent', 'resend-consent-hub', '"requires"', 'Not configured', '### Actions menu', 'menuIds',
   ]) {
     assert.ok(readme.includes(s), `README must mention "${s}"`);
   }
@@ -300,6 +302,12 @@ check('harness: test/harness.html carries the required HighLevel shell, router h
   }
   const banner = /<div class="hx-banner">([\s\S]*?)<\/div>/.exec(harness);
   assert.ok(banner && /theme/i.test(banner[1]), 'the harness banner mentions the theme demo');
+  // Phase 4 (REL-01, MENU-05, D-07): Location M contacts carry the fixture's Actions menu,
+  // a synthetic-email contact, and the name-row and synthetic-email controls.
+  for (const s of ['locM/contacts/detail/cX', 'locM/contacts/detail/cS', 'owner+12@example.test', 'hx-clip-name-row', 'hx-synthetic-email', "getElementById('hx-clip-name-row')", "getElementById('hx-synthetic-email')"]) {
+    assert.ok(harness.includes(s), `harness must contain ${s}`);
+  }
+  assert.ok(/actions menu/i.test(banner[1]), 'the harness banner mentions the Actions menu');
 });
 
 check('config: both JSON files parse, validate, use HTTPS webhooks, and carry no secret-like keys', () => {
@@ -1869,7 +1877,7 @@ scenario('verify: report shape and hygiene', async () => {
   assert.deepEqual(plain(r.route), { locationId: 'locA', contactId: 'c1', isAgency: false });
   assert.equal(r.generation, 1);
   assert.equal(r.hooksInstalled, true);
-  assert.deepEqual(plain(r.config), { loaded: true, enabled: true, schemaVersion: 1, buttonIds: ['sendInvite', 'supportLink', 'locOnlyLink', 'badTypeBtn', 'badHandlerBtn', 'copyIdBtn'], menuIds: [] });
+  assert.deepEqual(plain(r.config), { loaded: true, enabled: true, schemaVersion: 1, buttonIds: ['sendInvite', 'supportLink', 'locOnlyLink', 'badTypeBtn', 'badHandlerBtn', 'copyIdBtn'], menuIds: ['harnessActions'] });
   assert.deepEqual(plain(r.mounts), {
     sidebar: true,
     header: true,
@@ -3485,9 +3493,11 @@ scenario('sample: no Xcelsior action renders at any other location or at agency 
 
 // ---------------------------------------------------------------------------
 // Actions menu (Phase 4)
-// The fixture stays buttons-only so every earlier scenario keeps proving D-03;
-// menu scenarios add a menus[] entry inline. Test code may use selector
-// literals; the static gate scans src only.
+// The fixture's only menu (harnessActions, Plan 04-03) is scoped to locM, so
+// every earlier locA/locB scenario renders exactly as v0.1.2; checks that must
+// prove a buttons-only config delete `menus` from a loaded copy. Menu scenarios
+// add a menus[] entry inline (withMenu replaces the fixture's). Test code may
+// use selector literals; the static gate scans src only.
 // ---------------------------------------------------------------------------
 
 // Node identity without assert.equal: a failing equal on two DOM nodes makes
@@ -4548,6 +4558,7 @@ scenario('menu verify: verify() reports configured menu ids', async () => {
 check('unit: validateConfig accepts menus and enforces one id namespace across buttons and items', () => {
   const api = throwawayApi();
   const base = loadFixture();
+  delete base.menus; // the buttons-only shape, as v0.1.2 shipped it
   const errorsOf = (cfg) => api.validateConfig(cfg).errors;
   const withItems = (items, extra = {}) => ({ ...base, menus: [testMenu({ items, ...extra })] });
   assert.equal(api.validateConfig(base).ok, true, 'the buttons-only fixture validates');
@@ -4575,7 +4586,10 @@ check('unit: validateConfig accepts menus and enforces one id namespace across b
 check('unit: resolveMenus applies menu scope, item scope, and per-item overrides', () => {
   const api = throwawayApi();
   assert.deepEqual(plain(api.resolveMenus(withMenu(), null)), []);
-  assert.deepEqual(plain(api.resolveMenus(loadFixture(), 'locA')), [], 'a config without menus');
+  const noMenus = loadFixture();
+  delete noMenus.menus;
+  assert.deepEqual(plain(api.resolveMenus(noMenus, 'locA')), [], 'a config without menus');
+  assert.deepEqual(plain(api.resolveMenus(loadFixture(), 'locA')), [], 'the fixture menu is scoped to locM only');
   const cfg = withMenu();
   const source = JSON.stringify(cfg);
   const menus = api.resolveMenus(cfg, 'locA');
@@ -4618,6 +4632,45 @@ check('unit: isSyntheticEmail matches the +digits@ dedupe pattern only', () => {
   for (const v of ['owner+12@example.test', 'a+0@b.c']) assert.equal(api.isSyntheticEmail(v), true, v);
   for (const v of ['owner+tag@example.test', 'jane@example.test', 'owner+@x.y', '', null, 42, undefined]) {
     assert.equal(api.isSyntheticEmail(v), false, String(v));
+  }
+});
+
+scenario("harness fixture: Location M shows the harness Actions menu and the fixture's other locations render as before", async () => {
+  const LOC_M_CONTACT = '/v2/location/locM/contacts/detail/c1';
+  {
+    const { shim } = await bootContactPage({ pathname: LOC_M_CONTACT });
+    assert.equal(shim.document.querySelectorAll('.ghlc-menu').length, 1, 'one Actions menu at Location M');
+    const parts = menuParts(shim, 'harnessActions');
+    assert.ok(parts.wrapper, 'the harnessActions menu rendered');
+    assert.deepEqual(parts.items.map((i) => i.getAttribute('data-ghlc-button-id')), ['menuInvite', 'menuConsent', 'menuHub', 'menuCopy']);
+    const [invite, consent, hub, copy] = parts.items;
+    assert.equal(hub.getAttribute('data-state'), 'unavailable');
+    assert.equal(hub.getAttribute('title'), 'Not configured', 'the empty-url item is "Not configured" (D-15)');
+    assert.equal(consent.getAttribute('data-state'), 'ready', 'a real email leaves the consent item ready');
+    assert.equal(invite.getAttribute('data-state'), 'ready');
+    assert.equal(copy.getAttribute('data-state'), 'ready');
+    const group = contactGroup(shim);
+    same(parts.wrapper.parentNode, group, 'the menu lives directly inside the contact group');
+    const children = [...group.childNodes];
+    for (const id of ['sendInvite', 'badHandlerBtn', 'copyIdBtn']) {
+      const btn = byId(shim, id);
+      assert.ok(btn, `${id} (scope all) still renders at Location M`);
+      same(btn.parentNode, group, `${id} is a direct child of the group`);
+      assert.ok(children.indexOf(btn) < children.indexOf(parts.wrapper), `${id} precedes the menu`);
+    }
+    assert.equal(shim.errors.length, 0);
+  }
+  {
+    const { shim } = await bootContactPage();
+    assert.equal(shim.document.querySelectorAll('.ghlc-menu').length, 0, 'no Actions menu at Location A');
+    assert.equal(shim.errors.length, 0);
+  }
+  {
+    const { shim } = await bootMenu(loadFixture(), { contact: { email: 'owner+12@example.test', phone: '+15555550004' }, pathname: LOC_M_CONTACT });
+    const parts = menuParts(shim, 'harnessActions');
+    assertNeedsReal(parts.items[1], 'menuConsent (synthetic email)');
+    assert.equal(parts.items[0].getAttribute('data-state'), 'ready', 'only the consent item is affected');
+    assert.equal(shim.errors.length, 0);
   }
 });
 

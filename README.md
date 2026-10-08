@@ -2,7 +2,7 @@
 
 ## What it does
 
-A small, configuration-driven customization layer for a HighLevel agency workspace. When staff switch locations it shows that location's logo in the sidebar, optionally applies the location's accent colors to the customizer's own buttons and the sidebar, and adds configurable buttons where staff work: link buttons in the global header and a "Send Invite" button on the individual contact record that triggers a HighLevel workflow through the workflow's Inbound Webhook trigger. It is one hosted vanilla JavaScript file, one scoped stylesheet, and one public JSON config; there is no build step and no framework.
+A small, configuration-driven customization layer for a HighLevel agency workspace. When staff switch locations it shows that location's logo in the sidebar, optionally applies the location's accent colors to the customizer's own buttons and the sidebar, and adds configurable buttons where staff work: link buttons in the global header, and on the individual contact record either plain buttons or an "Actions" menu whose items (Send Invite, for example) trigger a HighLevel workflow through the workflow's Inbound Webhook trigger. It is one hosted vanilla JavaScript file, one scoped stylesheet, and one public JSON config; there is no build step and no framework.
 
 HighLevel does not support custom JavaScript or CSS and can change its interface at any time. The script is written to degrade gracefully: if a mount point it expects is missing, that customization is simply omitted and the native UI stays usable.
 
@@ -80,21 +80,29 @@ The config is a JSON document with `schemaVersion` `1`. Field names below are th
 | `locations[id].logoUrl` | string | no | `https` URL of this location's logo. Shown while this location is active; falls back to the agency logo, then the native logo, if it fails to load. Any `https` image URL works, including the logo HighLevel already hosts for the location's Business Profile (the sample's Xcelsior Health entry); if that logo is re-uploaded in HighLevel, confirm the URL still resolves. |
 | `locations[id].logoAlt` | string | no | Alt text for this location's logo. |
 | `locations[id].theme` | object | no | Accent colors for this location; each key overrides the agency value for that key only. |
-| `locations[id].buttons` | object | no | Per-button overrides keyed by button `id`: `false` disables the button here, `true` enables it here even if it is out of scope, an object enables it and overrides `label`, `icon`, or `action`. `id`, `placement`, and `scope` are never overridable. |
+| `locations[id].buttons` | object | no | Per-button overrides keyed by button or menu item `id`: `false` disables the button here, `true` enables it here even if it is out of scope, an object enables it and overrides `label`, `icon`, or `action`. For a menu item, `false` hides only that item and an object may override its `label`, `icon`, or `action`. `id`, `placement`, and `scope` are never overridable. |
 | `buttons` | array | yes | The button definitions; may be empty. |
-| `buttons[].id` | string | yes | `[A-Za-z0-9_-]{1,64}`, unique across the array. Used as the `buttonId` in webhook payloads and as the key for location overrides. |
+| `buttons[].id` | string | yes | `[A-Za-z0-9_-]{1,64}`, unique across `buttons` and every menu's `items`. Used as the `buttonId` in webhook payloads and as the key for location overrides. |
 | `buttons[].label` | string | yes | Visible label. |
-| `buttons[].icon` | string | no | One of `send`, `mail`, `link`, `external`. Unknown names render no icon. |
+| `buttons[].icon` | string | no | One of `send`, `mail`, `link`, `external`, `menu`, `copy`. Unknown names render no icon. |
 | `buttons[].placement` | string | yes | `header` (global header controls) or `contact` (the contact record's name row). |
 | `buttons[].scope` | `all` or array | yes | `all`, or an array of location IDs the button appears in. Buttons never appear on agency-level pages. |
 | `buttons[].action` | object | yes | One of the three action types below. |
+| `menus` | array | no | Optional menus of actions; see "Actions menu". A config without `menus` renders exactly as one with plain buttons only. |
+| `menus[].id` | string | yes | `[A-Za-z0-9_-]{1,64}`, unique among menus. |
+| `menus[].label` | string | yes | The trigger's visible label. |
+| `menus[].icon` | string | no | Trigger icon; same names as `buttons[].icon`. |
+| `menus[].placement` | string | yes | Must be `contact`. |
+| `menus[].scope` | `all` or array | yes | The locations the menu appears in. |
+| `menus[].items` | array | yes | Button definitions without `placement` (the menu supplies it). An item's `scope` is optional and defaults to the menu's. |
+| `menus[].items[].requires` | object | no | `{ "requires": { "email": "real" } }` makes the item `unavailable` ("Needs the member's own email") while the record's email is empty or synthetic (`+<digits>@`, HighLevel's dedupe pattern). |
 
 ### Action types
 
 Only these three types exist. A button with any other type, or with an unsafe value, renders in the `unavailable` state and does nothing.
 
 - `link`: `{ "type": "link", "href": "...", "target": "_self" | "_blank" }`. `href` must be `https:`, `mailto:`, `tel:`, or a same-origin path starting with `/`. `target` defaults to `_self`; `_blank` links carry `rel="noopener noreferrer"`.
-- `webhook`: `{ "type": "webhook", "url": "...", "extraFields": { ... }, "cooldownMs": 10000 }`. `url` must be the `https` Inbound Webhook trigger URL of a HighLevel workflow. `extraFields` is an optional object of strings, numbers, and booleans merged into the payload (it can never override the identity fields). `cooldownMs` defaults to `10000` and is capped at `300000`. Webhook buttons only work with `placement` `contact`.
+- `webhook`: `{ "type": "webhook", "url": "...", "extraFields": { ... }, "cooldownMs": 10000 }`. `url` must be the `https` Inbound Webhook trigger URL of a HighLevel workflow. `extraFields` is an optional object of strings, numbers, and booleans merged into the payload (it can never override the identity fields). `cooldownMs` defaults to `10000` and is capped at `300000`. Webhook buttons only work with `placement` `contact`. An empty or missing `url` renders the button or menu item `unavailable` ("Not configured") and it never sends.
 - `handler`: `{ "type": "handler", "handler": "copyContactId" }`. The name must be in the script's built-in allowlist; today that is `copyContactId`. Config can never supply code.
 
 ### Theme tokens
@@ -121,6 +129,48 @@ When a staff member presses a `webhook` button on an open contact record, the sc
 
 HighLevel's Inbound Webhook trigger matches the contact on `email` or `phone` in the payload, not on `contactId`. For that reason the button renders `unavailable` ("contact email/phone not found") when neither can be read from the record. The button moves through `ready` -> `submitting` -> `queued` ("Workflow triggered") on a 2xx response, or `failed` with a short message on any other response. While `queued` it stays disabled for `cooldownMs`, which blocks accidental resends client-side. If the request fails with a network or CORS error, the script retries once with `no-cors` and reports `queued` as "Sent (unconfirmed)", because an opaque response cannot confirm receipt.
 
+### Actions menu
+
+A `menus` entry renders one "Actions" trigger in the contact record's name row, beside any plain contact buttons; pressing it opens a panel of items below it. Each item is a normal button definition and keeps its own states, its own result, and its own `cooldownMs` (the shipped items use `60000`), so a queued Send Invite never blocks another item. The latest result also shows briefly on the trigger (for example "Actions · Workflow triggered") and in its screen-reader status.
+
+- **Keyboard:** Enter, Space, or ArrowDown on the trigger opens the menu and focuses the first available item (ArrowUp opens on the last). ArrowUp and ArrowDown move between items and wrap; Home and End jump to the first and last item. Esc closes the menu and returns focus to the trigger; Tab closes it and moves on.
+- **Closing:** the menu also closes on a click outside it, after an item is activated, on navigation, and when the open contact changes.
+- **Unavailable items** ("Not configured", "Needs the member's own email", or an unsafe action) stay focusable so they can be read, but activating them does nothing. A menu whose items are all hidden is not shown.
+- **Per-location item overrides** use the same `locations[id].buttons` object as plain buttons, keyed by item `id`: `false` hides only that item at that location, and an object can relabel it or swap its `action`.
+
+The shipped `xcelsiorActions` menu, scoped to Xcelsior Health only:
+
+```json
+"menus": [
+  {
+    "id": "xcelsiorActions",
+    "label": "Actions",
+    "icon": "menu",
+    "placement": "contact",
+    "scope": ["Cp2XxBsRoyKS2CUf1Hwi"],
+    "items": [
+      { "id": "sendInvite", "label": "Send Invite", "icon": "send",
+        "action": { "type": "webhook", "url": "https://services.leadconnectorhq.com/hooks/...", "cooldownMs": 60000, "extraFields": { "source": "ghl-customizer" } } },
+      { "id": "send-individual-consent", "label": "Send individual consent", "icon": "mail", "requires": { "email": "real" },
+        "action": { "type": "webhook", "url": "", "cooldownMs": 60000, "extraFields": { "source": "ghl-customizer" } } },
+      { "id": "resend-consent-hub", "label": "Resend Consent Hub link", "icon": "mail",
+        "action": { "type": "webhook", "url": "", "cooldownMs": 60000, "extraFields": { "source": "ghl-customizer" } } },
+      { "id": "copyContactId", "label": "Copy contact ID", "icon": "copy",
+        "action": { "type": "handler", "handler": "copyContactId" } }
+    ]
+  }
+]
+```
+
+Consent item IDs. These are the `buttonId` values the consent Inbound Webhook workflow branches on, so renaming either one needs a matching workflow change:
+
+| Item `id` (`buttonId`) | Label |
+|---|---|
+| `send-individual-consent` | Send individual consent |
+| `resend-consent-hub` | Resend Consent Hub link |
+
+Both items share one URL, the consent workflow's Inbound Webhook trigger. They post the standard payload above with no new fields; only `buttonId` tells them apart. Until that workflow's URL is filled in, both ship with `"url": ""` and show "Not configured".
+
 ### Example location entry
 
 ```json
@@ -140,7 +190,7 @@ HighLevel's Inbound Webhook trigger matches the contact on `email` or `phone` in
 }
 ```
 
-The shipped sample, `config/agency-config.json`, demonstrates agency defaults, two location entries (Dummy Clinic with a full theme and a repository-fixture logo, and Xcelsior Health with the logo HighLevel already hosts for it and a `primary` accent only, which leaves the native sidebar untouched), the `helpCenter` header link, and the `sendInvite` webhook button.
+The shipped sample, `config/agency-config.json`, demonstrates agency defaults, two location entries (Dummy Clinic with a full theme and a repository-fixture logo, and Xcelsior Health with the logo HighLevel already hosts for it and a `primary` accent only, which leaves the native sidebar untouched), the `helpCenter` header link, and the Xcelsior Health `xcelsiorActions` menu (Send Invite, Send individual consent, Resend Consent Hub link, Copy contact ID), scoped to Xcelsior Health only. No other location shows a contact action.
 
 ## Security notes
 
@@ -159,12 +209,13 @@ Append `?ghlc-debug=1` to any HighLevel URL, or run `GHLC.verify()` in the brows
 - `branding`: which mount is in use, whether it was found, and which tier (`location`, `agency`, or `native`) is currently applied.
 - `theme`: whether the sidebar root was found, which token names are applied, how many nav items are marked, how many tokens were ignored, and whether the text fell back.
 - `observers` and `waiting`: which mutation observers are attached and which mounts are being waited for.
+- `config`: whether the config loaded, `enabled`, `schemaVersion`, `buttonIds` (the plain button ids), and `menuIds` (the menu ids).
 
 It never contains URLs, payloads, email, phone, or color values. If `mounts.sidebarNavActive` is `false` while a theme sets `navActive`, none of the active-nav candidate selectors matched HighLevel's current markup; add the live class to `selectors.sidebarNavActive` in the adapter (see "Selector maintenance").
 
 ## Local development
 
-There are no dependencies. `npm test` runs `node test/run.mjs`, which executes the real script inside a small DOM shim and prints `PASS n/n` on success. `npm run serve` starts a static server; open `http://localhost:5173/test/harness.html?ghlc-debug=1` for an offline imitation of the HighLevel shell with a fake router, location switching, sidebar re-rendering, and webhook stubs. The harness loads `test/fixtures/config.json`, which deliberately exercises fallbacks (a broken logo, an invalid color, a low-contrast sidebar pair); `config/agency-config.json` is the production sample and never does.
+There are no dependencies. `npm test` runs `node test/run.mjs`, which executes the real script inside a small DOM shim and prints `PASS n/n` on success. `npm run serve` starts a static server; open `http://localhost:5173/test/harness.html?ghlc-debug=1` for an offline imitation of the HighLevel shell with a fake router, location switching, sidebar re-rendering, and webhook stubs. The harness loads `test/fixtures/config.json`, which deliberately exercises fallbacks (a broken logo, an invalid color, a low-contrast sidebar pair); `config/agency-config.json` is the production sample and never does. Location M contacts exercise the Actions menu: a working item, a "Not configured" item, a consent item that turns unavailable for a synthetic email, and controls that flip the email without a DOM mutation and tighten the name row to show the open panel is not clipped.
 
 ## Selector maintenance
 
