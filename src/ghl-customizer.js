@@ -24,9 +24,10 @@
  *                              scope: 'all' | string[], action: Action }>
  *   menus          array?   Array<{ id: string, label: string, icon?: string, placement: 'contact',
  *                              scope: 'all' | string[], items: MenuItem[] }>
- *   MenuItem       object   a button definition without placement: { id, label, icon?, scope?, action }.
- *                           scope defaults to the menu's. Ids are unique across buttons and every
- *                           menu's items, and locations[id].buttons[itemId] overrides an item.
+ *   MenuItem       object   a button definition without placement: { id, label, icon?, scope?, action,
+ *                           requires?: { email: 'real' } }. scope defaults to the menu's. requires makes the item
+ *                           unavailable while the open record's email is empty or synthetic (+digits@). Ids are
+ *                           unique across buttons and every menu's items; locations[id].buttons[itemId] overrides an item.
  *   Action         object   { type: 'link', href: string, target?: string }
  *                         | { type: 'webhook', url: string, extraFields?: object, cooldownMs?: number }
  *                         | { type: 'handler', handler: string }
@@ -82,6 +83,8 @@
   // focus; the sidebar container: sidebar-bg, sidebar-text, nav-active).
   var THEME_TOKENS = Object.freeze(['primary', 'sidebarBg', 'sidebarText', 'navActive']);
   var HEX_COLOR_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+  // D-16: the dedupe address HighLevel/Hint writes for a shared signup email (owner+12@...).
+  var SYNTHETIC_EMAIL_RE = /\+\d+@/;
   var MIN_CONTRAST = 4.5;
   var SAFE_TEXT_COLORS = Object.freeze(['#ffffff', '#101828']);
   var CSS_VARS = Object.freeze({
@@ -1276,6 +1279,10 @@
       // D-02: HighLevel may render the toolbar before the email field. Render
       // unavailable now; a later renderPlacement recovers it (recoverNoContactFields).
       markNoContactFields(el);
+    } else if (!meetsRequires(button)) {
+      // D-16: the item needs the member's own email and the record has none.
+      // No click is bound; refreshRequires recovers it when the email is real.
+      markNeedsRealEmail(el);
     } else {
       bindClick(button, el);
       var until = state.cooldowns[ctxKey() + '|' + button.id];
@@ -1486,6 +1493,9 @@
       state.menu.onDocPointer = onDocPointer;
       log('menu-open', { menuId: menu.id, items: items.length });
     }
+    // D-16: an email edit is no mutation, so availability is re-read every
+    // time staff open the menu, before the focus target is chosen.
+    refreshMenuItems(wrapper, menu);
     if (focusWhich === 'last') {
       if (items.length) items[items.length - 1].focus();
     } else {
@@ -1552,19 +1562,27 @@
         return;
       }
       surviving[id] = true;
-      var records = Object.create(null);
-      menu.items.forEach(function (item) {
-        records[item.id] = item;
-      });
-      var panel = wrapper.querySelector(OWN.menuPanelSel);
-      if (!panel) return;
-      menuItemEls(panel).forEach(function (itemEl) {
-        var record = records[itemEl.getAttribute('data-' + NS + '-button-id')];
-        if (record) recoverNoContactFields(record, itemEl);
-      });
+      refreshMenuItems(wrapper, menu);
     });
     menus.forEach(function (menu) {
       if (!surviving[menu.id]) group.appendChild(createMenuEl(menu));
+    });
+  }
+
+  // Re-evaluates every item of a surviving or opening menu: the missing
+  // contact fields recovery, then the requires rule in both directions.
+  function refreshMenuItems(wrapper, menu) {
+    var panel = wrapper.querySelector(OWN.menuPanelSel);
+    if (!panel) return;
+    var records = Object.create(null);
+    menu.items.forEach(function (item) {
+      records[item.id] = item;
+    });
+    menuItemEls(panel).forEach(function (itemEl) {
+      var record = records[itemEl.getAttribute('data-' + NS + '-button-id')];
+      if (!record) return;
+      recoverNoContactFields(record, itemEl);
+      refreshRequires(record, itemEl);
     });
   }
 
@@ -1671,6 +1689,7 @@
       } else {
         surviving[id] = true;
         recoverNoContactFields(wanted[id], el);
+        refreshRequires(wanted[id], el);
       }
     });
     renderMenus(group, menus, key);
@@ -1730,6 +1749,7 @@
   var MSG_NO_CONTACT_FIELDS = 'contact email/phone not found';
   var MSG_COOLDOWN_RESTORED = 'Recently sent — wait before sending again';
   var MSG_NOT_CONFIGURED = 'Not configured';
+  var MSG_NEEDS_REAL_EMAIL = "Needs the member's own email";
 
   function attemptFetch(url, init) {
     try {
@@ -1796,6 +1816,70 @@
     el.setAttribute('data-' + NS + '-reason', 'no-contact-fields');
     setState(el, 'unavailable', { message: MSG_NO_CONTACT_FIELDS });
     waitForContactFields();
+  }
+
+  function isSyntheticEmail(value) {
+    return typeof value === 'string' && SYNTHETIC_EMAIL_RE.test(value);
+  }
+
+  /**
+   * D-16 optional per-item rule `requires: { email: 'real' }`: the open
+   * record's email must be present and not a synthetic dedupe address. Any
+   * other shape is ignored (unknown is never invalid), so records without
+   * the rule always pass without touching the DOM.
+   */
+  function meetsRequires(button) {
+    var rule = button ? button.requires : null;
+    if (!isPlainObject(rule) || !hasOwn(rule, 'email') || rule.email !== 'real') return true;
+    var region = adapter.findContactRegion();
+    var email = region ? adapter.readContactEmail(region) : null;
+    return email !== null && !isSyntheticEmail(email);
+  }
+
+  // Logs the id only: never the email, the reason text, or the label.
+  function markNeedsRealEmail(el) {
+    el.setAttribute('data-' + NS + '-reason', 'needs-real-email');
+    setState(el, 'unavailable', { message: MSG_NEEDS_REAL_EMAIL });
+    log('requires-unmet', { buttonId: el.getAttribute('data-' + NS + '-button-id') });
+  }
+
+  /**
+   * Re-reads the requires rule for a rendered control (reconcile and menu
+   * open; HighLevel edits the email with no mutation). A needs-real-email
+   * element recovers to ready, or to queued for a cooldown still running; a
+   * ready or failed element whose rule now fails is marked. Submitting,
+   * queued, and otherwise-unavailable elements are left alone, and the
+   * no-contact-fields reason keeps its own recovery. Anchors are never gated.
+   */
+  function refreshRequires(button, el) {
+    if (el.tagName === 'A') return;
+    var reason = el.getAttribute('data-' + NS + '-reason');
+    if (reason === 'needs-real-email') {
+      if (!meetsRequires(button)) return;
+      el.removeAttribute('data-' + NS + '-reason');
+      bindClick(button, el);
+      var action = resolveAction(button);
+      var until = state.cooldowns[ctxKey() + '|' + button.id];
+      if (action.kind === 'webhook' && until && until > Date.now()) {
+        setState(el, 'queued', { message: MSG_COOLDOWN_RESTORED });
+        startCooldown(action, el, until - Date.now());
+      } else {
+        setState(el, 'ready');
+      }
+      return;
+    }
+    if (reason) return;
+    var current = el.getAttribute('data-state');
+    if (current !== 'ready' && current !== 'failed') return;
+    if (!meetsRequires(button)) markNeedsRealEmail(el);
+  }
+
+  // Click-time check, before any payload is built: true when refused.
+  function refuseUnmetRequires(button, el) {
+    if (meetsRequires(button)) return false;
+    markNeedsRealEmail(el);
+    if (isMenuItem(el)) flashTrigger(el, 'failed', 'Unavailable', MSG_NEEDS_REAL_EMAIL);
+    return true;
   }
 
   // Verified live: HighLevel mounts the name row before the stateful email
@@ -1875,6 +1959,7 @@
 
   function runWebhook(button, action, el) {
     if (refuseStaleClick(button, el)) return Promise.resolve();
+    if (refuseUnmetRequires(button, el)) return Promise.resolve();
     var gen = state.generation;
     var region = adapter.findContactRegion();
     var email = region ? adapter.readContactEmail(region) : null;
@@ -1921,6 +2006,7 @@
   // as a webhook; the handler's own result decides ready vs failed.
   function runHandler(button, action, el) {
     if (refuseStaleClick(button, el)) return Promise.resolve();
+    if (refuseUnmetRequires(button, el)) return Promise.resolve();
     var gen = state.generation;
     setState(el, 'submitting');
     return Promise.resolve().then(function () {
@@ -2812,7 +2898,8 @@
         loaded: !!state.config,
         enabled: state.lastEnabled,
         schemaVersion: state.lastSchemaVersion,
-        buttonIds: state.config ? state.config.buttons.map(function (b) { return b.id; }) : []
+        buttonIds: state.config ? state.config.buttons.map(function (b) { return b.id; }) : [],
+        menuIds: state.config && Array.isArray(state.config.menus) ? state.config.menus.map(function (m) { return m.id; }) : []
       },
       mounts: adapter.probe(),
       contactFields: {
@@ -2932,6 +3019,7 @@
       resolveButtons: resolveButtons,
       resolveMenus: resolveMenus,
       resolveAction: resolveAction,
+      isSyntheticEmail: isSyntheticEmail,
       resolveBranding: resolveBranding,
       renderBranding: renderBranding,
       resolveTheme: resolveTheme,
