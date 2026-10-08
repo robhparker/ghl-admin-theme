@@ -10,14 +10,14 @@ Inputs: `notes/actions-menu-individual-consent.md` (decisions), `notes/webhook-t
 
 ### Actions menu (admin theme)
 
-- [ ] **MENU-01**: Config accepts a `menus[]` entry (`id`, `label`, `icon`, `placement: "contact"`, `scope`, `items[]`), where each item is a normal button definition with a unique `id` and its own `action`. Configs with only `buttons[]` render exactly as in v0.1.2.
+- [x] **MENU-01**: Config accepts a `menus[]` entry (`id`, `label`, `icon`, `placement: "contact"`, `scope`, `items[]`), where each item is a normal button definition with a unique `id` and its own `action`. Configs with only `buttons[]` render exactly as in v0.1.2.
 - [ ] **MENU-02**: Per-location overrides work per menu item through the existing `locations[id].buttons[itemId]` (false hides the item, an object overrides fields). A menu with no visible items does not render.
-- [ ] **MENU-03**: Staff see one "Actions" trigger in the contact name row, inside the existing `.ghlc-group`. It is a native `<button>` with `aria-haspopup="menu"` and `aria-expanded`, and opens a panel of native `<button role="menuitem">` items.
-- [ ] **MENU-04**: Staff can operate the menu by keyboard. Enter, Space, or ArrowDown opens it and focuses the first item. Arrow keys, Home, and End move between items. Esc closes it and returns focus to the trigger. Tab closes it.
-- [ ] **MENU-05**: The menu closes on outside click, on item activation, and on SPA navigation or contact change. The panel is not clipped by the name row (overflow tested).
-- [ ] **MENU-06**: Each item keeps its own state (ready, Sending..., Workflow triggered, Failed, unavailable) and its own cooldown keyed by item `id`. The result shows briefly on the trigger button and in the screen-reader status span, so staff see it after the menu closes.
-- [ ] **MENU-07**: Opening, closing, and state changes cause no re-render loop. Panel mutations stay inside `.ghlc-group`, so `isOwnNode` ignores them, and the observer count is unchanged from v0.1.2.
-- [ ] **MENU-08**: Every v0.1.2 static rule still passes: selectors only in `adapter`, no HTML strings, eval, storage, or cookies, `ghlc-` prefix, scoped CSS with no `!important`, ES2019 syntax (no `?.` or `??`), logging only through `safe()`, the generation counter, and the click-time URL recheck.
+- [x] **MENU-03**: Staff see one "Actions" trigger in the contact name row, inside the existing `.ghlc-group`. It is a native `<button>` with `aria-haspopup="menu"` and `aria-expanded`, and opens a panel of native `<button role="menuitem">` items.
+- [x] **MENU-04**: Staff can operate the menu by keyboard. Enter, Space, or ArrowDown opens it and focuses the first item. Arrow keys, Home, and End move between items. Esc closes it and returns focus to the trigger. Tab closes it.
+- [x] **MENU-05**: The menu closes on outside click, on item activation, and on SPA navigation or contact change. The panel is not clipped by the name row (overflow tested).
+- [x] **MENU-06**: Each item keeps its own state (ready, Sending..., Workflow triggered, Failed, unavailable) and its own cooldown keyed by item `id`. The result shows briefly on the trigger button and in the screen-reader status span, so staff see it after the menu closes.
+- [x] **MENU-07**: Opening, closing, and state changes cause no re-render loop. Panel mutations stay inside `.ghlc-group`, so `isOwnNode` ignores them, and the observer count is unchanged from v0.1.2.
+- [x] **MENU-08**: Every v0.1.2 static rule still passes: selectors only in `adapter`, no HTML strings, eval, storage, or cookies, `ghlc-` prefix, scoped CSS with no `!important`, ES2019 syntax (no `?.` or `??`), logging only through `safe()`, the generation counter, and the click-time URL recheck.
 
 ### Menu items (Xcelsior only)
 
@@ -78,14 +78,14 @@ Deferred (see `seeds/consent-actions-hardening.md`):
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MENU-01 | Phase 4 | Pending |
+| MENU-01 | Phase 4 | Complete |
 | MENU-02 | Phase 4 | Pending |
-| MENU-03 | Phase 4 | Pending |
-| MENU-04 | Phase 4 | Pending |
-| MENU-05 | Phase 4 | Pending |
-| MENU-06 | Phase 4 | Pending |
-| MENU-07 | Phase 4 | Pending |
-| MENU-08 | Phase 4 | Pending |
+| MENU-03 | Phase 4 | Complete |
+| MENU-04 | Phase 4 | Complete |
+| MENU-05 | Phase 4 | Complete |
+| MENU-06 | Phase 4 | Complete |
+| MENU-07 | Phase 4 | Complete |
+| MENU-08 | Phase 4 | Complete |
 | ITEM-01 | Phase 4 | Pending |
 | ITEM-02 | Phase 4 | Pending |
 | ITEM-03 | Phase 4 | Pending |
