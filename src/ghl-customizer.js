@@ -17,10 +17,16 @@
  *   agency         object   { logoUrl?: string, logoAlt?: string, logoMount?: 'sidebar' | 'header',
  *                              theme?: Theme, buttons?: object }
  *   locations      object   { [locationId: string]: { name?: string, logoUrl?: string, logoAlt?: string,
- *                              theme?: Theme, buttons?: { [buttonId: string]: boolean | object } } }
+ *                              theme?: Theme, buttons?: { [buttonOrMenuItemId: string]: boolean | object } } }
+ *                           The buttons map is keyed by button id or menu item id.
  *   buttons        array    Array<{ id: string, label: string, icon?: string,
  *                              placement: 'header' | 'contact',
  *                              scope: 'all' | string[], action: Action }>
+ *   menus          array?   Array<{ id: string, label: string, icon?: string, placement: 'contact',
+ *                              scope: 'all' | string[], items: MenuItem[] }>
+ *   MenuItem       object   a button definition without placement: { id, label, icon?, scope?, action }.
+ *                           scope defaults to the menu's. Ids are unique across buttons and every
+ *                           menu's items, and locations[id].buttons[itemId] overrides an item.
  *   Action         object   { type: 'link', href: string, target?: string }
  *                         | { type: 'webhook', url: string, extraFields?: object, cooldownMs?: number }
  *                         | { type: 'handler', handler: string }
@@ -49,6 +55,8 @@
   var DEFAULT_CONFIG_URL = 'https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.1.2/config/agency-config.json';
   var DEFAULT_COOLDOWN_MS = 10000;
   var MAX_COOLDOWN_MS = 300000; // 5 minutes; also keeps setTimeout inside int32
+  // How long a menu item's result stays on the menu trigger (D-11).
+  var TRIGGER_FLASH_MS = 4000;
   var ACTION_TYPES = Object.freeze(['link', 'webhook', 'handler']);
   var STATES = Object.freeze(['ready', 'submitting', 'queued', 'unavailable', 'failed']);
   // Link buttons may only navigate to these schemes or to a same-origin path (BTN-09).
@@ -93,7 +101,9 @@
     send: ['M21 3L10.5 13.5', 'M21 3L14 21L10.5 13.5L3 10L21 3Z'],
     mail: ['M3 6h18v12H3z', 'M3 7l9 6l9-6'],
     link: ['M9.5 14.5L14.5 9.5', 'M13 7l2-2a3.5 3.5 0 0 1 5 5l-2 2', 'M11 17l-2 2a3.5 3.5 0 0 1-5-5l2-2'],
-    external: ['M14 4h6v6', 'M20 4L11 13', 'M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5']
+    external: ['M14 4h6v6', 'M20 4L11 13', 'M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5'],
+    menu: ['M4 6h16', 'M4 12h16', 'M4 18h16'],
+    copy: ['M9 9h11v11H9z', 'M5 15H4V4h11v1']
   });
 
   // Own-property lookup for every config-keyed read (locations, overrides,
@@ -110,6 +120,12 @@
     styleLinkSel: 'link[data-' + NS + '-styles]',
     labelSel: '.' + NS + '-btn__label',
     msgSel: '.' + NS + '-btn__msg',
+    // Actions menu (Phase 4): the wrapper, its trigger, its panel, and its items.
+    menuClass: NS + '-menu',
+    menuSel: '[data-' + NS + '-menu-id]',
+    menuTriggerSel: '.' + NS + '-menu__trigger',
+    menuPanelSel: '.' + NS + '-menu__panel',
+    menuItemSel: '[data-' + NS + '-menuitem]',
     // Marks on the native logo element while a non-native tier is showing.
     logoClass: NS + '-logo',
     logoAttr: 'data-' + NS + '-logo',
@@ -638,8 +654,15 @@
   var BUTTON_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
   var PLACEMENTS = Object.freeze(['header', 'contact']);
 
-  function validateButton(button, index, seen, errors) {
-    var where = 'buttons[' + index + ']';
+  function scopeValid(scope) {
+    return scope === 'all' ||
+      (Array.isArray(scope) && scope.every(function (s) { return typeof s === 'string'; }));
+  }
+
+  // `where` is the message prefix ('buttons[0]', 'menus[0].items[2]'). A menu
+  // item (isItem) takes its placement from the menu and its scope is optional.
+  // The shared `seen` set keeps ids unique across buttons and every menu item (D-01).
+  function validateButton(button, where, seen, errors, isItem) {
     if (!isPlainObject(button)) {
       errors.push(where + ' must be an object');
       return;
@@ -654,18 +677,51 @@
     if (typeof button.label !== 'string' || button.label.length < 1 || button.label.length > 80) {
       errors.push(where + '.label must be a string of 1..80 characters');
     }
-    if (PLACEMENTS.indexOf(button.placement) === -1) {
+    if (!isItem && PLACEMENTS.indexOf(button.placement) === -1) {
       errors.push(where + '.placement must be header or contact');
     }
-    var scopeOk = button.scope === 'all' ||
-      (Array.isArray(button.scope) && button.scope.every(function (s) { return typeof s === 'string'; }));
-    if (!scopeOk) errors.push(where + '.scope must be "all" or an array of strings');
+    if ((!isItem || button.scope !== undefined) && !scopeValid(button.scope)) {
+      errors.push(where + '.scope must be "all" or an array of strings');
+    }
     if (!isPlainObject(button.action) || typeof button.action.type !== 'string') {
       errors.push(where + '.action must be an object with a string type');
     }
     if (button.icon !== undefined && typeof button.icon !== 'string') {
       errors.push(where + '.icon must be a string when present');
     }
+  }
+
+  // D-01: a menu is { id, label, icon?, placement: 'contact', scope, items[] }.
+  // Menu ids are unique among menus (menuSeen); item ids share `seen` with buttons.
+  function validateMenu(menu, index, seen, menuSeen, errors) {
+    var where = 'menus[' + index + ']';
+    if (!isPlainObject(menu)) {
+      errors.push(where + ' must be an object');
+      return;
+    }
+    if (typeof menu.id !== 'string' || !BUTTON_ID_RE.test(menu.id)) {
+      errors.push(where + '.id must match ' + String(BUTTON_ID_RE));
+    } else if (menuSeen.has(menu.id)) {
+      errors.push(where + '.id is duplicated');
+    } else {
+      menuSeen.add(menu.id);
+    }
+    if (typeof menu.label !== 'string' || menu.label.length < 1 || menu.label.length > 80) {
+      errors.push(where + '.label must be a string of 1..80 characters');
+    }
+    // Header-placement menus are deferred; only the contact name row hosts one.
+    if (menu.placement !== 'contact') errors.push(where + '.placement must be contact');
+    if (!scopeValid(menu.scope)) errors.push(where + '.scope must be "all" or an array of strings');
+    if (menu.icon !== undefined && typeof menu.icon !== 'string') {
+      errors.push(where + '.icon must be a string when present');
+    }
+    if (!Array.isArray(menu.items)) {
+      errors.push(where + '.items must be an array');
+      return;
+    }
+    menu.items.forEach(function (item, j) {
+      validateButton(item, where + '.items[' + j + ']', seen, errors, true);
+    });
   }
 
   // Unknown action types are not validation errors: they render unavailable (BTN-09).
@@ -676,13 +732,23 @@
     if (typeof obj.enabled !== 'boolean') errors.push('enabled must be a boolean');
     if (!isPlainObject(obj.agency)) errors.push('agency must be an object');
     if (!isPlainObject(obj.locations)) errors.push('locations must be an object');
+    var seen = new Set();
     if (!Array.isArray(obj.buttons)) {
       errors.push('buttons must be an array');
     } else {
-      var seen = new Set();
       obj.buttons.forEach(function (button, index) {
-        validateButton(button, index, seen, errors);
+        validateButton(button, 'buttons[' + index + ']', seen, errors, false);
       });
+    }
+    if (obj.menus !== undefined) {
+      if (!Array.isArray(obj.menus)) {
+        errors.push('menus must be an array when present');
+      } else {
+        var menuSeen = new Set();
+        obj.menus.forEach(function (menu, index) {
+          validateMenu(menu, index, seen, menuSeen, errors);
+        });
+      }
     }
     return { ok: errors.length === 0, errors: errors };
   }
@@ -774,6 +840,46 @@
     return out;
   }
 
+  /**
+   * Menus visible for a location (D-01, D-02). A menu applies only where its
+   * own scope includes the location: an item override never pulls a menu into
+   * a location outside it. Each item becomes a normal button record (the
+   * menu's placement, its menuId, and the menu's scope unless the item has
+   * one) and then follows the resolveButtons override rule. A menu with no
+   * visible item is dropped.
+   */
+  function resolveMenus(config, locationId) {
+    if (!config || !Array.isArray(config.menus) || !locationId) return [];
+    var entry = locationEntry(config, locationId);
+    var overrides = entry && isPlainObject(entry.buttons) ? entry.buttons : {};
+    var out = [];
+    config.menus.forEach(function (menu) {
+      var menuInScope = menu.scope === 'all' ||
+        (Array.isArray(menu.scope) && menu.scope.indexOf(locationId) !== -1);
+      if (!menuInScope) return;
+      var items = [];
+      menu.items.forEach(function (item) {
+        var record = {};
+        Object.keys(item).forEach(function (key) {
+          record[key] = item[key];
+        });
+        record.placement = menu.placement;
+        record.menuId = menu.id;
+        if (record.scope === undefined) record.scope = menu.scope;
+        var override = hasOwn(overrides, item.id) ? overrides[item.id] : undefined;
+        if (override === false) return;
+        var inScope = record.scope === 'all' ||
+          (Array.isArray(record.scope) && record.scope.indexOf(locationId) !== -1);
+        if (override === true) items.push(record);
+        else if (isPlainObject(override)) items.push(applyOverride(record, override));
+        else if (override === undefined && inScope) items.push(record);
+      });
+      if (!items.length) return;
+      out.push({ id: menu.id, label: menu.label, icon: menu.icon, placement: menu.placement, items: items });
+    });
+    return out;
+  }
+
 // ==== context ====
 
   // The only place context lives: in memory, per tab (D-09). `generation` is
@@ -821,6 +927,8 @@
     // D-02: bounded poll for contact fields that populate after the toolbar
     // renders (a programmatic input value change yields no MutationRecord).
     fieldWait: null,
+    // Buttons section: the open menu { menuId, menu, wrapper, trigger, panel, onDocPointer } or null; at most one is open.
+    menu: null,
     // What the last served config said, even when it was not adopted (verify).
     lastSchemaVersion: null,
     lastEnabled: null,
@@ -1066,14 +1174,21 @@
     var message = typeof opts.message === 'string' ? opts.message : '';
 
     el.setAttribute('data-state', next);
-    if (next === 'submitting' || next === 'queued' || next === 'unavailable') {
+    var blocked = next === 'submitting' || next === 'queued' || next === 'unavailable';
+    var item = isMenuItem(el);
+    if (item) {
+      // D-05: a menu item stays focusable (arrow keys reach it), so it never
+      // carries native disabled; aria-disabled marks it and onButtonClick's
+      // state gate makes it inert on activation.
+      el.removeAttribute('disabled');
+    } else if (blocked) {
       el.setAttribute('disabled', '');
     } else {
       el.removeAttribute('disabled');
     }
     if (next === 'submitting') el.setAttribute('aria-busy', 'true');
     else el.removeAttribute('aria-busy');
-    if (next === 'unavailable') el.setAttribute('aria-disabled', 'true');
+    if (next === 'unavailable' || (item && blocked)) el.setAttribute('aria-disabled', 'true');
     else el.removeAttribute('aria-disabled');
 
     var labelEl = el.querySelector(OWN.labelSel);
@@ -1084,10 +1199,39 @@
     else el.removeAttribute('title');
   }
 
+  // A menu item: a native control inside a menu panel (data-ghlc-menuitem).
+  function isMenuItem(el) {
+    return !!el && typeof el.getAttribute === 'function' && el.getAttribute('data-' + NS + '-menuitem') === '1';
+  }
+
+  // The icon, label, and screen-reader status spans every control carries.
+  function appendControlParts(el, iconName, labelText) {
+    var iconEl = document.createElement('span');
+    iconEl.setAttribute('class', NS + '-btn__icon');
+    iconEl.setAttribute('aria-hidden', 'true');
+    var svg = makeIcon(iconName);
+    if (svg) iconEl.appendChild(svg);
+
+    var labelEl = document.createElement('span');
+    labelEl.setAttribute('class', NS + '-btn__label');
+    labelEl.textContent = labelText;
+
+    var msgEl = document.createElement('span');
+    msgEl.setAttribute('class', NS + '-btn__msg');
+    msgEl.setAttribute('role', 'status');
+    msgEl.setAttribute('aria-live', 'polite');
+
+    el.appendChild(iconEl);
+    el.appendChild(labelEl);
+    el.appendChild(msgEl);
+  }
+
   // Every control is a native <a href> or <button> (BTN-08): keyboard
   // activation and focus come from the element itself, never from ARIA
-  // role or focus-order attributes bolted onto a generic element.
-  function createButtonEl(button) {
+  // role or focus-order attributes bolted onto a generic element. A menu
+  // item (opts.menuItem) is the same native control with role menuitem and
+  // tabindex -1, the WAI-ARIA menu pattern's roving focus (D-04, D-05).
+  function createButtonEl(button, opts) {
     var action = resolveAction(button);
     var el;
     if (action.kind === 'link') {
@@ -1101,30 +1245,20 @@
       el.setAttribute('type', 'button');
       el.setAttribute('class', NS + '-btn');
     }
+    if (opts && opts.menuItem) {
+      // Before the state branch so setState sees the marker.
+      el.setAttribute('class', NS + '-menu__item');
+      el.setAttribute('role', 'menuitem');
+      el.setAttribute('tabindex', '-1');
+      el.setAttribute('data-' + NS + '-menuitem', '1');
+    }
     el.setAttribute('data-' + NS + '-button-id', button.id);
     el.setAttribute('data-' + NS + '-placement', button.placement);
     el.setAttribute('data-' + NS + '-ctx', ctxKey());
     el.setAttribute('data-' + NS + '-generation', String(state.generation));
     el.setAttribute('data-' + NS + '-label', button.label);
 
-    var iconEl = document.createElement('span');
-    iconEl.setAttribute('class', NS + '-btn__icon');
-    iconEl.setAttribute('aria-hidden', 'true');
-    var svg = makeIcon(button.icon);
-    if (svg) iconEl.appendChild(svg);
-
-    var labelEl = document.createElement('span');
-    labelEl.setAttribute('class', NS + '-btn__label');
-    labelEl.textContent = button.label;
-
-    var msgEl = document.createElement('span');
-    msgEl.setAttribute('class', NS + '-btn__msg');
-    msgEl.setAttribute('role', 'status');
-    msgEl.setAttribute('aria-live', 'polite');
-
-    el.appendChild(iconEl);
-    el.appendChild(labelEl);
-    el.appendChild(msgEl);
+    appendControlParts(el, button.icon, button.label);
 
     if (action.kind === 'unavailable') {
       setState(el, 'unavailable', { message: action.message });
@@ -1170,6 +1304,191 @@
     cancelContactFieldsWait();
   }
 
+  // ---- Actions menu (Phase 4, D-04..D-11) ----
+  // One wrapper per menu inside the contact .ghlc-group: a native trigger
+  // button and a hidden role=menu panel of native menuitem controls. Each
+  // item is a normal button record, so resolveAction, bindClick, runWebhook,
+  // startCooldown, and refuseStaleClick apply unchanged. The panel is hidden,
+  // never detached, so an in-flight result still lands on its item.
+
+  function menuItemIds(menu) {
+    return menu.items.map(function (item) { return item.id; }).join(',');
+  }
+
+  function menuItemEls(panel) {
+    return Array.prototype.slice.call(panel.querySelectorAll(OWN.menuItemSel));
+  }
+
+  function createMenuEl(menu) {
+    var panelId = NS + '-menu-' + menu.id;
+    var triggerId = panelId + '-trigger';
+
+    var wrapper = document.createElement('div');
+    wrapper.setAttribute('class', OWN.menuClass);
+    wrapper.setAttribute('data-' + NS + '-menu-id', menu.id);
+    wrapper.setAttribute('data-' + NS + '-ctx', ctxKey());
+    wrapper.setAttribute('data-' + NS + '-generation', String(state.generation));
+    wrapper.setAttribute('data-' + NS + '-items', menuItemIds(menu));
+
+    var trigger = document.createElement('button');
+    trigger.setAttribute('type', 'button');
+    trigger.setAttribute('class', NS + '-btn ' + NS + '-menu__trigger');
+    trigger.setAttribute('id', triggerId);
+    trigger.setAttribute('aria-haspopup', 'menu');
+    trigger.setAttribute('aria-expanded', 'false');
+    trigger.setAttribute('aria-controls', panelId);
+    trigger.setAttribute('data-' + NS + '-label', menu.label);
+    appendControlParts(trigger, menu.icon, menu.label);
+
+    var panel = document.createElement('div');
+    panel.setAttribute('class', NS + '-menu__panel');
+    panel.setAttribute('id', panelId);
+    panel.setAttribute('role', 'menu');
+    panel.setAttribute('aria-labelledby', triggerId);
+    panel.setAttribute('hidden', '');
+    menu.items.forEach(function (item) {
+      panel.appendChild(createButtonEl(item, { menuItem: true }));
+    });
+
+    wrapper.appendChild(trigger);
+    wrapper.appendChild(panel);
+    bindMenu(wrapper, menu);
+    return wrapper;
+  }
+
+  // Listeners are attached at most once per wrapper (data-ghlc-bound).
+  function bindMenu(wrapper, menu) {
+    if (wrapper.getAttribute('data-' + NS + '-bound') === '1') return;
+    wrapper.setAttribute('data-' + NS + '-bound', '1');
+    var trigger = wrapper.querySelector(OWN.menuTriggerSel);
+    var panel = wrapper.querySelector(OWN.menuPanelSel);
+    if (!trigger || !panel) return;
+    trigger.addEventListener('click', function () {
+      if (state.menu && state.menu.wrapper === wrapper) closeMenu('toggle', true);
+      else openMenu(wrapper, menu, 'first');
+    });
+    panel.addEventListener('click', function (evt) {
+      var target = evt && evt.target;
+      var itemEl = target && typeof target.closest === 'function' ? target.closest(OWN.menuItemSel) : null;
+      // Link items navigate natively; the menu just closes.
+      if (itemEl && itemEl.tagName === 'A') closeMenu('activate', false);
+    });
+  }
+
+  function focusFirstEnabled(items) {
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].getAttribute('aria-disabled') !== 'true') {
+        items[i].focus();
+        return;
+      }
+    }
+    if (items.length) items[0].focus();
+  }
+
+  function openMenu(wrapper, menu, focusWhich) {
+    if (state.menu && state.menu.wrapper !== wrapper) closeMenu('switch', false);
+    var trigger = wrapper.querySelector(OWN.menuTriggerSel);
+    var panel = wrapper.querySelector(OWN.menuPanelSel);
+    if (!trigger || !panel) return;
+    var items = menuItemEls(panel);
+    if (!state.menu) {
+      // Unhide before focusing: nothing inside a hidden subtree takes focus.
+      panel.removeAttribute('hidden');
+      trigger.setAttribute('aria-expanded', 'true');
+      state.menu = { menuId: menu.id, menu: menu, wrapper: wrapper, trigger: trigger, panel: panel, onDocPointer: null };
+      log('menu-open', { menuId: menu.id, items: items.length });
+    }
+    if (focusWhich === 'last') {
+      if (items.length) items[items.length - 1].focus();
+    } else {
+      focusFirstEnabled(items);
+    }
+  }
+
+  function closeMenu(reason, focusTrigger) {
+    var open = state.menu;
+    if (!open) return;
+    state.menu = null;
+    open.panel.setAttribute('hidden', '');
+    open.trigger.setAttribute('aria-expanded', 'false');
+    if (focusTrigger && open.trigger.isConnected) open.trigger.focus();
+    log('menu-close', { menuId: open.menuId, reason: reason });
+  }
+
+  // D-11: an item's result shows on the trigger (label and its own status
+  // span) for TRIGGER_FLASH_MS. The timer lives in state.timers, so a context
+  // change (clearTimers) kills it with everything else from the old route.
+  function flashTrigger(itemEl, outcome, text, message) {
+    var wrapper = itemEl.closest(OWN.menuSel);
+    var trigger = wrapper ? wrapper.querySelector(OWN.menuTriggerSel) : null;
+    if (!trigger) return;
+    var base = trigger.getAttribute('data-' + NS + '-label') || '';
+    var labelEl = trigger.querySelector(OWN.labelSel);
+    var msgEl = trigger.querySelector(OWN.msgSel);
+    if (labelEl) labelEl.textContent = base + ' · ' + text;
+    if (msgEl) msgEl.textContent = (itemEl.getAttribute('data-' + NS + '-label') || '') + ': ' + (message || text);
+    trigger.setAttribute('data-' + NS + '-flash', outcome);
+    var existing = state.timers.get(trigger);
+    if (existing !== undefined) clearTimeout(existing);
+    var id = setTimeout(function () {
+      state.timers.delete(trigger);
+      if (!trigger.isConnected) return;
+      var restoreLabel = trigger.querySelector(OWN.labelSel);
+      var restoreMsg = trigger.querySelector(OWN.msgSel);
+      if (restoreLabel) restoreLabel.textContent = trigger.getAttribute('data-' + NS + '-label') || '';
+      if (restoreMsg) restoreMsg.textContent = '';
+      trigger.removeAttribute('data-' + NS + '-flash');
+    }, TRIGGER_FLASH_MS);
+    state.timers.set(trigger, id);
+  }
+
+  // Idempotent menu reconcile inside an existing group, by menu id + ctx +
+  // item list. A buttons-only config finds nothing to prune and creates
+  // nothing, so it writes nothing (D-03).
+  function renderMenus(group, menus, key) {
+    var wanted = Object.create(null);
+    menus.forEach(function (menu) {
+      wanted[menu.id] = menu;
+    });
+    var surviving = Object.create(null);
+    Array.prototype.slice.call(group.querySelectorAll(OWN.menuSel)).forEach(function (wrapper) {
+      if (wrapper.parentNode !== group) return;
+      var id = wrapper.getAttribute('data-' + NS + '-menu-id');
+      var menu = wanted[id];
+      var stale = !menu || wrapper.getAttribute('data-' + NS + '-ctx') !== key || surviving[id] ||
+        wrapper.getAttribute('data-' + NS + '-items') !== menuItemIds(menu);
+      if (stale) {
+        if (state.menu && state.menu.wrapper === wrapper) closeMenu('rerender', false);
+        group.removeChild(wrapper);
+        return;
+      }
+      surviving[id] = true;
+      var records = Object.create(null);
+      menu.items.forEach(function (item) {
+        records[item.id] = item;
+      });
+      var panel = wrapper.querySelector(OWN.menuPanelSel);
+      if (!panel) return;
+      menuItemEls(panel).forEach(function (itemEl) {
+        var record = records[itemEl.getAttribute('data-' + NS + '-button-id')];
+        if (record) recoverNoContactFields(record, itemEl);
+      });
+    });
+    menus.forEach(function (menu) {
+      if (!surviving[menu.id]) group.appendChild(createMenuEl(menu));
+    });
+  }
+
+  // The first menu wrapper directly inside the group, or null: plain buttons
+  // are inserted before it so they always precede the menus.
+  function firstMenuWrapper(group) {
+    var wrappers = group.querySelectorAll(OWN.menuSel);
+    for (var i = 0; i < wrappers.length; i++) {
+      if (wrappers[i].parentNode === group) return wrappers[i];
+    }
+    return null;
+  }
+
   function findGroups(placement) {
     return Array.prototype.slice.call(document.querySelectorAll(OWN.groupSel)).filter(function (group) {
       return group.getAttribute('data-' + NS + '-placement') === placement;
@@ -1208,18 +1527,23 @@
       return button.placement === placement;
     });
     if (placement === 'contact' && !state.ctx.contactId) desired = [];
+    var menus = placement === 'contact' && state.ctx.contactId
+      ? resolveMenus(state.config, state.ctx.locationId).filter(function (menu) {
+        return menu.placement === placement;
+      })
+      : [];
     var expected = placement === 'contact' ? !!state.ctx.contactId : !!state.ctx.locationId;
     if (!mount) {
       // Missing mount: omit the customization, leave native UI untouched, and
       // wait a bounded time for it only when this route should have it.
       unwatchMount(placement);
       removeGroup(placement);
-      if (expected && desired.length) waitForMount(placement);
+      if (expected && (desired.length || menus.length)) waitForMount(placement);
       else cancelMountWait(placement);
       return;
     }
     cancelMountWait(placement);
-    if (!desired.length) {
+    if (!desired.length && !menus.length) {
       unwatchMount(placement);
       removeGroup(placement);
       return;
@@ -1236,6 +1560,8 @@
     });
     var surviving = Object.create(null);
     Array.prototype.slice.call(group.querySelectorAll(OWN.buttonSel)).forEach(function (el) {
+      // Menu items carry the button id too; they belong to renderMenus.
+      if (el.parentNode !== group) return;
       var id = el.getAttribute('data-' + NS + '-button-id');
       var stale = !wanted[id] || el.getAttribute('data-' + NS + '-ctx') !== key || surviving[id];
       if (stale) {
@@ -1245,8 +1571,11 @@
         recoverNoContactFields(wanted[id], el);
       }
     });
+    renderMenus(group, menus, key);
+    var before = firstMenuWrapper(group);
     desired.forEach(function (button) {
-      if (!surviving[button.id]) group.appendChild(createButtonEl(button));
+      // insertBefore(null) appends, exactly as v0.1.2 did.
+      if (!surviving[button.id]) group.insertBefore(createButtonEl(button), before);
     });
   }
 
@@ -1462,19 +1791,24 @@
         return;
       }
       var cooldownMs;
+      var item = isMenuItem(el);
       if (result.outcome === 'ok') {
         setState(el, 'queued');
+        if (item) flashTrigger(el, 'ok', 'Workflow triggered', '');
         cooldownMs = startCooldown(action, el);
         log('webhook-queued', { buttonId: button.id, generation: gen, cooldownMs: cooldownMs });
       } else if (result.outcome === 'unconfirmed') {
         setState(el, 'queued', { label: 'Sent (unconfirmed)', message: MSG_UNCONFIRMED });
+        if (item) flashTrigger(el, 'ok', 'Sent (unconfirmed)', MSG_UNCONFIRMED);
         cooldownMs = startCooldown(action, el);
         log('webhook-unconfirmed', { buttonId: button.id, generation: gen, cooldownMs: cooldownMs });
       } else if (result.outcome === 'network') {
         setState(el, 'failed', { message: result.message });
+        if (item) flashTrigger(el, 'failed', 'Failed', result.message);
         log('webhook-network', { buttonId: button.id, status: 0 });
       } else {
         setState(el, 'failed', { message: result.message });
+        if (item) flashTrigger(el, 'failed', 'Failed', result.message);
         log('webhook-failed', { buttonId: button.id, status: result.status || 0 });
       }
     });
@@ -1501,9 +1835,13 @@
       }
       var ok = !(result && result.ok === false);
       if (!ok) {
-        setState(el, 'failed', { message: result.message || 'Action failed' });
+        var failure = result.message || 'Action failed';
+        setState(el, 'failed', { message: failure });
+        if (isMenuItem(el)) flashTrigger(el, 'failed', 'Failed', failure);
       } else {
-        setState(el, 'ready', { message: (result && typeof result.message === 'string') ? result.message : '' });
+        var done = (result && typeof result.message === 'string') ? result.message : '';
+        setState(el, 'ready', { message: done });
+        if (isMenuItem(el)) flashTrigger(el, 'ok', done || 'Done', done);
       }
       log('handler', { buttonId: button.id, ok: ok });
     });
@@ -1512,6 +1850,10 @@
   function onButtonClick(button, el) {
     var current = el.getAttribute('data-state');
     if (current !== 'ready' && current !== 'failed') return;
+    // An activatable item closes its menu and hands focus back to the
+    // trigger before the action runs (D-06); a queued or unavailable item
+    // failed the gate above, so its menu stays open.
+    if (isMenuItem(el)) closeMenu('activate', true);
     var action = resolveAction(button);
     if (action.kind === 'webhook') runWebhook(button, action, el);
     else if (action.kind === 'handler') runHandler(button, action, el);
@@ -2428,6 +2770,7 @@
       isAgency: state.ctx.isAgency,
       configLoaded: !!state.config,
       hooksInstalled: state.hooksInstalled,
+      menu: state.menu ? state.menu.menuId : null,
       buttons: Array.prototype.slice.call(document.querySelectorAll(OWN.buttonSel)).map(function (el) {
         return {
           id: el.getAttribute('data-' + NS + '-button-id'),
@@ -2484,6 +2827,7 @@
     window.GHLC.__test = {
       parseRoute: parseRoute,
       resolveButtons: resolveButtons,
+      resolveMenus: resolveMenus,
       resolveAction: resolveAction,
       resolveBranding: resolveBranding,
       renderBranding: renderBranding,

@@ -3306,6 +3306,124 @@ scenario('sample: the shipped config boots at Dummy Clinic with its logo overrid
 });
 
 // ---------------------------------------------------------------------------
+// Actions menu (Phase 4)
+// The fixture stays buttons-only so every earlier scenario keeps proving D-03;
+// menu scenarios add a menus[] entry inline. Test code may use selector
+// literals; the static gate scans src only.
+// ---------------------------------------------------------------------------
+
+const MENU_HOOK = 'https://services.leadconnectorhq.com/hooks/TEST-MENU';
+const tInvite = () => ({ id: 'tInvite', label: 'Menu Invite', icon: 'send', action: { type: 'webhook', url: MENU_HOOK, cooldownMs: 60000, extraFields: { source: 'ghlc-harness' } } });
+const tBroken = () => ({ id: 'tBroken', label: 'Broken Item', action: { type: 'handler', handler: 'nope' } });
+const tCopy = () => ({ id: 'tCopy', label: 'Copy Item', icon: 'copy', action: { type: 'handler', handler: 'copyContactId' } });
+const testMenu = (overrides = {}) => ({ id: 'testActions', label: 'Actions', icon: 'menu', placement: 'contact', scope: ['locA'], items: [tInvite(), tBroken(), tCopy()], ...overrides });
+const withMenu = (menuOverrides = {}, base = loadFixture()) => ({ ...base, menus: [testMenu(menuOverrides)] });
+const menuParts = (shim, id = 'testActions') => {
+  const wrapper = shim.document.querySelector(`[data-ghlc-menu-id="${id}"]`);
+  const trigger = wrapper ? wrapper.querySelector('.ghlc-menu__trigger') : null;
+  const panel = wrapper ? wrapper.querySelector('.ghlc-menu__panel') : null;
+  const items = panel ? [...panel.querySelectorAll('[data-ghlc-menuitem]')] : [];
+  return { wrapper, trigger, panel, items };
+};
+
+async function bootMenu(config = withMenu(), { contact = JANE, clipboard = null, ...extra } = {}) {
+  const shim = createShim({ pathname: CONTACT_PATH, search: '?ghlc-debug=1', fixture: loadFixture(), ...extra });
+  const shell = shim.buildShell({ sidebarMode: 'location', contact });
+  shim.setConfigResponse({ status: 200, body: config });
+  if (clipboard) shim.window.navigator.clipboard = clipboard;
+  const GHLC = shim.run(src);
+  assert.equal(await GHLC.__test.boot(), true);
+  await shim.flush();
+  return { shim, shell, GHLC };
+}
+
+scenario('menu tracer: Actions menu renders in the contact group, opens on click, and one item POSTs the v0.1.2 payload', async () => {
+  const { shim, GHLC } = await bootMenu();
+  const menus = shim.document.querySelectorAll('.ghlc-menu');
+  assert.equal(menus.length, 1, 'exactly one menu wrapper');
+  const { wrapper, trigger, panel, items } = menuParts(shim);
+  assert.equal(wrapper, menus[0]);
+  const group = contactGroup(shim);
+  assert.equal(wrapper.parentNode, group, 'the menu lives directly inside the contact group');
+  const children = [...group.childNodes];
+  for (const id of ['sendInvite', 'badHandlerBtn', 'copyIdBtn']) {
+    const btn = byId(shim, id);
+    assert.ok(btn, `${id} still rendered`);
+    assert.equal(btn.parentNode, group, `${id} is a direct child of the group`);
+    assert.ok(children.indexOf(btn) < children.indexOf(wrapper), `${id} precedes the menu`);
+  }
+
+  assert.equal(trigger.tagName, 'BUTTON');
+  assert.equal(trigger.getAttribute('type'), 'button');
+  assert.equal(trigger.getAttribute('aria-haspopup'), 'menu');
+  assert.equal(trigger.getAttribute('aria-expanded'), 'false');
+  assert.equal(trigger.getAttribute('aria-controls'), panel.id);
+  assert.equal(panel.id, 'ghlc-menu-testActions');
+  assert.equal(trigger.id, 'ghlc-menu-testActions-trigger');
+  assert.equal(label(trigger), 'Actions');
+  assert.equal(panel.getAttribute('role'), 'menu');
+  assert.equal(panel.hidden, true);
+  assert.equal(panel.getAttribute('aria-labelledby'), trigger.id);
+
+  assert.deepEqual(items.map((i) => i.getAttribute('data-ghlc-button-id')), ['tInvite', 'tBroken', 'tCopy']);
+  for (const item of items) {
+    assert.equal(item.tagName, 'BUTTON');
+    assert.equal(item.getAttribute('role'), 'menuitem');
+    assert.equal(item.getAttribute('tabindex'), '-1');
+    assert.equal(item.hasAttribute('disabled'), false, 'items never carry native disabled');
+  }
+  const [invite, broken] = items;
+  assert.equal(broken.getAttribute('data-state'), 'unavailable');
+  assert.equal(broken.getAttribute('aria-disabled'), 'true');
+
+  trigger.click();
+  assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+  assert.equal(panel.hidden, false);
+  assert.equal(shim.document.activeElement, invite, 'first enabled item focused');
+  assert.equal(GHLC.__test.getState().menu, 'testActions');
+  assert.equal(logCount(shim, 'menu-open'), 1);
+
+  invite.click();
+  assert.equal(panel.hidden, true, 'activation closes the panel');
+  assert.equal(trigger.getAttribute('aria-expanded'), 'false');
+  assert.equal(shim.document.activeElement, trigger, 'focus returns to the trigger');
+  assert.equal(invite.getAttribute('data-state'), 'submitting');
+  assert.equal(invite.getAttribute('aria-busy'), 'true');
+  assert.equal(invite.getAttribute('aria-disabled'), 'true');
+  assert.equal(invite.hasAttribute('disabled'), false);
+
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 1, 'exactly one POST');
+  const call = shim.fetchLog[0];
+  assert.equal(call.url, MENU_HOOK);
+  assert.equal(call.method, 'POST');
+  const body = call.bodyJson;
+  assert.deepEqual(Object.keys(body).sort(), ['buttonId', 'contactId', 'email', 'locationId', 'phone', 'requestId', 'sentAt', 'source']);
+  assert.equal(body.buttonId, 'tInvite');
+  assert.equal(body.contactId, 'c1');
+  assert.equal(body.locationId, 'locA');
+  assert.equal(body.email, JANE.email);
+  assert.equal(body.phone, JANE.phone);
+  assert.match(body.requestId, UUID_V4_RE);
+
+  assert.equal(invite.getAttribute('data-state'), 'queued');
+  assert.equal(label(invite), 'Workflow triggered');
+  assert.equal(label(trigger), 'Actions · Workflow triggered');
+  assert.equal(msg(trigger), 'Menu Invite: Workflow triggered');
+  assert.equal(trigger.getAttribute('data-ghlc-flash'), 'ok');
+
+  await shim.advanceTimers(4000);
+  assert.equal(label(trigger), 'Actions');
+  assert.equal(msg(trigger), '');
+  assert.equal(trigger.hasAttribute('data-ghlc-flash'), false);
+
+  assert.equal(shim.observers().length, 9);
+  assert.equal(logCount(shim, 'rerender'), 0);
+  assertNoLeak(shim.console.lines, [...LEAK_STRINGS, 'Menu Invite'], 'menu tracer');
+  assert.equal(shim.errors.length, 0);
+});
+
+// ---------------------------------------------------------------------------
 // Run
 // ---------------------------------------------------------------------------
 
