@@ -51,7 +51,7 @@ Numbering is continuous across milestones (v0.2.0 starts at Phase 4).
   4. When the open record's email is empty or synthetic (`+<digits>@`), Send individual consent shows as unavailable with a reason while the other items stay usable; per-location overrides can hide or change single items, and a menu with no visible items does not render.
   5. `node test/run.mjs` is green with new checks for menu rendering, keyboard, per-item state and cooldown, scope rules, plain-button compatibility, the synthetic-email pre-check, and no re-render loop (observer count unchanged from v0.1.2), every v0.1.2 static rule still passes, `test/harness.html` exercises the menu offline, and the README documents the `menus[]` shape and the consent item IDs.
 
-**Plans**: 2/3 plans executed (sequential waves 1 → 2 → 3; all share `src/ghl-customizer.js` or `test/run.mjs`)
+**Plans**: 3/3 plans executed (sequential waves 1 → 2 → 3; all share `src/ghl-customizer.js` or `test/run.mjs`)
 
 Plans:
 **Wave 1**
@@ -64,7 +64,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 04-03-PLAN.md — Ship it: Xcelsior `xcelsiorActions` menu in `config/agency-config.json` (Send Invite moved in, Xcelsior-only, 60 s), headless proof of all four items, harness Location M menu with name-row and synthetic-email controls, README `menus[]` and consent item IDs
+- [x] 04-03-PLAN.md — Ship it: Xcelsior `xcelsiorActions` menu in `config/agency-config.json` (Send Invite moved in, Xcelsior-only, 60 s), headless proof of all four items, harness Location M menu with name-row and synthetic-email controls, README `menus[]` and consent item IDs
 
 **UI hint**: yes
 
@@ -108,6 +108,6 @@ Phases execute in numeric order: 4 → 5 → 6 (4 and 5 are independent; 6 needs
 | 1. Foundation, Context & Workflow Buttons | v0.1.0 | 3/3 | Complete | 2026-09-24 |
 | 2. Location Logo Switching | v0.1.0 | 2/2 | Complete | 2026-09-24 |
 | 3. Accent Colors & Delivery | v0.1.0 | 2/2 | Complete | 2026-09-25 |
-| 4. Actions Menu | v0.2.0 | 2/3 | In Progress|  |
+| 4. Actions Menu | v0.2.0 | 3/3 | In Progress|  |
 | 5. Individual Consent Backend | v0.2.0 | 0/TBD | Not started | - |
 | 6. Release v0.2.0 | v0.2.0 | 0/TBD | Not started | - |

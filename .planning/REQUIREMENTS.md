@@ -21,10 +21,10 @@ Inputs: `notes/actions-menu-individual-consent.md` (decisions), `notes/webhook-t
 
 ### Menu items (Xcelsior only)
 
-- [ ] **ITEM-01**: On Xcelsior (`Cp2XxBsRoyKS2CUf1Hwi`) contact records the Actions menu offers, in order: Send Invite, Send individual consent, Resend Consent Hub link, Copy contact ID. Other locations get no Actions menu and no Xcelsior actions.
-- [ ] **ITEM-02**: Send Invite posts the unchanged v0.1.2 payload to the existing trigger `bde416ab`, now scoped to Xcelsior only (fixes the `scope: "all"` bug).
-- [ ] **ITEM-03**: Send individual consent posts the standard payload with `buttonId: "send-individual-consent"` to the new consent Inbound Webhook. No new payload fields.
-- [ ] **ITEM-04**: Resend Consent Hub link posts the standard payload with `buttonId: "resend-consent-hub"` to the same consent webhook.
+- [x] **ITEM-01**: On Xcelsior (`Cp2XxBsRoyKS2CUf1Hwi`) contact records the Actions menu offers, in order: Send Invite, Send individual consent, Resend Consent Hub link, Copy contact ID. Other locations get no Actions menu and no Xcelsior actions.
+- [x] **ITEM-02**: Send Invite posts the unchanged v0.1.2 payload to the existing trigger `bde416ab`, now scoped to Xcelsior only (fixes the `scope: "all"` bug).
+- [x] **ITEM-03**: Send individual consent posts the standard payload with `buttonId: "send-individual-consent"` to the new consent Inbound Webhook. No new payload fields.
+- [x] **ITEM-04**: Resend Consent Hub link posts the standard payload with `buttonId: "resend-consent-hub"` to the same consent webhook.
 - [x] **ITEM-05**: Copy contact ID uses the existing `copyContactId` handler.
 - [x] **ITEM-06**: Each webhook item uses a 60 s per-item cooldown (Send Invite moves from 10 s to 60 s).
 - [x] **ITEM-07**: Send individual consent shows as unavailable with a reason when the record's email is empty or matches the synthetic dedupe pattern (`+<digits>@`).
@@ -50,7 +50,7 @@ Inputs: `notes/actions-menu-individual-consent.md` (decisions), `notes/webhook-t
 - [x] **REL-01**: `test/run.mjs` and `test/harness.html` cover menu rendering, keyboard, per-item state and cooldown, scope rules, plain-button backward compatibility, no re-render loop, and the synthetic-email pre-check. The full suite is green.
 - [ ] **REL-02**: Version strings are bumped to 0.2.0 per the README release checklist. The annotated tag `v0.2.0` and the push happen only after Rob approves.
 - [ ] **REL-03**: A live-test checklist covers the inject-into-logged-in-tab run, every menu item on a real Xcelsior owner and member, and each refusal path. It includes a rollback step (snippet tag back to v0.1.2).
-- [ ] **REL-04**: The README documents the `menus[]` config shape and the consent webhook item IDs.
+- [x] **REL-04**: The README documents the `menus[]` config shape and the consent webhook item IDs.
 
 ## Future Requirements
 
@@ -86,10 +86,10 @@ Deferred (see `seeds/consent-actions-hardening.md`):
 | MENU-06 | Phase 4 | Complete |
 | MENU-07 | Phase 4 | Complete |
 | MENU-08 | Phase 4 | Complete |
-| ITEM-01 | Phase 4 | Pending |
-| ITEM-02 | Phase 4 | Pending |
-| ITEM-03 | Phase 4 | Pending |
-| ITEM-04 | Phase 4 | Pending |
+| ITEM-01 | Phase 4 | Complete |
+| ITEM-02 | Phase 4 | Complete |
+| ITEM-03 | Phase 4 | Complete |
+| ITEM-04 | Phase 4 | Complete |
 | ITEM-05 | Phase 4 | Complete |
 | ITEM-06 | Phase 4 | Complete |
 | ITEM-07 | Phase 4 | Complete |
@@ -106,7 +106,7 @@ Deferred (see `seeds/consent-actions-hardening.md`):
 | REL-01 | Phase 4 | Complete |
 | REL-02 | Phase 6 | Pending |
 | REL-03 | Phase 6 | Pending |
-| REL-04 | Phase 4 | Pending |
+| REL-04 | Phase 4 | Complete |
 
 **Coverage:** 29/29 v1 requirements mapped (Phase 4: 17, Phase 5: 10, Phase 6: 2). No orphans, no duplicates.
 
