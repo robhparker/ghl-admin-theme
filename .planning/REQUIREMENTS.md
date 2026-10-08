@@ -78,8 +78,38 @@ Deferred (see `seeds/consent-actions-hardening.md`):
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (filled by roadmap) | | |
+| MENU-01 | Phase 4 | Pending |
+| MENU-02 | Phase 4 | Pending |
+| MENU-03 | Phase 4 | Pending |
+| MENU-04 | Phase 4 | Pending |
+| MENU-05 | Phase 4 | Pending |
+| MENU-06 | Phase 4 | Pending |
+| MENU-07 | Phase 4 | Pending |
+| MENU-08 | Phase 4 | Pending |
+| ITEM-01 | Phase 4 | Pending |
+| ITEM-02 | Phase 4 | Pending |
+| ITEM-03 | Phase 4 | Pending |
+| ITEM-04 | Phase 4 | Pending |
+| ITEM-05 | Phase 4 | Pending |
+| ITEM-06 | Phase 4 | Pending |
+| ITEM-07 | Phase 4 | Pending |
+| CONS-01 | Phase 5 | Pending |
+| CONS-02 | Phase 5 | Pending |
+| CONS-03 | Phase 5 | Pending |
+| CONS-04 | Phase 5 | Pending |
+| CONS-05 | Phase 5 | Pending |
+| CONS-06 | Phase 5 | Pending |
+| HUB-01 | Phase 5 | Pending |
+| HUB-02 | Phase 5 | Pending |
+| HUB-03 | Phase 5 | Pending |
+| HUB-04 | Phase 5 | Pending |
+| REL-01 | Phase 4 | Pending |
+| REL-02 | Phase 6 | Pending |
+| REL-03 | Phase 6 | Pending |
+| REL-04 | Phase 4 | Pending |
+
+**Coverage:** 29/29 v1 requirements mapped (Phase 4: 17, Phase 5: 10, Phase 6: 2). No orphans, no duplicates.
 
 ---
 *Requirements defined: 2026-10-07*
-*Last updated: 2026-10-07 after milestone v0.2.0 definition*
+*Last updated: 2026-10-07 after v0.2.0 roadmap (traceability filled)*
