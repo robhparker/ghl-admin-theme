@@ -1844,7 +1844,7 @@ scenario('verify: report shape and hygiene', async () => {
   assert.deepEqual(plain(r.route), { locationId: 'locA', contactId: 'c1', isAgency: false });
   assert.equal(r.generation, 1);
   assert.equal(r.hooksInstalled, true);
-  assert.deepEqual(plain(r.config), { loaded: true, enabled: true, schemaVersion: 1, buttonIds: ['sendInvite', 'supportLink', 'locOnlyLink', 'badTypeBtn', 'badHandlerBtn', 'copyIdBtn'] });
+  assert.deepEqual(plain(r.config), { loaded: true, enabled: true, schemaVersion: 1, buttonIds: ['sendInvite', 'supportLink', 'locOnlyLink', 'badTypeBtn', 'badHandlerBtn', 'copyIdBtn'], menuIds: [] });
   assert.deepEqual(plain(r.mounts), {
     sidebar: true,
     header: true,
@@ -4083,6 +4083,364 @@ check('unit: resolveAction reports "Not configured" for an empty or missing webh
   assert.equal(resolve('contact', { type: 'webhook', url: 'javascript:alert(1)' }).message, 'Webhook URL must use HTTPS');
   assert.equal(resolve('header', { type: 'webhook', url: '' }).message, 'Requires an open contact');
   assert.equal(resolve('contact', { type: 'webhook', url: 'https://services.leadconnectorhq.com/hooks/x' }).kind, 'webhook');
+});
+
+// ---- requires, overrides, scope, validation, verify (Plan 04-02 Task 2: ITEM-07, MENU-01, MENU-02, D-01, D-02, D-16) ----
+
+const MENU_CONSENT_HOOK = 'https://services.leadconnectorhq.com/hooks/TEST-CONSENT';
+const tConsent = () => ({ id: 'tConsent', label: 'Consent Item', icon: 'mail', requires: { email: 'real' }, action: { type: 'webhook', url: MENU_CONSENT_HOOK, cooldownMs: 60000, extraFields: { source: 'ghlc-harness' } } });
+const tScoped = () => ({ id: 'tScoped', label: 'Scoped Item', scope: ['locB'], action: { type: 'handler', handler: 'copyContactId' } });
+const SYNTHETIC_CONTACT = { email: 'owner+12@example.test', phone: '+15555550100' };
+const NEEDS_REAL = "Needs the member's own email";
+const consentMenu = () => withMenu({ items: [tInvite(), tConsent(), tCopy()] });
+const reasonOf = (el) => el.getAttribute('data-ghlc-reason');
+
+// Swaps the shim's contact region for HighLevel's live record-details layout:
+// a name row holding #delete-contact-trigger and a #contact.email field whose
+// input carries `value`. Changing input.value afterwards is not a mutation.
+async function liveEmailRegion(shim, shell, GHLC, value) {
+  const doc = shim.document;
+  const host = shell.main || shell.contactRegion.parentNode;
+  if (shell.contactRegion && shell.contactRegion.parentNode) shell.contactRegion.parentNode.removeChild(shell.contactRegion);
+  const lhs = doc.createElement('div'); lhs.setAttribute('id', 'record-details-lhs');
+  const nameRow = doc.createElement('div'); const del = doc.createElement('i'); del.setAttribute('id', 'delete-contact-trigger'); nameRow.appendChild(del);
+  const emailField = doc.createElement('div'); emailField.setAttribute('id', 'contact.email');
+  const emailInput = doc.createElement('input'); emailInput.setAttribute('type', 'text'); emailInput.value = value;
+  emailField.appendChild(emailInput);
+  lhs.appendChild(nameRow); lhs.appendChild(emailField); host.appendChild(lhs);
+  GHLC.__test.renderAll();
+  await shim.flush();
+  return emailInput;
+}
+
+const assertNeedsReal = (el, what = 'item') => {
+  assert.equal(el.getAttribute('data-state'), 'unavailable', `${what} unavailable`);
+  assert.equal(reasonOf(el), 'needs-real-email', `${what} carries the reason`);
+  assert.equal(msg(el), NEEDS_REAL);
+  assert.equal(el.getAttribute('title'), NEEDS_REAL);
+  assert.equal(el.getAttribute('aria-disabled'), 'true');
+  assert.equal(el.hasAttribute('disabled'), false);
+};
+
+scenario('menu requires: a synthetic email makes only the requires-real-email item unavailable, with the reason', async () => {
+  const { shim } = await bootMenu(withMenu({ items: [tConsent(), tInvite(), tCopy()] }), { contact: SYNTHETIC_CONTACT });
+  const parts = menuParts(shim);
+  const [consent, invite, copy] = parts.items;
+  assertNeedsReal(consent, 'tConsent');
+  assert.equal(consent.hasAttribute('data-ghlc-bound'), false, 'no click is bound');
+  assert.equal(invite.getAttribute('data-state'), 'ready');
+  assert.equal(copy.getAttribute('data-state'), 'ready');
+  parts.trigger.click();
+  same(shim.document.activeElement, invite, 'opening skips the unavailable consent item');
+  assertNeedsReal(consent, 'tConsent after open');
+  consent.click();
+  shim.pressKey(consent, 'Enter');
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 0, 'nothing is sent for the consent item');
+  assert.ok(isOpen(parts), 'an inert activation leaves the menu open');
+  invite.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 1);
+  assert.equal(shim.fetchLog[0].bodyJson.buttonId, 'tInvite');
+  assert.equal(shim.fetchLog[0].bodyJson.email, SYNTHETIC_CONTACT.email, 'other items still send with the record email');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('menu requires: a record with no email is treated like a synthetic one', async () => {
+  const { shim } = await bootMenu(consentMenu(), { contact: { phone: '+15555550100' } });
+  const parts = menuParts(shim);
+  const [invite, consent] = parts.items;
+  assertNeedsReal(consent, 'tConsent');
+  assert.equal(invite.getAttribute('data-state'), 'ready', 'a phone-only record still lets tInvite send');
+  parts.trigger.click();
+  consent.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 0);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('menu requires: an email change is picked up on menu open and on re-render, in both directions', async () => {
+  const { shim, shell, GHLC } = await bootMenu(consentMenu());
+  const input = await liveEmailRegion(shim, shell, GHLC, 'owner+12@example.test');
+  const parts = menuParts(shim);
+  const consent = parts.items[1];
+  assert.equal(consent.getAttribute('data-ghlc-button-id'), 'tConsent');
+  assertNeedsReal(consent, 'synthetic at render');
+  assert.equal(parts.items[0].getAttribute('data-state'), 'ready');
+
+  input.value = 'member@example.test'; // property change only: no MutationRecord
+  await shim.advanceTimers(1000);
+  assertNeedsReal(consent, 'no poll, no observer: unchanged until seen');
+  parts.trigger.click();
+  assert.ok(isOpen(parts));
+  assert.equal(consent.getAttribute('data-state'), 'ready', 'opening the menu re-reads the email');
+  assert.equal(reasonOf(consent), null);
+  assert.equal(consent.hasAttribute('aria-disabled'), false);
+  parts.trigger.click();
+  assert.ok(isClosed(parts));
+
+  input.value = 'owner+12@example.test';
+  GHLC.__test.renderAll();
+  await shim.flush();
+  same(menuParts(shim).items[1], consent, 'the same item survives the reconcile');
+  assertNeedsReal(consent, 'synthetic again after a reconcile');
+
+  input.value = 'member@example.test';
+  GHLC.__test.renderAll();
+  await shim.flush();
+  assert.equal(consent.getAttribute('data-state'), 'ready', 'real again after a reconcile');
+
+  parts.trigger.click();
+  consent.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 1);
+  assert.equal(shim.fetchLog[0].url, MENU_CONSENT_HOOK);
+  assert.equal(shim.fetchLog[0].bodyJson.buttonId, 'tConsent');
+  assert.equal(shim.fetchLog[0].bodyJson.email, 'member@example.test');
+  assert.equal(consent.getAttribute('data-state'), 'queued');
+
+  input.value = 'owner+12@example.test';
+  GHLC.__test.renderAll();
+  await shim.flush();
+  assert.equal(consent.getAttribute('data-state'), 'queued', 'a reconcile never flips a cooling item');
+  assert.equal(reasonOf(consent), null);
+  parts.trigger.click();
+  assert.equal(consent.getAttribute('data-state'), 'queued', 'nor does opening the menu');
+  parts.trigger.click();
+  await shim.advanceTimers(60000);
+  assert.equal(consent.getAttribute('data-state'), 'ready', 'the cooldown ends at 60 s');
+  GHLC.__test.renderAll();
+  await shim.flush();
+  assertNeedsReal(consent, 'the next reconcile after the cooldown applies the rule');
+  assert.equal(shim.fetchLog.length, 1);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('menu requires: an email that turns synthetic after the menu opened is refused at click time', async () => {
+  {
+    const { shim, shell, GHLC } = await bootMenu(consentMenu());
+    const input = await liveEmailRegion(shim, shell, GHLC, 'member@example.test');
+    const parts = menuParts(shim);
+    const consent = parts.items[1];
+    assert.equal(consent.getAttribute('data-state'), 'ready');
+    parts.trigger.click();
+    assert.ok(isOpen(parts));
+    input.value = 'owner+12@example.test';
+    consent.click();
+    await shim.flush();
+    assert.equal(shim.fetchLog.length, 0, 'nothing is sent');
+    assertNeedsReal(consent, 'refused at click time');
+    assert.equal(label(parts.trigger), 'Actions · Unavailable');
+    assert.equal(parts.trigger.getAttribute('data-ghlc-flash'), 'failed');
+    assert.equal(msg(parts.trigger), `Consent Item: ${NEEDS_REAL}`);
+    assert.equal(logCount(shim, 'requires-unmet'), 1);
+    assert.equal(shim.errors.length, 0);
+  }
+  {
+    // A handler item carrying the rule is refused the same way.
+    const written = [];
+    const tCopyReal = { ...tCopy(), id: 'tCopyReal', requires: { email: 'real' } };
+    const { shim, shell, GHLC } = await bootMenu(withMenu({ items: [tInvite(), tCopyReal] }), { clipboard: { writeText: async (t) => { written.push(t); } } });
+    const input = await liveEmailRegion(shim, shell, GHLC, 'member@example.test');
+    const parts = menuParts(shim);
+    const copyReal = parts.items[1];
+    assert.equal(copyReal.getAttribute('data-state'), 'ready');
+    parts.trigger.click();
+    input.value = '';
+    copyReal.click();
+    await shim.flush();
+    assert.deepEqual(written, [], 'the handler never ran');
+    assertNeedsReal(copyReal, 'handler refused at click time');
+    assert.equal(label(parts.trigger), 'Actions · Unavailable');
+    assert.equal(logCount(shim, 'requires-unmet'), 1);
+    assert.equal(shim.errors.length, 0);
+  }
+});
+
+scenario('menu overrides: false hides an item, an object relabels it, true forces an out-of-scope item (MENU-02)', async () => {
+  const cfg = withMenu({ items: [tInvite(), tBroken(), tCopy(), tScoped()] });
+  cfg.locations.locA.buttons = {
+    tCopy: false,
+    tInvite: { label: 'Invite (A)', id: 'hijack', placement: 'header', scope: ['locZ'] },
+    tScoped: true,
+    constructor: false,
+  };
+  const { shim, GHLC } = await bootMenu(cfg);
+  const parts = menuParts(shim);
+  assert.deepEqual(parts.items.map((i) => i.getAttribute('data-ghlc-button-id')), ['tInvite', 'tBroken', 'tScoped']);
+  const [invite, , scoped] = parts.items;
+  assert.equal(label(invite), 'Invite (A)');
+  assert.equal(invite.getAttribute('data-ghlc-label'), 'Invite (A)');
+  assert.equal(invite.getAttribute('data-ghlc-placement'), 'contact', 'placement is never overridable');
+  assert.equal(shim.document.querySelectorAll('[data-ghlc-button-id="hijack"]').length, 0, 'id is never overridable');
+  assert.equal(scoped.getAttribute('data-state'), 'ready', 'true forces an item scoped elsewhere');
+  assert.equal(headerGroup(shim).querySelectorAll('[data-ghlc-button-id="tInvite"]').length, 0);
+  parts.trigger.click();
+  invite.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 1);
+  assert.equal(shim.fetchLog[0].bodyJson.buttonId, 'tInvite');
+  assert.equal(label(parts.trigger), 'Actions · Workflow triggered');
+  assert.equal(msg(parts.trigger), 'Invite (A): Workflow triggered');
+  assert.ok(GHLC.__test.resolveMenus(cfg, 'locA').length === 1);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario("menu scope: a menu renders only on its scoped locations' contact records; an empty menu renders nothing (D-02)", async () => {
+  {
+    const { shim } = await bootMenu();
+    assert.equal(shim.document.querySelectorAll('.ghlc-menu').length, 1, 'present on a locA contact');
+    shim.navigate('/v2/location/locB/contacts/detail/c1', { via: 'pushState' });
+    await shim.flush();
+    assert.equal(shim.document.querySelectorAll('.ghlc-menu').length, 0, 'absent on a locB contact');
+    shim.navigate('/v2/location/locA/dashboard', { via: 'pushState' });
+    shim.setContact(null);
+    await shim.flush();
+    assert.equal(shim.document.querySelectorAll('.ghlc-menu').length, 0, 'absent on the locA dashboard');
+    shim.navigate('/v2/agency/dashboard', { via: 'pushState' });
+    shim.setSidebarMode('agency');
+    await shim.flush();
+    assert.equal(shim.document.querySelectorAll('.ghlc-menu').length, 0, 'absent on the agency dashboard');
+    shim.navigate(CONTACT_PATH, { via: 'pushState' });
+    shim.setSidebarMode('location');
+    shim.setContact(JANE);
+    await shim.flush();
+    assert.equal(shim.document.querySelectorAll('.ghlc-menu').length, 1, 'back on a locA contact');
+    assert.equal(shim.listenerCount(shim.document, 'pointerdown'), 0);
+    assert.equal(shim.errors.length, 0);
+  }
+  {
+    const { shim } = await bootMenu(withMenu({ scope: 'all', items: [tInvite(), tScoped()] }));
+    assert.deepEqual(menuParts(shim).items.map((i) => i.getAttribute('data-ghlc-button-id')), ['tInvite'], 'tScoped absent at locA');
+    shim.navigate('/v2/location/locB/contacts/detail/c1', { via: 'pushState' });
+    await shim.flush();
+    assert.deepEqual(menuParts(shim).items.map((i) => i.getAttribute('data-ghlc-button-id')), ['tInvite', 'tScoped'], 'tScoped present at locB');
+    assert.equal(shim.errors.length, 0);
+  }
+  {
+    const cfg = withMenu();
+    cfg.buttons = [];
+    cfg.locations.locA.buttons = { tInvite: false, tBroken: false, tCopy: false };
+    const { shim, GHLC } = await bootMenu(cfg);
+    assert.equal(shim.document.querySelectorAll('.ghlc-menu').length, 0, 'an empty menu renders no wrapper');
+    assert.equal(contactGroup(shim), null, 'and with no plain contact buttons, no contact group');
+    assert.equal(GHLC.verify().observers.contact, false);
+    assert.equal(shim.errors.length, 0);
+  }
+});
+
+scenario('menu logs: menu and requires diagnostics carry ids and reasons only', async () => {
+  const leaks = [...LEAK_STRINGS, 'owner+12', 'TEST-CONSENT', 'Consent Item', 'Menu Invite', "member's own"];
+  {
+    const { shim } = await bootMenu(consentMenu(), { contact: SYNTHETIC_CONTACT });
+    const parts = menuParts(shim);
+    parts.trigger.click();
+    parts.items[1].click();
+    parts.items[0].click();
+    await shim.flush();
+    assert.ok(logCount(shim, 'requires-unmet', 'tConsent') >= 1);
+    assert.ok(logCount(shim, 'menu-open', 'testActions') >= 1);
+    assertNoLeak(shim.console.lines, leaks, 'menu logs (synthetic)');
+    assert.equal(shim.errors.length, 0);
+  }
+  {
+    const { shim, shell, GHLC } = await bootMenu(consentMenu());
+    const input = await liveEmailRegion(shim, shell, GHLC, 'member@example.test');
+    const parts = menuParts(shim);
+    parts.trigger.click();
+    input.value = 'owner+12@example.test';
+    parts.items[1].click();
+    await shim.flush();
+    assert.equal(logCount(shim, 'requires-unmet', 'tConsent'), 1);
+    GHLC.verify();
+    assertNoLeak(shim.console.lines, [...leaks, 'member@'], 'menu logs (click time)');
+    assert.equal(shim.errors.length, 0);
+  }
+});
+
+scenario('menu verify: verify() reports configured menu ids', async () => {
+  const { shim, GHLC } = await bootMenu();
+  const r = GHLC.verify();
+  assert.deepEqual(plain(r.config.menuIds), ['testActions']);
+  const text = JSON.stringify(r);
+  for (const s of ['TEST-MENU', 'Menu Invite', 'jane@', 'hooks/']) assert.ok(!text.includes(s), `verify must not contain "${s}"`);
+  assert.equal(shim.errors.length, 0);
+});
+
+check('unit: validateConfig accepts menus and enforces one id namespace across buttons and items', () => {
+  const api = throwawayApi();
+  const base = loadFixture();
+  const errorsOf = (cfg) => api.validateConfig(cfg).errors;
+  const withItems = (items, extra = {}) => ({ ...base, menus: [testMenu({ items, ...extra })] });
+  assert.equal(api.validateConfig(base).ok, true, 'the buttons-only fixture validates');
+  assert.equal(api.validateConfig(withMenu()).ok, true, 'withMenu() validates');
+  assert.ok(errorsOf({ ...base, menus: {} }).includes('menus must be an array when present'));
+  assert.ok(errorsOf(withItems([{ ...tInvite(), id: 'sendInvite' }])).includes('menus[0].items[0].id is duplicated'), 'an item id may not repeat a button id');
+  assert.ok(errorsOf(withItems([tInvite(), { ...tCopy(), id: 'tInvite' }])).includes('menus[0].items[1].id is duplicated'), 'two items with one id');
+  assert.ok(errorsOf({ ...base, menus: [testMenu(), testMenu({ items: [tSecond()] })] }).includes('menus[1].id is duplicated'));
+  assert.ok(errorsOf({ ...base, menus: [testMenu(), testMenu({ id: 'other' })] }).includes('menus[1].items[0].id is duplicated'), 'item ids are unique across menus');
+  assert.ok(errorsOf(withMenu({ placement: 'header' })).includes('menus[0].placement must be contact'));
+  assert.ok(errorsOf(withMenu({ items: 'nope' })).includes('menus[0].items must be an array'));
+  assert.equal(api.validateConfig(withMenu({ label: '' })).ok, false, 'empty menu label');
+  assert.equal(api.validateConfig(withItems([{ ...tInvite(), label: '' }])).ok, false, 'empty item label');
+  assert.ok(errorsOf(withItems([{ id: 'noAction', label: 'No Action' }])).includes('menus[0].items[0].action must be an object with a string type'));
+  assert.equal(api.validateConfig(withItems([{ ...tInvite(), scope: 7 }])).ok, false, 'item scope 7');
+  const { scope: _omit, ...noScope } = tScoped();
+  assert.equal(api.validateConfig(withItems([noScope])).ok, true, 'an item without scope');
+  assert.equal(api.validateConfig(withItems([{ ...tInvite(), action: { type: 'script' } }])).ok, true, 'an unknown action type');
+  assert.equal(api.validateConfig(withItems([{ ...tConsent(), requires: 'garbage' }])).ok, true, 'an unknown requires shape');
+  assert.equal(api.validateConfig(withItems([{ ...tInvite(), placement: 'header' }])).ok, true, 'item placement is ignored');
+  assert.equal(api.validateConfig(withItems([tConsent(), tScoped()])).ok, true);
+  assert.deepEqual(plain(errorsOf({ ...base, buttons: [base.buttons[0], base.buttons[0]] })), ['buttons[1].id is duplicated'], 'buttons-only messages unchanged');
+});
+
+check('unit: resolveMenus applies menu scope, item scope, and per-item overrides', () => {
+  const api = throwawayApi();
+  assert.deepEqual(plain(api.resolveMenus(withMenu(), null)), []);
+  assert.deepEqual(plain(api.resolveMenus(loadFixture(), 'locA')), [], 'a config without menus');
+  const cfg = withMenu();
+  const source = JSON.stringify(cfg);
+  const menus = api.resolveMenus(cfg, 'locA');
+  assert.equal(menus.length, 1);
+  assert.equal(menus[0].id, 'testActions');
+  assert.equal(menus[0].placement, 'contact');
+  assert.deepEqual(plain(menus[0].items.map((i) => i.id)), ['tInvite', 'tBroken', 'tCopy']);
+  for (const record of menus[0].items) {
+    assert.equal(record.placement, 'contact');
+    assert.equal(record.menuId, 'testActions');
+    assert.deepEqual(plain(record.scope), ['locA']);
+  }
+  assert.ok(menus[0].items[0] !== cfg.menus[0].items[0], 'records are copies');
+  assert.equal(JSON.stringify(cfg), source, 'the source config is not mutated');
+  assert.deepEqual(plain(api.resolveMenus(cfg, 'locB')), [], 'menu scope gates the menu');
+
+  const over = withMenu({ items: [tInvite(), tBroken(), tCopy(), tScoped()] });
+  over.locations.locA.buttons = { tCopy: false, tInvite: { label: 'Invite (A)', id: 'hijack', placement: 'header', scope: ['locZ'] }, tScoped: true, constructor: false };
+  const overSource = JSON.stringify(over);
+  const [m] = api.resolveMenus(over, 'locA');
+  assert.deepEqual(plain(m.items.map((i) => i.id)), ['tInvite', 'tBroken', 'tScoped']);
+  assert.equal(m.items[0].label, 'Invite (A)');
+  assert.equal(m.items[0].placement, 'contact');
+  assert.deepEqual(plain(m.items[0].scope), ['locA']);
+  assert.deepEqual(plain(m.items[2].scope), ['locB'], 'an item keeps its own scope');
+  assert.equal(JSON.stringify(over), overSource);
+
+  const all = withMenu({ scope: 'all', items: [tInvite(), tScoped()] });
+  assert.deepEqual(plain(api.resolveMenus(all, 'locA')[0].items.map((i) => i.id)), ['tInvite']);
+  assert.deepEqual(plain(api.resolveMenus(all, 'locB')[0].items.map((i) => i.id)), ['tInvite', 'tScoped']);
+  assert.equal(api.resolveMenus(all, 'locB')[0].items[0].scope, 'all', 'the menu scope is inherited');
+
+  const empty = withMenu();
+  empty.locations.locA.buttons = { tInvite: false, tBroken: false, tCopy: false };
+  assert.deepEqual(plain(api.resolveMenus(empty, 'locA')), [], 'a menu with no visible item is dropped');
+});
+
+check('unit: isSyntheticEmail matches the +digits@ dedupe pattern only', () => {
+  const api = throwawayApi();
+  for (const v of ['owner+12@example.test', 'a+0@b.c']) assert.equal(api.isSyntheticEmail(v), true, v);
+  for (const v of ['owner+tag@example.test', 'jane@example.test', 'owner+@x.y', '', null, 42, undefined]) {
+    assert.equal(api.isSyntheticEmail(v), false, String(v));
+  }
 });
 
 // ---------------------------------------------------------------------------
