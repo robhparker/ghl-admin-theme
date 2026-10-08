@@ -9,7 +9,7 @@ What this delivers: staff press "Send individual consent" on a family member's r
 | File | Where | Purpose |
 |---|---|---|
 | `README.md` | this folder | This index: apply order, wf2 change list, the Build Status v9 paste block, rollback, Phase 6 checks, open questions |
-| `BUILD-SPEC-clinx-consent-webhook.md` | this folder | Click-by-click build of the ClinX workflow "[Ready] Admin Menu: Consent Actions (webhook)", refusals R-01..R-09, checklist V-01..V-11, the Send Invite rename |
+| `BUILD-SPEC-clinx-consent-webhook.md` | this folder | Click-by-click build of the ClinX workflow "[Ready] Admin Menu: Consent Actions (webhook)", refusals R-01..R-10, checklist V-01..V-12, the Send Invite rename |
 | `wf2-consent-hub-status.member-scope.json` | this folder | wf2 Consent Hub Status (`RxnpkyL0jng8hVx7`) with Build Status v9, synced to the live v8 roster. Reference only: never import it (see F-1) |
 | `wf2-member-scope.diff` | this folder | Unified diff of the JSON above against the stale repo mirror `n8n/2-consent-hub-status.json` (shows the v8 sync and v9 together) |
 | `COMPLETION-PATH.md` | this folder | How a member's own completion reaches the owner's hub (HUB-04), the hub no-change decision (D-11), Q-1 and Q-2 |
@@ -30,7 +30,7 @@ No `hub-page.diff`: the hub page needs no change (D-11). Byte-identical mirrors 
 1. **n8n wf2 (Consent Hub Status, `RxnpkyL0jng8hVx7`).** Open the Build Status node and confirm the first line reads `// v8: PART-1 PREFILL`. Select all of its code, replace it with the Build Status v9 block below, Save, then **Publish**. n8n changes do not ship until you click Publish. After publishing, reopen the node and confirm the first line reads `// v9: MEMBER SCOPE (2026-10-07)`. Smoke check: open an existing owner's hub link; it still shows the whole family exactly as before (owner responses are byte-identical to v8).
 2. **Hub page:** nothing to change. Hub v11 renders a member's single card and recovers the member's token on return as-is. Evidence: [COMPLETION-PATH.md, D-11 section](COMPLETION-PATH.md#hub-page-v11-with-a-member-scoped-response-d-11).
 3. **ClinX email template "Member Consent Forms".** Marketing -> Emails -> Templates -> New -> Code editor. Paste the compiled `Email-Templates/Consent-Hub-Invite/consent-forms-member.html`, never the `.mjml` source. Save, close, reopen, and confirm the preview shows the header, the "Complete My Forms" button, and the footer (BUILD-SPEC §0.2). The subject "Your Xcelsior consent forms" is set in the workflow's Send Email action, not in the template.
-4. **Build the consent workflow** "[Ready] Admin Menu: Consent Actions (webhook)" per `BUILD-SPEC-clinx-consent-webhook.md` §0 to §6, ticking §10 (V-01..V-11) as you go: build in Draft, send the §1.4 fake-data sample, review the run log, reload and re-check every branch, then Publish. Track link clicks stays OFF on every Send Email (V-04).
+4. **Build the consent workflow** "[Ready] Admin Menu: Consent Actions (webhook)" per `BUILD-SPEC-clinx-consent-webhook.md` §0 to §6, ticking §10 (V-01..V-12) as you go: build in Draft, send the §1.4 fake-data sample, review the run log, reload and re-check every branch, then Publish. Track link clicks stays OFF on every Send Email (V-04).
 5. **Rename Send Invite** per BUILD-SPEC §7: workflow `3dff9d94-403f-41ae-8496-c47320fc0ea6` becomes "[Ready] Admin Menu: Send Invite (webhook)". The webhook URL does not change.
 6. **Phase 6 (admin-theme):** put the consent workflow's Inbound Webhook URL into both consent items ("Send individual consent" and "Resend Consent Hub link") in `config/agency-config.json`, release, then run the Phase 6 live checks below with test contacts only.
 
@@ -317,7 +317,7 @@ Test contacts only, never a real patient. Record each result in the Phase 6 run 
 4. After the member completes Part 3 and signs, the owner's hub shows them complete.
 5. Before testing v9, set `member_type` to `owner` on any sandbox or test token holder you will use whose `member_type` and `owner_contact_id` are both empty (6 of 10 holders in the 2026-08-25 pull, all sandbox or test contacts). v9 fails closed on that shape and their hubs would show the could-not-load message.
 
-**Build checks** (BUILD-SPEC §10, record each result there): V-01 found-contact context, V-02 buttonId in the If/Else picker, V-03 buttonId in the trigger sample, V-04 Track link clicks OFF on every Send Email, V-05 Find Contact context switching and restore, V-06 Custom Code available, V-07 Custom Code output merge syntax, V-08 crypto in the Custom Code runtime, V-09 the written token appears in the email link (`?t=adhoc_` plus 64 hex), V-10 the `+{{contact.hint_patient_id}}@` contains-value resolves per contact, V-11 no workflow triggers on a Consent Hub Token change.
+**Build checks** (BUILD-SPEC §10, record each result there): V-01 found-contact context, V-02 buttonId in the If/Else picker, V-03 buttonId in the trigger sample, V-04 Track link clicks OFF on every Send Email, V-05 Find Contact context switching and restore, V-06 Custom Code available, V-07 Custom Code output merge syntax, V-08 crypto in the Custom Code runtime, V-09 the email link carries exactly the token saved on the member (`?t=adhoc_` plus 64 hex) and "Verify saved token" logged `ok`, V-10 the `+{{contact.hint_patient_id}}@` contains-value resolves per contact, V-11 no workflow triggers on a Consent Hub Token change, V-12 what a Custom Code runtime error does to a run (throwaway probe workflow only).
 
 **Refusals.** For each id, set up the condition on a test contact, press the item, and confirm all four outcomes: (a) a Note with the register text on the clicked record (R-01 has no record, so no Note), (b) an internal notification with the reason, the buttonId, the requestId, and the contact id only, (c) the run ends at that refusal, (d) no email is sent.
 
@@ -332,6 +332,7 @@ Test contacts only, never a real patient. Record each result in the Phase 6 run 
 | R-07 | Member whose Consent Status is `complete` | | | | |
 | R-08 | Resend on a member whose owner is missing, or on a non-owner without an owner link | | | | |
 | R-09 | Resend where the owner has no Consent Hub Token | | | | |
+| R-10 | Test member only: temporarily change the last line of "Mint member hub token" to `output = { token: 'broken', mintedAt: Date.now() };`, press Send individual consent, then restore the line, re-run Test your Code, and clear the test member's Consent Hub Token | | | | |
 
 **Pass outcomes.** Send individual consent on a valid member: tag `consent-pending`, the "Member Consent Forms" email at the member's own address with `?t=adhoc_` plus 64 hex, the Note "Individual consent email sent by staff via Actions menu". Pressing it again reuses the same token. Resend Consent Hub link from the owner and from a member: the owner receives the d6cf9af1 invite for their leaf, and the Note lands on the owner.
 
@@ -342,7 +343,7 @@ Test contacts only, never a real patient. Record each result in the Phase 6 run 
 - **Q-3 (token length, F-2).** wf1 owner tokens are 16 bytes (32 hex); member tokens are 32 bytes (`adhoc_` plus 64 hex) per D-05a. No consumer checks length. Kept at 32 bytes; confirm you are happy with the two lengths coexisting.
 - **Q-4 (synthetic-email pre-check, F-3): resolved.** The admin-theme Phase 4 client pre-check `/\+\d+@/` missed wf1's synthetic `+pat-<id>@` addresses. It was widened to `/\+(?:\d+|pat-[A-Za-z0-9_-]+)@/` in admin-theme commit 86b53d7. R-04 still refuses those addresses server-side regardless of the client.
 - **Test contacts without `member_type` (05-01).** See Phase 6 check 5: stamp `owner` on any sandbox token holder you will test with before publishing v9.
-- **V-01..V-11** are open until you tick them in BUILD-SPEC §10 during the build or the Phase 6 run.
+- **V-01..V-12** are open until you tick them in BUILD-SPEC §10 during the build or the Phase 6 run.
 
 Follow-ups for your hands, after apply:
 

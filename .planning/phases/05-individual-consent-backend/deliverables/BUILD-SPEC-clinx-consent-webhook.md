@@ -6,8 +6,8 @@ This spec builds ONE new workflow, "[Ready] Admin Menu: Consent Actions (webhook
 
 **How to read it.** Steps are numbered. Each step reads "Action type -> field = value". Two kinds of ids run through the spec:
 
-- **R-01 .. R-09** are refusals. Each appears inline where it happens and once in the register (§9) with its exact Note text, notification text, and staff fix.
-- **V-01 .. V-11** are "verify in ClinX UI" markers. A marker line says what to check while building and what to do if ClinX differs. Tick each in the checklist (§10). If a check fails and the marker gives no fallback, stop building and do not publish.
+- **R-01 .. R-10** are refusals. Each appears inline where it happens and once in the register (§9) with its exact Note text, notification text, and staff fix.
+- **V-01 .. V-12** are "verify in ClinX UI" markers. A marker line says what to check while building and what to do if ClinX differs. Tick each in the checklist (§10). If a check fails and the marker gives no fallback, stop building and do not publish.
 
 ## 0. Before you start
 
@@ -166,7 +166,7 @@ D-04's acceptable alternative: drop 4.4 entirely and rely on 4.2's synthetic che
 
 4.5 **R-07, already complete (D-04 #5).** If/Else, action name = "Already complete": Branch "Complete" -> Consent Status is `complete` -> refuse (§0.5; the context is the member after 4.4's restore): Note = "Already complete. Nothing to send." Notification with the same text. End. None -> 4.6. Use the value the Form Submitted workflow a56137e1 writes (`complete`, design §5.8); if Consent Status shows as a dropdown, pick that option.
 
-4.6 **Member token (D-05a).** If/Else, action name = "Member has a hub token": Branch "No token" -> Consent Hub Token is empty -> steps 1-4 below, then 4.7. None (a token exists) -> reuse it, write nothing (the member's link never changes) -> 4.7. HighLevel branches do not rejoin, so under None either add a Go To action pointing at 4.7's first action (if the plan offers Go To) or repeat 4.7's three actions there.
+4.6 **Member token (D-05a).** If/Else, action name = "Member has a hub token": Branch "No token" -> Consent Hub Token is empty -> steps 1-6 below (mint, save, reload, verify), then 4.7. None (a token exists) -> reuse it, write nothing (the member's link never changes) -> 4.7. HighLevel branches do not rejoin, so under None either add a Go To action pointing at 4.7's first action (if the plan offers Go To) or repeat 4.7's three actions there.
 
 1. **Custom Code**, action name = "Mint member hub token" -> Language = JavaScript -> Input properties = none (no `inputData` keys) -> Code = the block below, pasted exactly.
 
@@ -191,13 +191,34 @@ var hex = '';
 for (var i = 0; i < bytes.length; i++) {
   hex += (bytes[i] < 16 ? '0' : '') + bytes[i].toString(16);
 }
-output = { token: 'adhoc_' + hex };
+// mintedAt lets "Verify saved token" refuse a result that was not produced by THIS run.
+output = { token: 'adhoc_' + hex, mintedAt: Date.now() };
 ```
 <!-- custom-code:js:end -->
 
 2. Click **Test your Code**. It is mandatory: HighLevel gives later steps no output from code that was never tested. The test result shows a sample `adhoc_` token. It is not written to any contact; do not copy it anywhere.
 3. **Update Contact Field**, action name = "Save member hub token" -> field = Consent Hub Token -> value = the Custom Code output `token`.
-4. Continue to 4.7.
+4. **Find Contact**, action name = "Reload member" -> id == `{{inboundWebhookRequest.contactId}}`. This re-reads the member, so the next steps (and 4.7's email link) see the value actually stored on the record, not a value cached before the write. It was the V-09 fallback; it is now always built.
+5. **Custom Code**, action name = "Verify saved token" -> Language = JavaScript -> Input properties: `savedToken` = `{{contact.consent_hub_token}}` (the stored value, after the reload), `mintedAt` = the "Mint member hub token" output `mintedAt` -> Code = the block below, pasted exactly. Click **Test your Code** with the inputs as they are: the test result must be `tokenCheck: 'bad'` (if it shows `ok`, stop and tell Rob). That way, if HighLevel ever replays a test result after a runtime error (V-12), it replays a refusal.
+
+<!-- custom-code:verify:start -->
+```js
+// Post-condition after "Save member hub token" (review CR-02). Fail closed: tokenCheck is
+// 'ok' only when the STORED token is a complete member token AND the mint ran in this run
+// (mintedAt within the last 15 minutes), so an empty write, merge-tag text, a constant, or a
+// replayed Test your Code result is refused before any email is sent.
+var saved = String(inputData.savedToken || '');
+var mintedAt = Number(inputData.mintedAt);
+var age = Date.now() - mintedAt;
+var fresh = isFinite(mintedAt) && mintedAt > 0 && age > -60000 && age < 15 * 60 * 1000;
+var tokenCheck = (/^adhoc_[0-9a-f]{64}$/.test(saved) && fresh) ? 'ok' : 'bad';
+output = { tokenCheck: tokenCheck };
+```
+<!-- custom-code:verify:end -->
+
+6. **If/Else**, action name = "Saved token valid": Branch "Valid" -> the "Verify saved token" output `tokenCheck` is `ok` -> 4.7 (whose email link reads the verified stored value). None (any other value, including an output that did not resolve) -> **R-10**, refuse (§0.5; the context is the member after the reload): Note = "Member hub token could not be created or saved. Nothing was sent. Rob must check the Mint member hub token step and clear this member's Consent Hub Token if it is not empty." Notification with the same text. End.
+
+Why R-10 exists: the mint's only failure handling is `throw`. If HighLevel logs a failed Custom Code action and carries on (V-12), "Save member hub token" would write an empty value, merge-tag text, or a replayed sample, and the email would follow. An empty token gives the member a dead link; a constant shared by several members lets wf2 resolve one member's link to another member's card. R-10 stops both before the email. wf2 Build Status v9 also refuses any token held by more than one contact (review CR-03).
 
 verify in ClinX UI (V-06): Custom Code is available on this location's plan (it is a Premium action). If it differs (the action is missing or locked): do not build 4.6 another way; stop and tell Rob.
 
@@ -205,7 +226,9 @@ verify in ClinX UI (V-07): the Custom Code output variable name and merge syntax
 
 verify in ClinX UI (V-08): crypto is available in the Custom Code runtime, meaning Test your Code returns `adhoc_` plus 64 hex characters and no error. Math.random is not acceptable as a fallback, because the token is the only key to the member's hub. If neither crypto source works, do not publish: stop and tell Rob. Selecting Python with `secrets.token_hex(32)` (prefixed with `adhoc_`) is a cryptographic alternative Rob may approve.
 
-verify in ClinX UI (V-09): the Update Contact Field value is visible to the next Send Email. In the first Phase 6 test send, the email's button link must end in `?t=adhoc_` plus 64 hex. If it differs (empty or stale token in the link): add a Find Contact -> id == `{{inboundWebhookRequest.contactId}}` right after "Save member hub token" to reload the member, and test again.
+verify in ClinX UI (V-09): the stored token is the one the email carries. In the first Phase 6 test send, the email's button link must end in `?t=` plus exactly the Consent Hub Token now saved on the member's record (`adhoc_` plus 64 hex), and the run log must show "Verify saved token" = `ok`. If it differs (empty or stale token in the link, although the reload in step 4 is built): stop and tell Rob.
+
+verify in ClinX UI (V-12): what a Custom Code runtime error does to a run. Test it on a throwaway probe workflow, never on this one: "[TEST] Custom Code error probe" -> Inbound Webhook trigger (its own URL; never put it in admin-theme config) -> Find Contact by `{{inboundWebhookRequest.contactId}}` -> Custom Code with input `mode` = `{{inboundWebhookRequest.buttonId}}` and code `if (inputData.mode === 'throw') { throw new Error('V-12 probe'); } output = { token: 'probe-sample' };` (click Test your Code once, so `token` is pickable) -> Add Note = `V-12 probe continued past a Custom Code error. token = [` + the probe's `token` output + `]`. Publish the probe, POST the §1.4 curl once to the probe's URL, with a test contact's id and `"buttonId":"throw"`, then read the run log and the test contact's Notes. Record in §10 which happened: (a) the run stopped at the Custom Code step (no Note); (b) it continued and the Note shows `token = []` (empty); (c) it continued and the Note shows merge-tag text; (d) it continued and the Note shows `probe-sample` (a replayed test result). All four are safe with this spec: (a) sends nothing; (b) and (c) fail the `adhoc_` pattern in "Verify saved token"; (d) fails the 15-minute `mintedAt` window in "Verify saved token" (a replayed mint sample is older than that once the build is done), and a replayed "Verify saved token" result is its test result `bad`. If the run did anything else (for example the Note shows a fresh-looking value), do not publish: stop and tell Rob. Delete the probe afterwards.
 
 verify in ClinX UI (V-11): no other workflow triggers on a Consent Hub Token change. Automation -> Workflows -> filter by trigger type Contact Changed (and any custom-field-changed trigger) and confirm none watches Consent Hub Token. If one does: do not publish until Rob has read that workflow.
 
@@ -296,7 +319,7 @@ Why four leaves: D-06 says use the same email the Consents Needed workflow sends
 
 What this workflow changes for the accepted risk AR-03-01 (D-14):
 
-- **Volume grows; disclosure does not.** This adds a second public Inbound Webhook URL (the first is Send Invite's). Anyone holding it can post any `contactId` and `buttonId` and make the workflow send consent emails, so spam or confusing-email volume can grow. Disclosure does not grow: mail only ever goes to the address on file for the resolved contact (the member's own email, or the owner's), and every guard (R-01 to R-09) runs server-side in ClinX on values saved on the contact records. No guard reads the payload `email` or `phone`; only `contactId` (which record) and `buttonId` (which action) come from the request. The admin-theme 60 s cooldown per item is the only throttle.
+- **Volume grows; disclosure does not.** This adds a second public Inbound Webhook URL (the first is Send Invite's). Anyone holding it can post any `contactId` and `buttonId` and make the workflow send consent emails, so spam or confusing-email volume can grow. Disclosure does not grow: mail only ever goes to the address on file for the resolved contact (the member's own email, or the owner's), and every guard (R-01 to R-10) runs server-side in ClinX on values saved on the contact records. No guard reads the payload `email` or `phone`; only `contactId` (which record) and `buttonId` (which action) come from the request. The admin-theme 60 s cooldown per item is the only throttle.
 - **No patient data in URLs** beyond the opaque hub token in the email link. The webhook payload is unchanged from v0.1.2. No new PHI flows through n8n: wf2 already receives the token and returns card data, and v9 reduces what a member token can see to that member's own card.
 - **Tokens** are 256-bit cryptographic random values (32 bytes from web crypto or Node crypto, never Math random) with the `adhoc_` prefix. The test token shown by Test your Code is never stored.
 - **Notes and notifications** carry the reason, the staff fix, the buttonId, the requestId, and the contact id only. No names, dates of birth, contact details, or clinical data.
@@ -318,10 +341,11 @@ Every refusal follows §0.5: restore the clicked contact if needed, Note, Intern
 | R-07 | §4.5, A | Consent Status is `complete` | "Already complete. Nothing to send." | §0.5 format with the Note text | None needed; the member's forms are done |
 | R-08 | §5.2 step 2 and §5.3 step 1, B | Member's owner not found, or the contact has no owner link and is not an owner | "No owner found for this member. Check the owner link or use the owner's own record." | §0.5 format with the Note text | Open the owner's record and press Resend there, or ask Rob to fix the owner link |
 | R-09 | §5.2 step 4 and §5.3 step 2, B | The owner's Consent Hub Token is empty | "The owner has no Consent Hub link (legacy or never invited). Needs a hub token before a link can be resent." | §0.5 format with the Note text | Rob mints or backfills the owner's hub token (legacy owners have none) |
+| R-10 | §4.6 step 6, A | "Verify saved token" is not `ok`: the stored Consent Hub Token is not `adhoc_` plus 64 lowercase hex after the save and reload, or the mint did not run in this run | "Member hub token could not be created or saved. Nothing was sent. Rob must check the Mint member hub token step and clear this member's Consent Hub Token if it is not empty." | §0.5 format with the Note text | Rob reads the run log of "Mint member hub token", fixes it, clears the member's Consent Hub Token, then staff press again |
 
 ## 10. Verify in ClinX UI checklist
 
-Tick each while building (or in the Phase 6 live run where the check needs a real run log). V-01 to V-09 are required by D-07 and D-05a; V-10 and V-11 are planner additions.
+Tick each while building (or in the Phase 6 live run where the check needs a real run log). V-01 to V-09 are required by D-07 and D-05a; V-10 and V-11 are planner additions; V-12 is a code-review addition (2026-10-08).
 
 | Id | Where | What to check | If it differs | Result |
 |---|---|---|---|---|
@@ -333,9 +357,10 @@ Tick each while building (or in the Phase 6 live run where the check needs a rea
 | V-06 (D-05a, required) | §4.6 | Custom Code is available on the plan (Premium) | Stop and tell Rob | |
 | V-07 (D-05a, required) | §4.4 step 4, §4.6 step 3 | Custom Code output variable name and the merge syntax inserted for `token` and `memberEmail` (write it here) | Re-test the code; if no picker entry, stop and tell Rob | |
 | V-08 (D-05a, required) | §4.6 step 2 | Test your Code returns `adhoc_` plus 64 hex, so crypto exists in the runtime | Do not publish; stop and tell Rob (Python `secrets.token_hex(32)` only with Rob's approval) | |
-| V-09 (D-05a, required) | §4.6 to §4.7 | The token written by Update Contact Field appears in the next Send Email's link | Add a Find Contact by `{{inboundWebhookRequest.contactId}}` after the write, test again | |
+| V-09 (D-05a, required) | §4.6 to §4.7 | The email link carries exactly the Consent Hub Token saved on the member (after "Reload member"), and "Verify saved token" logged `ok` | Stop and tell Rob | |
 | V-10 (planner addition) | §4.2 | A "contains" value resolves the merge field `+{{contact.hint_patient_id}}@` per contact | Delete the third condition; accept the plus-addressing residual risk | |
 | V-11 (planner addition) | §4.6 | No other workflow triggers on a Consent Hub Token change | Do not publish until Rob reads that workflow | |
+| V-12 (review CR-02) | §4.6 | What a Custom Code runtime error does to a run, on the throwaway probe workflow: (a) stops, (b) continues with empty output, (c) continues with merge-tag text, (d) continues with the replayed test result (write which) | Anything other than (a) to (d): do not publish; stop and tell Rob | |
 
 ## 11. Rollback
 

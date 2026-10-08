@@ -39,6 +39,10 @@ const REFUSALS = {
   'R-07': 'Already complete. Nothing to send.',
 };
 
+// Highest refusal and verify ids (raised by the 2026-10-08 code-review fixes).
+const R_MAX = 10;
+const V_MAX = 12;
+
 const START = '<!-- custom-code:js:start -->';
 const END = '<!-- custom-code:js:end -->';
 
@@ -225,13 +229,13 @@ if (args.stage >= 2) {
   check('(h) the five D-04 refusal texts appear verbatim', () => missing(Object.values(REFUSALS)));
 
   check('(i) R-03..R-07 and V-05..V-11 each appear', () => {
-    const ids = ['R-03', 'R-04', 'R-05', 'R-06', 'R-07', 'V-05', 'V-06', 'V-07', 'V-08', 'V-09', 'V-10', 'V-11'];
+    const ids = ['R-03', 'R-04', 'R-05', 'R-06', 'R-07', 'V-05', 'V-06', 'V-07', 'V-08', 'V-09', 'V-10', 'V-11', 'V-12'];
     const miss = ids.filter((id) => count(idRe(id)) < 1);
     return miss.length ? 'missing ' + miss.join(', ') : true;
   });
 
   check('(i2) V-05..V-11 inline markers use the "verify in ClinX UI (V-xx)" form', () => {
-    const miss = ['V-05', 'V-06', 'V-07', 'V-08', 'V-09', 'V-10', 'V-11']
+    const miss = ['V-05', 'V-06', 'V-07', 'V-08', 'V-09', 'V-10', 'V-11', 'V-12']
       .filter((v) => !text.includes('verify in ClinX UI (' + v + ')'));
     return miss.length ? 'missing markers ' + miss.join(', ') : true;
   });
@@ -278,6 +282,15 @@ if (args.stage >= 2) {
       tokens.push(out.token);
     }
     return true;
+  });
+
+  check('(m6) the mint also outputs mintedAt = the current time in ms (review CR-02)', () => {
+    if (code === null) return 'no snippet';
+    const t0 = Date.now();
+    const out = runSnippet(code, globalThis.crypto, undefined);
+    const t1 = Date.now();
+    if (!out || typeof out.mintedAt !== 'number') return 'mintedAt is ' + JSON.stringify(out && out.mintedAt);
+    return (out.mintedAt >= t0 && out.mintedAt <= t1) || 'mintedAt not within the run';
   });
 
   check('(m2) require path (no crypto, real require) yields adhoc_ + 64 lowercase hex', () => {
@@ -337,6 +350,52 @@ if (args.stage >= 2) {
     return true;
   });
 
+  // ---- review CR-02: post-condition after the token save ----
+  check('(v1) "Verify saved token" passes only a stored adhoc_ + 64 hex token minted in this run', () => {
+    const good = 'adhoc_' + 'a1'.repeat(32);
+    const now = Date.now();
+    const cases = [
+      [{ savedToken: good, mintedAt: now }, 'ok'],
+      [{ savedToken: good, mintedAt: String(now - 70 * 1000) }, 'ok'],
+      [{ savedToken: '', mintedAt: now }, 'bad'],
+      [{ savedToken: 'adhoc_', mintedAt: now }, 'bad'],
+      [{ savedToken: 'adhoc', mintedAt: now }, 'bad'],
+      [{ savedToken: good.slice(0, -1), mintedAt: now }, 'bad'],
+      [{ savedToken: good.toUpperCase().replace('ADHOC_', 'adhoc_'), mintedAt: now }, 'bad'],
+      [{ savedToken: ' ' + good, mintedAt: now }, 'bad'],
+      [{ savedToken: '{{custom_code.token}}', mintedAt: now }, 'bad'],
+      [{ savedToken: 'a1'.repeat(16), mintedAt: now }, 'bad'],
+      [{ savedToken: good, mintedAt: now - 2 * 60 * 60 * 1000 }, 'bad'],
+      [{ savedToken: good, mintedAt: '' }, 'bad'],
+      [{ savedToken: good, mintedAt: '{{custom_code.mintedAt}}' }, 'bad'],
+      [{ savedToken: good }, 'bad'],
+      [{}, 'bad'],
+    ];
+    for (const [input, want] of cases) {
+      const out = runNamed('verify', input);
+      if (!out || out.tokenCheck !== want) return JSON.stringify(input).slice(0, 90) + ' gave ' + JSON.stringify(out) + ', want ' + want;
+    }
+    return true;
+  });
+
+  check('(v2) section 4 order: save, reload, verify, valid branch (R-10), then the member email', () => {
+    const s4 = section(H2[4]);
+    if (s4 === null) return 'section 4 missing';
+    const marks = ['action name = "Mint member hub token"', 'action name = "Save member hub token"', 'action name = "Reload member"',
+      'action name = "Verify saved token"', 'action name = "Saved token valid"', 'action name = "Member consent email"'];
+    let last = -1;
+    for (const mk of marks) {
+      const i = s4.indexOf(mk);
+      if (i < 0) return 'missing ' + mk;
+      if (i <= last) return 'out of order at ' + mk;
+      last = i;
+    }
+    const valid = s4.slice(s4.indexOf('action name = "Saved token valid"'), s4.indexOf('action name = "Member consent email"'));
+    if (!/\bR-10\b/.test(valid)) return 'R-10 refusal not on the Saved token valid branch';
+    if (!/`tokenCheck` is `ok`/.test(valid)) return 'Saved token valid does not branch on tokenCheck is ok';
+    return true;
+  });
+
   check('(u3) every Custom Code region is free of Math random and payload reads', () => {
     const regions = allRegions();
     if (regions.length < 3) return 'found ' + regions.length + ' custom-code regions, want at least 3';
@@ -359,10 +418,10 @@ if (args.stage >= 3) {
     return true;
   });
 
-  check('(o) R-01..R-09 and V-01..V-11 each appear at least twice', () => {
+  check('(o) R-01..R-' + R_MAX + ' and V-01..V-' + V_MAX + ' each appear at least twice', () => {
     const ids = [];
-    for (let k = 1; k <= 9; k++) ids.push('R-0' + k);
-    for (let k = 1; k <= 11; k++) ids.push('V-' + String(k).padStart(2, '0'));
+    for (let k = 1; k <= R_MAX; k++) ids.push('R-' + String(k).padStart(2, '0'));
+    for (let k = 1; k <= V_MAX; k++) ids.push('V-' + String(k).padStart(2, '0'));
     const low = ids.filter((id) => count(idRe(id)) < 2).map((id) => id + '=' + count(idRe(id)));
     return low.length ? 'fewer than 2: ' + low.join(', ') : true;
   });
