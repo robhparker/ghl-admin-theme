@@ -314,6 +314,38 @@ if (args.stage >= 2) {
     return 'did not throw';
   });
 
+  // ---- review WR-05: the mint refuses Math-based shims and reports its source ----
+  const shimRandom = ['Ma', 'th'].join('') + '.' + 'random';
+  check('(m7) a web-crypto getRandomValues shim built on Math random makes the mint throw', () => {
+    if (code === null) return 'no snippet';
+    // eslint-disable-next-line no-new-func
+    const gv = new Function('a', 'for (var i = 0; i < a.length; i++) { a[i] = Math.floor(' + shimRandom + '() * 256); } return a;');
+    try { runSnippet(code, { getRandomValues: gv }, undefined); } catch (e) { return true; }
+    return 'did not throw';
+  });
+  check('(m8) a require(crypto).randomBytes shim built on Math random makes the mint throw', () => {
+    if (code === null) return 'no snippet';
+    // eslint-disable-next-line no-new-func
+    const rb = new Function('n', 'var b = []; for (var i = 0; i < n; i++) { b.push(Math.floor(' + shimRandom + '() * 256)); } return b;');
+    try { runSnippet(code, undefined, () => ({ randomBytes: rb })); } catch (e) { return true; }
+    return 'did not throw';
+  });
+  check('(m9) the mint reports source = web-crypto or node-crypto for the path it used', () => {
+    if (code === null) return 'no snippet';
+    const a = runSnippet(code, globalThis.crypto, undefined);
+    const b = runSnippet(code, undefined, require);
+    return (a && a.source === 'web-crypto' && b && b.source === 'node-crypto') || 'got ' + JSON.stringify([a && a.source, b && b.source]);
+  });
+  check('(m10) the V-08 source probe runs and shows both generators in this Node', () => {
+    const out = runSnippet(namedSnippet('probe'), globalThis.crypto, require);
+    if (!out) return 'no output';
+    if (!/^function getRandomValues\(/.test(out.web)) return 'web = ' + JSON.stringify(String(out.web).slice(0, 40));
+    if (!/^function randomBytes\(size, callback\)/.test(out.node)) return 'node = ' + JSON.stringify(String(out.node).slice(0, 40));
+    if (!/"node"/.test(out.runtime)) return 'runtime = ' + JSON.stringify(String(out.runtime).slice(0, 40));
+    const none = runSnippet(namedSnippet('probe'), undefined, undefined);
+    return (none.web === 'none' && none.node === 'none') || 'no-crypto probe gave ' + JSON.stringify(none);
+  });
+
   check('(m5) the custom-code region has no Math random reference', () => {
     const r = region();
     if (r === null) return 'region missing';

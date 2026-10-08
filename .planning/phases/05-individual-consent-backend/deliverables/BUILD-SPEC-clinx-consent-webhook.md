@@ -194,12 +194,22 @@ D-04's acceptable alternative: drop 4.4 entirely and rely on 4.2's synthetic che
 ```js
 // Mint a member Consent Hub Token: "adhoc_" + 64 lowercase hex (32 cryptographic random bytes).
 // Cryptographic sources only. If neither exists, throw: do not publish, stop and tell Rob.
+// Tripwire (code review WR-05): refuse a source whose own code calls Math random, the usual
+// shape of a non-cryptographic polyfill. V-08 inspects the source by hand as well.
+var looksShimmed = function (fn) { return /\bMath\b[^A-Za-z0-9]{0,4}random\b/.test(String(fn)); };
 var bytes = null;
+var source = '';
 if (typeof crypto !== 'undefined' && crypto && typeof crypto.getRandomValues === 'function') {
+  if (looksShimmed(crypto.getRandomValues)) {
+    throw new Error('crypto.getRandomValues is a Math-based shim here. Do not publish: stop and tell Rob.');
+  }
   bytes = crypto.getRandomValues(new Uint8Array(32));
+  source = 'web-crypto';
 } else if (typeof require === 'function') {
   try {
-    bytes = require('crypto').randomBytes(32);
+    var nodeCrypto = require('crypto');
+    bytes = looksShimmed(nodeCrypto.randomBytes) ? null : nodeCrypto.randomBytes(32);
+    source = 'node-crypto';
   } catch (e) {
     bytes = null;
   }
@@ -212,7 +222,8 @@ for (var i = 0; i < bytes.length; i++) {
   hex += (bytes[i] < 16 ? '0' : '') + bytes[i].toString(16);
 }
 // mintedAt lets "Verify saved token" refuse a result that was not produced by THIS run.
-output = { token: 'adhoc_' + hex, mintedAt: Date.now() };
+// source records which generator ran (V-08 compares it with the probe).
+output = { token: 'adhoc_' + hex, mintedAt: Date.now(), source: source };
 ```
 <!-- custom-code:js:end -->
 
@@ -249,7 +260,29 @@ verify in ClinX UI (V-06): Custom Code is available on this location's plan (it 
 
 verify in ClinX UI (V-07): the Custom Code output variable name and merge syntax. HighLevel documents `output = { ... }` but not how later steps reference it. In the Update Contact Field value, open the merge-field picker, find the Custom Code step's `token`, insert it, and write the exact inserted text into §10. Do the same for "Capture member email" `memberEmail` as an input of "Compare with owner" (§4.4 step 3): an output must be pickable in a later step even after a Find Contact moved the context. If it differs (no picker entry): re-run Test your Code, then reopen the picker; if the output still does not appear, stop and tell Rob.
 
-verify in ClinX UI (V-08): crypto is available in the Custom Code runtime, meaning Test your Code returns `adhoc_` plus 64 hex characters and no error. Math.random is not acceptable as a fallback, because the token is the only key to the member's hub. If neither crypto source works, do not publish: stop and tell Rob. Selecting Python with `secrets.token_hex(32)` (prefixed with `adhoc_`) is a cryptographic alternative Rob may approve.
+verify in ClinX UI (V-08): crypto is available in the Custom Code runtime and is the runtime's own generator, not a JavaScript shim. Math.random is not acceptable as a fallback, because the token is the only key to the member's hub. Two parts:
+(a) Test your Code on "Mint member hub token" returns `adhoc_` plus 64 hex characters, no error, and `source` = `web-crypto` or `node-crypto`.
+(b) Source probe (code review WR-05). Before pasting the mint code, paste the probe below into the same Custom Code action, click Test your Code, copy the three output values into §10, then replace the probe with the mint code and test again.
+
+<!-- custom-code:probe:start -->
+```js
+// V-08 source probe: shows what the runtime's random sources really are. Not part of the workflow.
+var web = 'none';
+var node = 'none';
+if (typeof crypto !== 'undefined' && crypto && typeof crypto.getRandomValues === 'function') {
+  web = String(crypto.getRandomValues).slice(0, 300);
+}
+try {
+  if (typeof require === 'function') node = String(require('crypto').randomBytes).slice(0, 300);
+} catch (e) {
+  node = 'require failed: ' + e.message;
+}
+var runtime = (typeof process !== 'undefined' && process && process.versions) ? JSON.stringify(process.versions).slice(0, 200) : 'none';
+output = { web: web, node: node, runtime: runtime };
+```
+<!-- custom-code:probe:end -->
+
+Accept the source the mint reports (`source` in part (a)) only if its probe text is one of: `function getRandomValues() { [native code] }` (an engine built-in, as in browsers and V8 isolates); Node's own `getRandomValues` (starts `function getRandomValues(array) {` and checks `ERR_INVALID_THIS` or `webidl`); or Node's own `randomBytes` (starts `function randomBytes(size, callback) {` and calls `assertSize`). Reject anything else, and in particular any text that mentions Math random or builds bytes in a short loop: do not publish; stop and tell Rob. Selecting Python with `secrets.token_hex(32)` (prefixed with `adhoc_`) is a cryptographic alternative Rob may approve. Stated limitation: no check from inside the sandbox can prove a generator is cryptographic. A vendor could bind a weak native function, or change how functions print. The probe and the mint's tripwire rule out the common failure, a JavaScript polyfill over Math random; beyond that we rely on HighLevel exposing the platform's crypto (§8).
 
 verify in ClinX UI (V-09): the stored token is the one the email carries. In the first Phase 6 test send, the email's button link must end in `?t=` plus exactly the Consent Hub Token now saved on the member's record (`adhoc_` plus 64 hex), and the run log must show "Verify saved token" = `ok`. If it differs (empty or stale token in the link, although the reload in step 5 is built): stop and tell Rob.
 
@@ -348,7 +381,7 @@ What this workflow changes for the accepted risk AR-03-01 (D-14):
 
 - **Volume grows; disclosure does not.** This adds a second public Inbound Webhook URL (the first is Send Invite's). Anyone holding it can post any `contactId` and `buttonId` and make the workflow send consent emails, so spam or confusing-email volume can grow. Disclosure does not grow: mail only ever goes to the address on file for the resolved contact (the member's own email, or the owner's), and every guard (R-01 to R-12) runs server-side in ClinX on values saved on the contact records. No guard reads the payload `email` or `phone`; only `contactId` (which record) and `buttonId` (which action) come from the request. The admin-theme 60 s cooldown per item is the only throttle.
 - **No patient data in URLs** beyond the opaque hub token in the email link. The webhook payload is unchanged from v0.1.2. No new PHI flows through n8n: wf2 already receives the token and returns card data, and v9 reduces what a member token can see to that member's own card.
-- **Tokens** are 256-bit cryptographic random values (32 bytes from web crypto or Node crypto, never Math random) with the `adhoc_` prefix. The test token shown by Test your Code is never stored.
+- **Tokens** are 256-bit cryptographic random values (32 bytes from web crypto or Node crypto, never Math random) with the `adhoc_` prefix. The test token shown by Test your Code is never stored. Limitation (code review WR-05): the Custom Code sandbox is HighLevel's, and no code inside it can prove its generator is cryptographic. V-08's source probe and the mint's tripwire refuse the common failure (a JavaScript shim over Math random); beyond that, the token's strength rests on HighLevel exposing the platform crypto unaltered. Python `secrets.token_hex(32)` is the alternative if V-08 rejects both JavaScript sources.
 - **Notes and notifications** carry the reason, the staff fix, the buttonId, the requestId, and the contact id only. No names, dates of birth, contact details, or clinical data.
 - **Contact resolution is by ID only**, never by email or phone (§2), so a shared email cannot redirect an action to the wrong family member.
 - **Residual risk accepted (code review WR-02): two members sharing one saved email.** R-06 compares the member's saved email with the owner's only. If staff save member B's address on member A (two adult children sharing an inbox, or a copy-paste slip), A's email goes to that inbox, and A's link shows A's own card, including A's name, email, phone, and date of birth in the Part 1 prefill, to whoever reads it. Why it is accepted: the workflow resolves A by contact ID and mails exactly the address saved on A; ClinX has no reliable way to search the other family members by email inside the workflow (Find Contact returns one contact and moves the context, so it cannot prove that no other member holds the address). The exposure is bounded to one member's own card, never the family (wf2 v9), and only to an address staff deliberately saved on that member. Staff rule: press "Send individual consent" only after confirming with the member that the saved email is their own. A server-side check (search the membership by `hint_membership_id` for the same lowercased email) needs an API call with a credential and joins the deferred hardening work below.
@@ -387,7 +420,7 @@ Tick each while building (or in the Phase 6 live run where the check needs a rea
 | V-05 (D-04 #4, required) | §4.4, §5.2 | Find Contact switches the context to the found contact; "Restore member" switches back; a failed Find Contact leaves the member; the "Capture member email" output still resolves after the switch | Use the D-04 alternative (drop §4.4) and accept the named residual risk | |
 | V-06 (D-05a, required) | §4.6 | Custom Code is available on the plan (Premium) | Stop and tell Rob | |
 | V-07 (D-05a, required) | §4.2 step 1, §4.4 step 3, §4.6 step 3 | Custom Code output variable name and the merge syntax inserted for `token` and `memberEmail` (write it here) | Re-test the code; if no picker entry, stop and tell Rob | |
-| V-08 (D-05a, required) | §4.6 step 2 | Test your Code returns `adhoc_` plus 64 hex, so crypto exists in the runtime | Do not publish; stop and tell Rob (Python `secrets.token_hex(32)` only with Rob's approval) | |
+| V-08 (D-05a, required) | §4.6 step 2 | (a) Test your Code returns `adhoc_` plus 64 hex and `source`; (b) the source probe's `web`, `node`, `runtime` (write them here) show the reported source is an engine built-in or Node's own `getRandomValues` / `randomBytes`, not a Math-based shim | Do not publish; stop and tell Rob (Python `secrets.token_hex(32)` only with Rob's approval) | |
 | V-09 (D-05a, required) | §4.6 to §4.7 | The email link carries exactly the Consent Hub Token saved on the member (after "Reload member"), and "Verify saved token" logged `ok` | Stop and tell Rob | |
 | V-10 (planner addition) | §4.2 step 1 | Custom Code inputs resolve `{{contact.email}}` and `{{contact.hint_patient_id}}` to the member in context (a synthetic test member gives `emailCheck: 'synthetic'`) | R-04 then refuses every send (fail closed); stop and tell Rob | |
 | V-11 (planner addition) | §4.6 | No other workflow triggers on a Consent Hub Token change | Do not publish until Rob reads that workflow | |
