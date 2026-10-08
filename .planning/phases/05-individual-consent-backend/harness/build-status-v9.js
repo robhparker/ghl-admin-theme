@@ -11,7 +11,9 @@
 //   * The holder is a MEMBER when owner_contact_id is non-empty OR member_type (trimmed,
 //     lowercased) is not 'owner' - the n8n/README role rule (2026-08-25: owner = empty
 //     owner_contact_id plus member_type 'owner'). A legacy holder with neither field set
-//     is treated as a member (fail closed: it can never see the family).
+//     is treated as a member (fail closed: it can never see the family). The role is read
+//     from the holder's FRESH record (Refetch Member), not the lagging search hit; a holder
+//     missing from the refetch is treated as a member (code review IN-03).
 //   * A member token returns ONLY the holder's card, built with exactly the fields and
 //     helpers the v8 members loop uses (first_name, member_type, status, then form_params
 //     via formParamsFor(c) or doc_status/doc_ref via docStateFor(c)), with owner null.
@@ -103,7 +105,8 @@ if (!wellFormed || hits.length !== 1 || hits[0].id !== own.ownerId) {
 }
 // --- v9 member scope (see header) --------------------------------------------
 const holder = hits[0];
-const holderIsMember = String(val(holder, 'owner_contact_id') || '') !== '' || String(val(holder, 'member_type') || '').trim().toLowerCase() !== 'owner';
+const holderFresh = freshItems.find(x => x.id === holder.id);
+const holderIsMember = !holderFresh || String(val(holderFresh, 'owner_contact_id') || '') !== '' || String(val(holderFresh, 'member_type') || '').trim().toLowerCase() !== 'owner';
 if (holderIsMember) {
   const members = [];
   const c = freshItems.find(x => x.id === own.ownerId);

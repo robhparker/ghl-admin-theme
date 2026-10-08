@@ -349,6 +349,19 @@ function graph(wf) {
     return scopedTo(runWf2(behaviorCode, fam.S, fam.all, ADHOC_TOKEN), 'Sorrel', [fam.O, fam.K]);
   });
 
+  await check('member detect: role comes from the fresh record, not the lagging search hit (code review IN-03)', () => {
+    // stale search hit says 'owner', fresh GET says the holder is a spouse with an owner link: member view
+    const fam = family();
+    const staleHit = C(S_ID, 'Sorrel', { member_type: 'owner', token: ADHOC_TOKEN, email: S_EMAIL });
+    const r = scopedTo(runWf2(behaviorCode, staleHit, fam.all, ADHOC_TOKEN), 'Sorrel', [fam.O, fam.K]);
+    if (r !== true) return 'stale owner hit: ' + r;
+    // stale search hit says member, fresh GET says owner (e.g. just promoted): the owner view, as v8
+    const ownerHit = C(O_ID, 'Odessa', { member_type: 'child', owner_contact_id: 'ctcSomeoneElse08', token: OWNER_TOKEN, email: O_EMAIL });
+    const a = JSON.stringify(runWf2(behaviorCode, ownerHit, fam.all, OWNER_TOKEN));
+    const b = JSON.stringify(runWf2(v8Code, fam.O, fam.all, OWNER_TOKEN));
+    return a === b || 'fresh owner record did not get the v8 owner view';
+  });
+
   await check('member: holder missing from the refetch returns no cards and no family data', () => {
     const fam = family();
     const b = runWf2(behaviorCode, fam.S, [fam.O, fam.K], ADHOC_TOKEN);

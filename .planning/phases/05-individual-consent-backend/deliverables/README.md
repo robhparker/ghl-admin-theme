@@ -61,7 +61,7 @@ The whole live change, v8 to v9 (generated with `diff -u` from `proposals/2026-0
 ```diff
 --- a/build-status-v8-live.js
 +++ b/build-status-v9-member-scope.js
-@@ -1,3 +1,29 @@
+@@ -1,3 +1,31 @@
 +// v9: MEMBER SCOPE (2026-10-07). Changes vs v8:
 +//   * Token backstop (code review CR-03, 2026-10-08), before both paths: ?t= must be 16 to
 +//     256 characters, any value starting 'adhoc' must be the full 'adhoc_' plus 64 lowercase
@@ -75,7 +75,9 @@ The whole live change, v8 to v9 (generated with `diff -u` from `proposals/2026-0
 +//   * The holder is a MEMBER when owner_contact_id is non-empty OR member_type (trimmed,
 +//     lowercased) is not 'owner' - the n8n/README role rule (2026-08-25: owner = empty
 +//     owner_contact_id plus member_type 'owner'). A legacy holder with neither field set
-+//     is treated as a member (fail closed: it can never see the family).
++//     is treated as a member (fail closed: it can never see the family). The role is read
++//     from the holder's FRESH record (Refetch Member), not the lagging search hit; a holder
++//     missing from the refetch is treated as a member (code review IN-03).
 +//   * A member token returns ONLY the holder's card, built with exactly the fields and
 +//     helpers the v8 members loop uses (first_name, member_type, status, then form_params
 +//     via formParamsFor(c) or doc_status/doc_ref via docStateFor(c)), with owner null.
@@ -91,7 +93,7 @@ The whole live change, v8 to v9 (generated with `diff -u` from `proposals/2026-0
  // v8: PART-1 PREFILL. Changes vs v7:
  //   * formParamsFor adds demographic params for the Part 1 querystring: phone, and
  //     date_of_birth as MM/DD/YYYY (the form IGNORES ISO dates - probe-proven
-@@ -67,6 +93,36 @@
+@@ -67,6 +95,37 @@
    if (!signed) out.doc_ref = docRef;
    return out;
  };
@@ -105,7 +107,8 @@ The whole live change, v8 to v9 (generated with `diff -u` from `proposals/2026-0
 +}
 +// --- v9 member scope (see header) --------------------------------------------
 +const holder = hits[0];
-+const holderIsMember = String(val(holder, 'owner_contact_id') || '') !== '' || String(val(holder, 'member_type') || '').trim().toLowerCase() !== 'owner';
++const holderFresh = freshItems.find(x => x.id === holder.id);
++const holderIsMember = !holderFresh || String(val(holderFresh, 'owner_contact_id') || '') !== '' || String(val(holderFresh, 'member_type') || '').trim().toLowerCase() !== 'owner';
 +if (holderIsMember) {
 +  const members = [];
 +  const c = freshItems.find(x => x.id === own.ownerId);
@@ -149,7 +152,9 @@ Paste everything between the fences, exactly. This is the Build Status `jsCode` 
 //   * The holder is a MEMBER when owner_contact_id is non-empty OR member_type (trimmed,
 //     lowercased) is not 'owner' - the n8n/README role rule (2026-08-25: owner = empty
 //     owner_contact_id plus member_type 'owner'). A legacy holder with neither field set
-//     is treated as a member (fail closed: it can never see the family).
+//     is treated as a member (fail closed: it can never see the family). The role is read
+//     from the holder's FRESH record (Refetch Member), not the lagging search hit; a holder
+//     missing from the refetch is treated as a member (code review IN-03).
 //   * A member token returns ONLY the holder's card, built with exactly the fields and
 //     helpers the v8 members loop uses (first_name, member_type, status, then form_params
 //     via formParamsFor(c) or doc_status/doc_ref via docStateFor(c)), with owner null.
@@ -241,7 +246,8 @@ if (!wellFormed || hits.length !== 1 || hits[0].id !== own.ownerId) {
 }
 // --- v9 member scope (see header) --------------------------------------------
 const holder = hits[0];
-const holderIsMember = String(val(holder, 'owner_contact_id') || '') !== '' || String(val(holder, 'member_type') || '').trim().toLowerCase() !== 'owner';
+const holderFresh = freshItems.find(x => x.id === holder.id);
+const holderIsMember = !holderFresh || String(val(holderFresh, 'owner_contact_id') || '') !== '' || String(val(holderFresh, 'member_type') || '').trim().toLowerCase() !== 'owner';
 if (holderIsMember) {
   const members = [];
   const c = freshItems.find(x => x.id === own.ownerId);

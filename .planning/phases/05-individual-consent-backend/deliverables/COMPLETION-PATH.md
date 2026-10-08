@@ -4,7 +4,7 @@ Proposal folder: `hint-api/proposals/2026-10-07-individual-consent/` (2026-10-07
 `wf2-consent-hub-status.member-scope.json` (the edited wf2) and `wf2-member-scope.diff` (its diff
 against `n8n/2-consent-hub-status.json`). Offline proof: the admin-theme harness
 `.planning/phases/05-individual-consent-backend/harness/wf2-member-scope.harness.cjs`, which ends
-`PASS 31/31`.
+`PASS 32/32`.
 
 ## Result
 
