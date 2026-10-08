@@ -325,11 +325,53 @@ if (args.stage >= 2) {
     !text.includes('{{inboundWebhookRequest.email}}') || 'spec still references {{inboundWebhookRequest.email}}');
 
   check('(u1) "Capture member email" snippet trims and lowercases the saved member email', () => {
-    const a = runNamed('capture', { memberEmail: '  Sorrel.Own@Example.NET ' });
-    if (!a || a.memberEmail !== 'sorrel.own@example.net') return 'got ' + JSON.stringify(a);
+    const a = runNamed('capture', { memberEmail: '  Sorrel.Own@Example.NET ', hintPatientId: 'pat-abc' });
+    if (!a || a.memberEmail !== 'sorrel.own@example.net' || a.emailCheck !== 'ok') return 'got ' + JSON.stringify(a);
     const b = runNamed('capture', {});
-    if (!b || b.memberEmail !== '') return 'missing input gave ' + JSON.stringify(b);
+    if (!b || b.memberEmail !== '' || b.emailCheck !== 'empty') return 'missing input gave ' + JSON.stringify(b);
     return true;
+  });
+
+  // ---- review WR-01: R-04 runs the client's synthetic-email pattern server-side ----
+  check('(w1) "Capture member email" flags +<digits>@, +pat-<id>@ and the member\'s own key; passes real emails', () => {
+    const cases = [
+      [{ memberEmail: 'sorrel.own@example.net', hintPatientId: 'pat-EXAMPLEa1B2c' }, 'ok'],
+      [{ memberEmail: 'rob+membertest@example.com', hintPatientId: 'pat-x' }, 'ok'],
+      [{ memberEmail: 'owner+12@example.com', hintPatientId: 'pat-EXAMPLEa1B2c' }, 'synthetic'],
+      [{ memberEmail: 'owner+7@example.com' }, 'synthetic'],
+      [{ memberEmail: 'owner+pat-EXAMPLEa1B2c@example.com', hintPatientId: 'pat-OTHER' }, 'synthetic'],
+      [{ memberEmail: 'owner+pat-EXAMPLEd4E5f-4@example.com' }, 'synthetic'],
+      [{ memberEmail: 'Owner+PAT-ABC@Example.com' }, 'synthetic'],
+      [{ memberEmail: 'owner+sbx-pat-Q1w2@example.com', hintPatientId: 'sbx-pat-Q1w2' }, 'synthetic'],
+      [{ memberEmail: 'owner+sbx-pat-q1w2@example.com', hintPatientId: 'SBX-PAT-Q1W2' }, 'synthetic'],
+      [{ memberEmail: '', hintPatientId: 'pat-x' }, 'empty'],
+      [{ memberEmail: '   ' }, 'empty'],
+      [{ memberEmail: '{{contact.email}}' }, 'invalid'],
+      [{ memberEmail: 'no-at-sign.example.com' }, 'invalid'],
+    ];
+    for (const [input, want] of cases) {
+      const out = runNamed('capture', input);
+      if (!out || out.emailCheck !== want) return JSON.stringify(input) + ' gave ' + JSON.stringify(out) + ', want ' + want;
+    }
+    return true;
+  });
+
+  check('(w2) the server-side SYNTHETIC_EMAIL_RE equals the admin-theme client regex', () => {
+    const src = fs.readFileSync(require('path').join(__dirname, '../../../../src/ghl-customizer.js'), 'utf8');
+    const client = (src.match(/var SYNTHETIC_EMAIL_RE = (\/.*\/[a-z]*);/) || [])[1];
+    if (!client) return 'client SYNTHETIC_EMAIL_RE not found in src/ghl-customizer.js';
+    const server = (namedSnippet('capture').match(/var SYNTHETIC_EMAIL_RE = (\/.*\/[a-z]*);/) || [])[1];
+    if (!server) return 'SYNTHETIC_EMAIL_RE not found in the capture snippet';
+    return server === client || 'server ' + server + ' != client ' + client;
+  });
+
+  check('(w3) R-04 refuses on the capture output, not on a contains-merge-field condition', () => {
+    const s4 = section(H2[4]) || '';
+    const r04 = s4.slice(s4.indexOf('4.2 **R-04'), s4.indexOf('4.3 **R-05'));
+    if (!r04) return 'section 4.2 not found';
+    if (!/`emailCheck` is not `ok`/.test(r04)) return 'R-04 has no "emailCheck is not ok" condition';
+    if (/^- Email contains/m.test(r04)) return 'R-04 still lists an "Email contains" condition';
+    return r04.indexOf('action name = "Capture member email"') < r04.indexOf('action name = "Has own email"') || 'capture does not run before Has own email';
   });
 
   check('(u2) "Compare with owner" passes only two different, readable saved emails (fail closed)', () => {

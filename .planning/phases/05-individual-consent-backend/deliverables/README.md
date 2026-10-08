@@ -353,7 +353,7 @@ Test contacts only, never a real patient. Record each result in the Phase 6 run 
 7. Negative: open the test member's real link with the last character removed, and again with one character changed. Both must show the could-not-load message.
 8. Negative: open a test owner's real link with one character changed. It must show the could-not-load message, not the family.
 
-**Build checks** (BUILD-SPEC §10, record each result there): V-01 found-contact context, V-02 buttonId in the If/Else picker, V-03 buttonId in the trigger sample, V-04 Track link clicks OFF on every Send Email, V-05 Find Contact context switching and restore, V-06 Custom Code available, V-07 Custom Code output merge syntax, V-08 crypto in the Custom Code runtime, V-09 the email link carries exactly the token saved on the member (`?t=adhoc_` plus 64 hex) and "Verify saved token" logged `ok`, V-10 the `+{{contact.hint_patient_id}}@` contains-value resolves per contact, V-11 no workflow triggers on a Consent Hub Token change, V-12 what a Custom Code runtime error does to a run (throwaway probe workflow only).
+**Build checks** (BUILD-SPEC §10, record each result there): V-01 found-contact context, V-02 buttonId in the If/Else picker, V-03 buttonId in the trigger sample, V-04 Track link clicks OFF on every Send Email, V-05 Find Contact context switching and restore, V-06 Custom Code available, V-07 Custom Code output merge syntax, V-08 crypto in the Custom Code runtime, V-09 the email link carries exactly the token saved on the member (`?t=adhoc_` plus 64 hex) and "Verify saved token" logged `ok`, V-10 Custom Code inputs resolve `{{contact.email}}` and `{{contact.hint_patient_id}}` to the member (a synthetic test member gives `emailCheck: 'synthetic'`), V-11 no workflow triggers on a Consent Hub Token change, V-12 what a Custom Code runtime error does to a run (throwaway probe workflow only).
 
 **Refusals.** For each id, set up the condition on a test contact, press the item, and confirm all four outcomes: (a) a Note with the register text on the clicked record (R-01 has no record, so no Note), (b) an internal notification with the reason, the buttonId, the requestId, and the contact id only, (c) the run ends at that refusal, (d) no email is sent.
 
@@ -362,7 +362,7 @@ Test contacts only, never a real patient. Record each result in the Phase 6 run 
 | R-01 | Payload contactId that does not exist (the §1.4 sample) | n/a | | | |
 | R-02 | Unknown buttonId (sample with a wrong id) | | | | |
 | R-03 | Send individual consent on a contact without `family-member` | | | | |
-| R-04 | Member with empty, synthetic-tagged, or `+<hint_patient_id>@` email | | | | |
+| R-04 | Member with an empty or synthetic-tagged email; repeat with an untagged member whose email is `ownerlocal+<their hint_patient_id>@...` and with `ownerlocal+12@...` (code review WR-01) | | | | |
 | R-05 | Member with empty Owner Contact ID or Hint Membership ID, or a deleted owner | | | | |
 | R-06 | Member whose saved email equals the owner's saved email; repeat with the member's email in different case (must still refuse), and with an owner who has no saved email (second Note text) | | | | |
 | R-07 | Member whose Consent Status is `complete` | | | | |
@@ -377,7 +377,7 @@ Test contacts only, never a real patient. Record each result in the Phase 6 run 
 - **Q-1 (attestation radio).** An adult child opening their own link sees `form_behalf=Child` preselected on Part 1. v9 keeps it so the member's link equals the owner-view link (HUB-04). Switching to "Self" is one line in the v9 member-scope block (`formParamsFor(c)` becomes `formParamsFor(c, true)`). Details in COMPLETION-PATH.md. Ships as-is unless you say otherwise.
 - **Q-2 (hub copy).** A member sees the "Family Consent Forms" eyebrow and the family intro on their own hub. Cosmetic; changing it means a hub re-paste with a member-mode copy swap. Not proposed.
 - **Q-3 (token length, F-2).** wf1 owner tokens are 16 bytes (32 hex); member tokens are 32 bytes (`adhoc_` plus 64 hex) per D-05a. No consumer checks length. Kept at 32 bytes; confirm you are happy with the two lengths coexisting.
-- **Q-4 (synthetic-email pre-check, F-3): resolved.** The admin-theme Phase 4 client pre-check `/\+\d+@/` missed wf1's synthetic `+pat-<id>@` addresses. It was widened to `/\+(?:\d+|pat-[A-Za-z0-9_-]+)@/` in admin-theme commit 86b53d7. R-04 still refuses those addresses server-side regardless of the client.
+- **Q-4 (synthetic-email pre-check, F-3): resolved.** The admin-theme Phase 4 client pre-check `/\+\d+@/` missed wf1's synthetic `+pat-<id>@` addresses. It was widened to `/\+(?:\d+|pat-[A-Za-z0-9_-]+)@/` in admin-theme commit 86b53d7. R-04 runs the same pattern server-side in Custom Code ("Capture member email", code review WR-01), plus the member's own `+<hint_patient_id>@` key, regardless of the client.
 - **Test contacts without `member_type` (05-01).** See Phase 6 check 5: stamp `owner` on any sandbox token holder you will test with before publishing v9.
 - **V-01..V-12** are open until you tick them in BUILD-SPEC §10 during the build or the Phase 6 run.
 
