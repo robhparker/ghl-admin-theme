@@ -18,7 +18,8 @@ awaiting: user response
 
 ### 1. Decisions Q-1, Q-2, Q-3, Q-5 (README "Open questions")
 expected: Each answered or default accepted.
-result: [pending]
+result: pass
+note: Rob 2026-10-08. Q-1 keep Child (the member link equals the owner view). Q-2 leave the family heading. Q-3 the two token lengths coexist. Q-5 accept the shared-email risk with the staff rule (confirm the email belongs to that member before pressing). These match the README defaults, so no deliverable changes.
 
 ### 2. Build the ClinX consent workflow per BUILD-SPEC, including build-time checks V-02, V-03, V-04, V-06, V-07 (first half), V-08, V-11 and the V-12 probe
 expected: Built as Draft. All build-time checks match the spec, or deviations are recorded.
@@ -47,9 +48,9 @@ result: [pending]
 ## Summary
 
 total: 7
-passed: 0
+passed: 1
 issues: 0
-pending: 7
+pending: 6
 skipped: 0
 blocked: 0
 
