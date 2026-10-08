@@ -3312,6 +3312,9 @@ scenario('sample: the shipped config boots at Dummy Clinic with its logo overrid
 // literals; the static gate scans src only.
 // ---------------------------------------------------------------------------
 
+// Node identity without assert.equal: a failing equal on two DOM nodes makes
+// node:assert inspect the whole (circular) shim document, which never finishes.
+const same = (actual, expected, message = 'expected the same node') => assert.ok(actual === expected, message);
 const MENU_HOOK = 'https://services.leadconnectorhq.com/hooks/TEST-MENU';
 const tInvite = () => ({ id: 'tInvite', label: 'Menu Invite', icon: 'send', action: { type: 'webhook', url: MENU_HOOK, cooldownMs: 60000, extraFields: { source: 'ghlc-harness' } } });
 const tBroken = () => ({ id: 'tBroken', label: 'Broken Item', action: { type: 'handler', handler: 'nope' } });
@@ -3342,14 +3345,14 @@ scenario('menu tracer: Actions menu renders in the contact group, opens on click
   const menus = shim.document.querySelectorAll('.ghlc-menu');
   assert.equal(menus.length, 1, 'exactly one menu wrapper');
   const { wrapper, trigger, panel, items } = menuParts(shim);
-  assert.equal(wrapper, menus[0]);
+  same(wrapper, menus[0]);
   const group = contactGroup(shim);
-  assert.equal(wrapper.parentNode, group, 'the menu lives directly inside the contact group');
+  same(wrapper.parentNode, group, 'the menu lives directly inside the contact group');
   const children = [...group.childNodes];
   for (const id of ['sendInvite', 'badHandlerBtn', 'copyIdBtn']) {
     const btn = byId(shim, id);
     assert.ok(btn, `${id} still rendered`);
-    assert.equal(btn.parentNode, group, `${id} is a direct child of the group`);
+    same(btn.parentNode, group, `${id} is a direct child of the group`);
     assert.ok(children.indexOf(btn) < children.indexOf(wrapper), `${id} precedes the menu`);
   }
 
@@ -3379,14 +3382,14 @@ scenario('menu tracer: Actions menu renders in the contact group, opens on click
   trigger.click();
   assert.equal(trigger.getAttribute('aria-expanded'), 'true');
   assert.equal(panel.hidden, false);
-  assert.equal(shim.document.activeElement, invite, 'first enabled item focused');
+  same(shim.document.activeElement, invite, 'first enabled item focused');
   assert.equal(GHLC.__test.getState().menu, 'testActions');
   assert.equal(logCount(shim, 'menu-open'), 1);
 
   invite.click();
   assert.equal(panel.hidden, true, 'activation closes the panel');
   assert.equal(trigger.getAttribute('aria-expanded'), 'false');
-  assert.equal(shim.document.activeElement, trigger, 'focus returns to the trigger');
+  same(shim.document.activeElement, trigger, 'focus returns to the trigger');
   assert.equal(invite.getAttribute('data-state'), 'submitting');
   assert.equal(invite.getAttribute('aria-busy'), 'true');
   assert.equal(invite.getAttribute('aria-disabled'), 'true');
@@ -3420,6 +3423,188 @@ scenario('menu tracer: Actions menu renders in the contact group, opens on click
   assert.equal(shim.observers().length, 9);
   assert.equal(logCount(shim, 'rerender'), 0);
   assertNoLeak(shim.console.lines, [...LEAK_STRINGS, 'Menu Invite'], 'menu tracer');
+  assert.equal(shim.errors.length, 0);
+});
+
+const isOpen = (parts) => parts.trigger.getAttribute('aria-expanded') === 'true' && parts.panel.hidden === false;
+const isClosed = (parts) => parts.trigger.getAttribute('aria-expanded') === 'false' && parts.panel.hidden === true;
+
+scenario('menu keyboard: Enter and Space on the trigger open the menu once and focus the first enabled item', async () => {
+  const { shim, GHLC } = await bootMenu();
+  const parts = menuParts(shim);
+  const { trigger, items } = parts;
+  trigger.focus();
+  shim.pressKey(trigger, 'Enter');
+  assert.ok(isOpen(parts), 'Enter opens');
+  same(shim.document.activeElement, items[0]);
+  assert.equal(GHLC.__test.getState().menu, 'testActions');
+  assert.equal(logCount(shim, 'menu-open'), 1, 'Enter opens exactly once (no native-click double toggle)');
+
+  shim.pressKey(shim.document.activeElement, 'Escape');
+  assert.ok(isClosed(parts));
+  same(shim.document.activeElement, trigger);
+
+  shim.pressKey(trigger, ' ');
+  assert.ok(isOpen(parts), 'Space opens');
+  same(shim.document.activeElement, items[0]);
+  assert.equal(logCount(shim, 'menu-open'), 2, 'Space opens exactly once');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('menu keyboard: ArrowDown on the trigger opens and focuses the first enabled item', async () => {
+  const { shim } = await bootMenu();
+  const parts = menuParts(shim);
+  const { trigger, items } = parts;
+  trigger.focus();
+  const r = shim.pressKey(trigger, 'ArrowDown');
+  assert.equal(r.keydownPrevented, true, 'ArrowDown is default-prevented (no page scroll)');
+  assert.ok(isOpen(parts));
+  same(shim.document.activeElement, items[0]);
+  assert.equal(logCount(shim, 'menu-open'), 1);
+
+  // ArrowDown on the trigger of an open menu moves focus into it without reopening.
+  trigger.focus();
+  assert.equal(shim.pressKey(trigger, 'ArrowDown').keydownPrevented, true);
+  same(shim.document.activeElement, items[0]);
+  assert.equal(logCount(shim, 'menu-open'), 1);
+
+  // ArrowUp on a closed trigger opens on the last item (WAI-ARIA menu button).
+  shim.pressKey(shim.document.activeElement, 'Escape');
+  assert.ok(isClosed(parts));
+  assert.equal(shim.pressKey(trigger, 'ArrowUp').keydownPrevented, true);
+  assert.ok(isOpen(parts));
+  same(shim.document.activeElement, items[2]);
+  assert.equal(logCount(shim, 'menu-open'), 2);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('menu keyboard: ArrowUp/ArrowDown wrap, Home/End jump, and unavailable items take focus', async () => {
+  const { shim } = await bootMenu();
+  const parts = menuParts(shim);
+  const { trigger, items } = parts;
+  const [invite, broken, copy] = items;
+  shim.pressKey(trigger, 'ArrowDown');
+  same(shim.document.activeElement, invite);
+  const press = (key, expected) => {
+    const r = shim.pressKey(shim.document.activeElement, key);
+    assert.equal(r.keydownPrevented, true, `${key} is default-prevented`);
+    same(shim.document.activeElement, expected, `${key} focus`);
+  };
+  press('ArrowDown', broken);
+  assert.equal(broken.getAttribute('aria-disabled'), 'true', 'unavailable item is reachable');
+  assert.equal(broken.hasAttribute('disabled'), false);
+  press('ArrowDown', copy);
+  press('ArrowDown', invite);
+  press('ArrowUp', copy);
+  press('ArrowUp', broken);
+  press('Home', invite);
+  press('End', copy);
+  press('Home', invite);
+  press('ArrowUp', copy);
+  assert.ok(isOpen(parts), 'navigation never closes the menu');
+  assert.equal(shim.fetchLog.length, 0, 'navigation never activates');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('menu keyboard: Escape closes and returns focus to the trigger', async () => {
+  const { shim, GHLC } = await bootMenu();
+  const parts = menuParts(shim);
+  const { trigger, items } = parts;
+  shim.pressKey(trigger, 'ArrowDown');
+  shim.pressKey(items[0], 'ArrowDown');
+  same(shim.document.activeElement, items[1]);
+  assert.equal(shim.pressKey(items[1], 'Escape').keydownPrevented, true);
+  assert.ok(isClosed(parts));
+  same(shim.document.activeElement, trigger);
+  assert.equal(GHLC.__test.getState().menu, null);
+
+  // Escape with focus on the trigger of an open menu closes it too.
+  trigger.click();
+  assert.ok(isOpen(parts));
+  trigger.focus();
+  assert.equal(shim.pressKey(trigger, 'Escape').keydownPrevented, true);
+  assert.ok(isClosed(parts));
+  same(shim.document.activeElement, trigger);
+  assert.equal(logCount(shim, 'menu-close', 'escape'), 2);
+  // Escape on a closed trigger is left alone.
+  assert.equal(shim.pressKey(trigger, 'Escape').keydownPrevented, false);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('menu keyboard: Tab closes and lets focus move on', async () => {
+  const { shim, GHLC } = await bootMenu();
+  const parts = menuParts(shim);
+  const { trigger, items } = parts;
+  shim.pressKey(trigger, 'Enter');
+  same(shim.document.activeElement, items[0]);
+  assert.equal(shim.pressKey(items[0], 'Tab').keydownPrevented, false, 'Tab is never default-prevented');
+  assert.ok(isClosed(parts));
+  same(shim.document.activeElement, trigger, 'focus parks on the trigger so the browser Tab continues from it');
+  assert.equal(GHLC.__test.getState().menu, null);
+
+  trigger.click();
+  trigger.focus();
+  assert.equal(shim.pressKey(trigger, 'Tab').keydownPrevented, false);
+  assert.ok(isClosed(parts));
+  assert.equal(logCount(shim, 'menu-close', 'tab'), 2);
+  assert.equal(shim.fetchLog.length, 0);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('menu keyboard: Enter or Space activates an item exactly once; unavailable items are inert', async () => {
+  const written = [];
+  const { shim } = await bootMenu(withMenu(), { clipboard: { writeText: async (t) => { written.push(t); } } });
+  const parts = menuParts(shim);
+  const { trigger, items } = parts;
+  const [invite, broken, copy] = items;
+
+  shim.pressKey(trigger, 'Enter');
+  same(shim.document.activeElement, invite);
+  shim.pressKey(invite, 'Enter');
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 1, 'one Enter, one POST');
+  assert.equal(shim.fetchLog[0].bodyJson.buttonId, 'tInvite');
+  assert.ok(isClosed(parts), 'activation closes the menu');
+  same(shim.document.activeElement, trigger);
+
+  shim.pressKey(trigger, 'Enter');
+  assert.ok(isOpen(parts));
+  same(shim.document.activeElement, copy, 'queued tInvite and unavailable tBroken are skipped when opening');
+  shim.pressKey(copy, 'Home');
+  same(shim.document.activeElement, invite);
+  shim.pressKey(invite, 'Enter');
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 1, 'a queued item is inert');
+  assert.ok(isOpen(parts), 'an inert activation leaves the menu open');
+  shim.pressKey(invite, 'ArrowDown');
+  same(shim.document.activeElement, broken);
+  shim.pressKey(broken, 'Enter');
+  shim.pressKey(broken, ' ');
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 1, 'an unavailable item is inert');
+  assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+  same(shim.document.activeElement, broken);
+
+  shim.pressKey(broken, 'ArrowDown');
+  same(shim.document.activeElement, copy);
+  shim.pressKey(copy, ' ');
+  await shim.flush();
+  assert.deepEqual(written, ['c1'], 'one Space, one copy');
+  assert.ok(isClosed(parts));
+  assert.equal(label(trigger), 'Actions · Contact ID copied');
+  assert.equal(logCount(shim, 'menu-open'), 2, 'two opens performed, two menu-open lines');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('menu keyboard: opening focuses the first enabled item, skipping an unavailable first item', async () => {
+  const { shim } = await bootMenu(withMenu({ items: [tBroken(), tInvite(), tCopy()] }));
+  const parts = menuParts(shim);
+  const { trigger, items } = parts;
+  assert.equal(items[0].getAttribute('data-ghlc-button-id'), 'tBroken');
+  shim.pressKey(trigger, 'Enter');
+  same(shim.document.activeElement, items[1], 'tInvite, not tBroken');
+  assert.equal(items[1].getAttribute('data-ghlc-button-id'), 'tInvite');
+  assert.equal(logCount(shim, 'menu-open'), 1);
   assert.equal(shim.errors.length, 0);
 });
 

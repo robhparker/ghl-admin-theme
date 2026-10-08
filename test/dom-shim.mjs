@@ -40,6 +40,19 @@ export class CustomEvent extends Event {
   }
 }
 
+export class KeyboardEvent extends Event {
+  constructor(type, init = {}) {
+    super(type, init);
+    this.key = init.key === undefined ? '' : String(init.key);
+    this.code = init.code === undefined ? '' : String(init.code);
+    this.shiftKey = !!init.shiftKey;
+    this.altKey = !!init.altKey;
+    this.ctrlKey = !!init.ctrlKey;
+    this.metaKey = !!init.metaKey;
+    this.repeat = !!init.repeat;
+  }
+}
+
 export class PopStateEvent extends Event {
   constructor(type, init = {}) {
     super(type, init);
@@ -951,6 +964,7 @@ export function createShim(options = {}) {
   win.Event = Event;
   win.CustomEvent = CustomEvent;
   win.PopStateEvent = PopStateEvent;
+  win.KeyboardEvent = KeyboardEvent;
   win.MutationObserver = MutationObserver;
   win.Node = Node;
   win.Element = Element;
@@ -1114,6 +1128,22 @@ export function createShim(options = {}) {
     return impl && typeof impl._listenerCount === 'function' ? impl._listenerCount(type) : 0;
   };
 
+  // Mirrors HTML button activation from the keyboard: Enter clicks a button
+  // right after a keydown nobody prevented, Space clicks it after the keyup
+  // when neither the keydown nor the keyup was prevented. This exists so a
+  // script that both handles Enter/Space itself and lets the native click
+  // through is caught as a double activation.
+  const pressKey = (t, key, init = {}) => {
+    const isLiveButton = () => t.tagName === 'BUTTON' && !t.hasAttribute('disabled');
+    const down = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init, key });
+    t.dispatchEvent(down);
+    if (key === 'Enter' && !down.defaultPrevented && isLiveButton()) t.click();
+    const up = new KeyboardEvent('keyup', { bubbles: true, cancelable: true, ...init, key });
+    t.dispatchEvent(up);
+    if (key === ' ' && !down.defaultPrevented && !up.defaultPrevented && isLiveButton()) t.click();
+    return { keydownPrevented: down.defaultPrevented, keyupPrevented: up.defaultPrevented };
+  };
+
   const observers = () => doc._mutationRegs.filter((r) => r.active).map((r) => ({ target: r.target, options: { ...r.options }, observer: r.observer }));
 
   return {
@@ -1147,7 +1177,9 @@ export function createShim(options = {}) {
     errors,
     listenerCount,
     observers,
+    pressKey,
     Event,
     CustomEvent,
+    KeyboardEvent,
   };
 }
