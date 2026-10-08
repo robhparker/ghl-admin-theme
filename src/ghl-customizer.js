@@ -1362,8 +1362,10 @@
   }
 
   function createMenuEl(menu) {
-    var panelId = NS + '-menu-' + menu.id;
-    var triggerId = panelId + '-trigger';
+    // Review 04 IN-03: distinct prefixes, so no valid menu id can make one
+    // menu's panel id equal another's trigger id (menu "a" vs "a-trigger").
+    var panelId = NS + '-menupanel-' + menu.id;
+    var triggerId = NS + '-menutrigger-' + menu.id;
 
     var wrapper = document.createElement('div');
     wrapper.setAttribute('class', OWN.menuClass);

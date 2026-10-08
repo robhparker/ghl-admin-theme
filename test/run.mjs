@@ -3560,8 +3560,8 @@ scenario('menu tracer: Actions menu renders in the contact group, opens on click
   assert.equal(trigger.getAttribute('aria-haspopup'), 'menu');
   assert.equal(trigger.getAttribute('aria-expanded'), 'false');
   assert.equal(trigger.getAttribute('aria-controls'), panel.id);
-  assert.equal(panel.id, 'ghlc-menu-testActions');
-  assert.equal(trigger.id, 'ghlc-menu-testActions-trigger');
+  assert.equal(panel.id, 'ghlc-menupanel-testActions');
+  assert.equal(trigger.id, 'ghlc-menutrigger-testActions');
   assert.equal(label(trigger), 'Actions');
   assert.equal(panel.getAttribute('role'), 'menu');
   assert.equal(panel.hidden, true);
@@ -3622,6 +3622,20 @@ scenario('menu tracer: Actions menu renders in the contact group, opens on click
   assert.equal(shim.observers().length, 9);
   assert.equal(logCount(shim, 'rerender'), 0);
   assertNoLeak(shim.console.lines, [...LEAK_STRINGS, 'Menu Invite'], 'menu tracer');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('review 04 IN-03: menus "a" and "a-trigger" get four distinct DOM ids and their ARIA links resolve', async () => {
+  const config = { ...loadFixture(), menus: [testMenu({ id: 'a', items: [tCopy()] }), testMenu({ id: 'a-trigger', items: [{ ...tCopy(), id: 'tCopy2' }] })] };
+  const { shim } = await bootMenu(config);
+  const a = menuParts(shim, 'a');
+  const b = menuParts(shim, 'a-trigger');
+  const ids = [a.panel.id, a.trigger.id, b.panel.id, b.trigger.id];
+  assert.equal(new Set(ids).size, 4, `ids are distinct: ${ids.join(', ')}`);
+  for (const parts of [a, b]) {
+    same(shim.document.getElementById(parts.trigger.getAttribute('aria-controls')), parts.panel, 'aria-controls names its own panel');
+    same(shim.document.getElementById(parts.panel.getAttribute('aria-labelledby')), parts.trigger, 'aria-labelledby names its own trigger');
+  }
   assert.equal(shim.errors.length, 0);
 });
 
