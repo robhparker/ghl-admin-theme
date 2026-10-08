@@ -32,7 +32,8 @@ note: Rob chose "add it now" (2026-10-07). The trigger reads "Actions · Sending
 
 ### 4. Live HighLevel: menu panel not clipped (WR-03). Run in the Phase 6 live test.
 expected: On an Xcelsior contact record the panel opens below the Actions button, fully visible, and is not clipped by any overflow ancestor in the left record column.
-result: [pending]
+result: pass
+note: Live check 2026-10-07 in the logged-in Playwright tab. The local build was served by intercepting that tab's jsDelivr requests; the agency snippet was untouched and webhook POSTs were blocked. Contact MrNb0EcF5PQT6mwhhzz2 at Xcelsior, viewport 1728x941. Panel rect 572,201 220x144: all 4 corners plus the bottom-center hit the panel, and it is fully inside every overflow ancestor (#record-details-lhs overflow-y auto, #record-details-new-ui hidden, #app hidden). Live keyboard: open focuses Send Invite; ArrowDown walks the items; End jumps to Copy contact ID; ArrowDown wraps; Esc closes with focus back on the trigger; Enter reopens; an outside click closes. Re-check at Phase 6 at a short viewport height.
 
 ### 5. Live HighLevel: email flip (after Phase 6 fills the consent URL)
 expected: With an owner+N@ email, "Send individual consent" reads "Needs the member's own email" while the other items stay usable. After editing to a real email and reopening the menu, it becomes ready.
@@ -41,9 +42,9 @@ result: [pending]
 ## Summary
 
 total: 5
-passed: 1
+passed: 2
 issues: 0
-pending: 4
+pending: 3
 skipped: 0
 blocked: 0
 
