@@ -54,9 +54,18 @@ Numbering is continuous across milestones (v0.2.0 starts at Phase 4).
 **Plans**: 3 plans (sequential waves 1 → 2 → 3; all share `src/ghl-customizer.js` or `test/run.mjs`)
 
 Plans:
+**Wave 1**
+
 - [ ] 04-01-PLAN.md — Actions menu widget: tracer (menus[] → validate → resolveMenus → trigger + panel in the contact group → item POST through the v0.1.2 pipeline → trigger flash), keyboard model, close paths with one document listener, no re-render loop, panel positioning check, byte-for-byte v0.1.2 snapshot for buttons-only configs
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 04-02-PLAN.md — Per-item behavior: states and trigger feedback, 60 s per-item cooldown, "Not configured" for an empty URL, the `requires: { email: "real" }` synthetic-email pre-check, per-item overrides, scope, empty menus, validation, verify menuIds
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 04-03-PLAN.md — Ship it: Xcelsior `xcelsiorActions` menu in `config/agency-config.json` (Send Invite moved in, Xcelsior-only, 60 s), headless proof of all four items, harness Location M menu with name-row and synthetic-email controls, README `menus[]` and consent item IDs
+
 **UI hint**: yes
 
 ### Phase 5: Individual Consent Backend
