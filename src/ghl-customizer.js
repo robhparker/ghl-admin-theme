@@ -1438,6 +1438,13 @@
    * through bindClick (item). Handling them here as well would double-send.
    * Unavailable items are reachable by arrows and inert on activation.
    */
+  // Review 04 IN-02: a key the menu handles is consumed, so a page-level
+  // HighLevel shortcut (an Escape that closes a drawer) never also fires.
+  function consumeKey(evt) {
+    evt.preventDefault();
+    evt.stopPropagation();
+  }
+
   function onMenuKeydown(wrapper, menu, evt) {
     if (!evt) return;
     var key = evt.key;
@@ -1448,15 +1455,15 @@
     var open = !!state.menu && state.menu.wrapper === wrapper;
     if (target === trigger) {
       if (key === 'ArrowDown') {
-        evt.preventDefault();
+        consumeKey(evt);
         if (open) focusFirstEnabled(menuItemEls(panel));
         else openMenu(wrapper, menu, 'first');
       } else if (key === 'ArrowUp') {
-        evt.preventDefault();
+        consumeKey(evt);
         if (open) focusMenuItem(menuItemEls(panel), -1);
         else openMenu(wrapper, menu, 'last');
       } else if (key === 'Escape' && open) {
-        evt.preventDefault();
+        consumeKey(evt);
         closeMenu('escape', true);
       } else if (key === 'Tab' && open) {
         // Not prevented: the browser's Tab moves on from the trigger.
@@ -1469,19 +1476,19 @@
     var items = menuItemEls(panel);
     var index = items.indexOf(itemEl);
     if (key === 'ArrowDown') {
-      evt.preventDefault();
+      consumeKey(evt);
       focusMenuItem(items, index + 1);
     } else if (key === 'ArrowUp') {
-      evt.preventDefault();
+      consumeKey(evt);
       focusMenuItem(items, index - 1);
     } else if (key === 'Home') {
-      evt.preventDefault();
+      consumeKey(evt);
       focusMenuItem(items, 0);
     } else if (key === 'End') {
-      evt.preventDefault();
+      consumeKey(evt);
       focusMenuItem(items, items.length - 1);
     } else if (key === 'Escape') {
-      evt.preventDefault();
+      consumeKey(evt);
       closeMenu('escape', true);
     } else if (key === 'Tab') {
       // Not prevented: focus parks on the trigger first, so the browser's Tab

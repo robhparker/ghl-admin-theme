@@ -3639,6 +3639,25 @@ scenario('review 04 IN-03: menus "a" and "a-trigger" get four distinct DOM ids a
   assert.equal(shim.errors.length, 0);
 });
 
+scenario('review 04 IN-02: keys the menu consumes never reach a page-level keydown handler', async () => {
+  const { shim } = await bootMenu();
+  const parts = menuParts(shim);
+  const seen = [];
+  shim.document.addEventListener('keydown', (evt) => seen.push(evt.key));
+  parts.trigger.focus();
+  shim.pressKey(parts.trigger, 'ArrowDown');
+  const first = shim.document.activeElement;
+  for (const key of ['ArrowDown', 'ArrowUp', 'End', 'Home']) shim.pressKey(shim.document.activeElement, key);
+  shim.pressKey(shim.document.activeElement, 'x');
+  shim.pressKey(shim.document.activeElement, 'Escape');
+  assert.ok(isClosed(parts), 'Escape still closes the menu');
+  same(shim.document.activeElement, parts.trigger);
+  assert.ok(first !== parts.trigger, 'ArrowDown opened the menu');
+  shim.pressKey(parts.trigger, 'Escape');
+  assert.deepEqual(seen, ['x', 'Escape'], 'only an unhandled key and an Escape on the closed trigger bubble');
+  assert.equal(shim.errors.length, 0);
+});
+
 const isOpen = (parts) => parts.trigger.getAttribute('aria-expanded') === 'true' && parts.panel.hidden === false;
 const isClosed = (parts) => parts.trigger.getAttribute('aria-expanded') === 'false' && parts.panel.hidden === true;
 
