@@ -59,6 +59,9 @@
   var MAX_COOLDOWN_MS = 300000; // 5 minutes; also keeps setTimeout inside int32
   // How long a menu item's result stays on the menu trigger (D-11).
   var TRIGGER_FLASH_MS = 4000;
+  // Ceiling for the trigger's Sending… flash. The result normally replaces it
+  // sooner; this only restores the label if a send is discarded mid-flight.
+  var TRIGGER_BUSY_MS = 60000;
   var ACTION_TYPES = Object.freeze(['link', 'webhook', 'handler']);
   var STATES = Object.freeze(['ready', 'submitting', 'queued', 'unavailable', 'failed']);
   // Link buttons may only navigate to these schemes or to a same-origin path (BTN-09).
@@ -1554,6 +1557,7 @@
   // D-11: an item's result shows on the trigger (label and its own status
   // span) for TRIGGER_FLASH_MS. The timer lives in state.timers, so a context
   // change (clearTimers) kills it with everything else from the old route.
+  // A 'busy' flash (Sending…) holds for TRIGGER_BUSY_MS; the result replaces it.
   function flashTrigger(itemEl, outcome, text, message) {
     var wrapper = itemEl.closest(OWN.menuSel);
     var trigger = wrapper ? wrapper.querySelector(OWN.menuTriggerSel) : null;
@@ -1574,7 +1578,7 @@
       if (restoreLabel) restoreLabel.textContent = trigger.getAttribute('data-' + NS + '-label') || '';
       if (restoreMsg) restoreMsg.textContent = '';
       trigger.removeAttribute('data-' + NS + '-flash');
-    }, TRIGGER_FLASH_MS);
+    }, outcome === 'busy' ? TRIGGER_BUSY_MS : TRIGGER_FLASH_MS);
     state.timers.set(trigger, id);
   }
 
@@ -2008,6 +2012,7 @@
     var key = el.getAttribute('data-' + NS + '-ctx') + '|' + button.id;
     state.inflight[key] = true;
     setState(el, 'submitting');
+    if (isMenuItem(el)) flashTrigger(el, 'busy', 'Sending…', '');
     log('webhook-start', { buttonId: button.id, generation: gen });
     return sendWebhook(action.url, payload).then(function (result) {
       delete state.inflight[key];
@@ -2072,6 +2077,7 @@
     if (refuseUnmetRequires(button, el)) return Promise.resolve();
     var gen = state.generation;
     setState(el, 'submitting');
+    if (isMenuItem(el)) flashTrigger(el, 'busy', 'Sending…', '');
     return Promise.resolve().then(function () {
       return action.run({
         locationId: state.ctx.locationId,

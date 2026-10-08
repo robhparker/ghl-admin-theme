@@ -27,7 +27,8 @@ result: [pending]
 
 ### 3. Trigger "Sending..." while a request is in flight (scope decision)
 expected: Either accept the current behavior (the trigger stays "Actions" until the result lands, then flashes the result) or schedule IN-05 (a "Sending..." flash on the trigger).
-result: [pending]
+result: pass
+note: Rob chose "add it now" (2026-10-07). The trigger reads "Actions · Sending…" while an item is in flight, and the result replaces it. Covered by the "menu busy" scenario (165/165).
 
 ### 4. Live HighLevel: menu panel not clipped (WR-03). Run in the Phase 6 live test.
 expected: On an Xcelsior contact record the panel opens below the Actions button, fully visible, and is not clipped by any overflow ancestor in the left record column.
@@ -40,9 +41,9 @@ result: [pending]
 ## Summary
 
 total: 5
-passed: 0
+passed: 1
 issues: 0
-pending: 5
+pending: 4
 skipped: 0
 blocked: 0
 

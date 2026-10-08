@@ -3539,6 +3539,31 @@ async function bootMenu(config = withMenu(), { contact = JANE, clipboard = null,
   return { shim, shell, GHLC };
 }
 
+scenario('menu busy: the trigger reads Sending… while an item is in flight, then the result replaces it', async () => {
+  const { shim } = await bootMenu();
+  const { trigger, items } = menuParts(shim);
+  const [invite] = items;
+  shim.setFetchMode('hold');
+  trigger.click();
+  invite.click();
+  assert.equal(invite.getAttribute('data-state'), 'submitting');
+  assert.equal(label(trigger), 'Actions · Sending…', 'the closed menu still shows progress on the trigger');
+  assert.equal(msg(trigger), 'Menu Invite: Sending…');
+  assert.equal(trigger.getAttribute('data-ghlc-flash'), 'busy');
+  // A slow request never reverts the trigger to idle while the item is still sending.
+  await shim.advanceTimers(4000);
+  assert.equal(label(trigger), 'Actions · Sending…');
+  shim.releaseFetch();
+  await shim.flush();
+  assert.equal(label(trigger), 'Actions · Workflow triggered', 'the result replaces Sending…');
+  assert.equal(trigger.getAttribute('data-ghlc-flash'), 'ok');
+  await shim.advanceTimers(4000);
+  assert.equal(label(trigger), 'Actions');
+  assert.equal(trigger.hasAttribute('data-ghlc-flash'), false);
+  assert.equal(shim.fetchLog.length, 1);
+  assert.equal(shim.errors.length, 0);
+});
+
 scenario('menu tracer: Actions menu renders in the contact group, opens on click, and one item POSTs the v0.1.2 payload', async () => {
   const { shim, GHLC } = await bootMenu();
   const menus = shim.document.querySelectorAll('.ghlc-menu');
