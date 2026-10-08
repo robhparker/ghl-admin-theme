@@ -5,17 +5,17 @@ milestone_name: Actions menu + Send individual consent
 current_phase: 4
 current_phase_name: Actions Menu
 status: executing
-stopped_at: Completed 04-01-PLAN.md
-last_updated: "2026-10-08T01:04:32.245Z"
+stopped_at: Completed 04-02-PLAN.md
+last_updated: "2026-10-08T01:12:15.639Z"
 last_activity: 2026-10-07
 last_activity_desc: Phase 4 execution started
-state_head: 807d3a7bbe1e37603dd5aa0173656c07733b3417
+state_head: 4f6ac70e817238ba86e6330331a70b4a32a6a74a
 progress:
   total_phases: 3
   completed_phases: 3
   total_plans: 3
-  completed_plans: 1
-  percent: 33
+  completed_plans: 2
+  percent: 67
 ---
 
 # Project State
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-10-07)
 ## Current Position
 
 Phase: 4 (Actions Menu) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-10-07 — Phase 4 execution started
 
-Progress: [███░░░░░░░] 33%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
@@ -67,6 +67,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 03 P01 | 20 min | 3 tasks | 6 files |
 | Phase 03 P02 | 22 min | 3 tasks | 5 files |
 | Phase 04 P01 | 9min | 3 tasks | 4 files |
+| Phase 04 P02 | 6min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,8 @@ Decisions are logged in PROJECT.md Key Decisions table (full log). Milestone v0.
 - [Phase 4]: 04-01: Enter/Space never handled in script (native activation); ArrowUp on a closed trigger opens on the last item
 - [Phase 4]: 04-01: one capture-phase document pointerdown listener while a menu is open; renderPlacement = reconcilePlacement + closeDetachedMenu
 - [Phase 4]: 04-01: D-03 pinned by V012_SNAPSHOT captured from the v0.1.2 tag; never regenerate from the working tree
+- [Phase 4]: 04-02: D-15 Not configured applies to every webhook action (plain buttons too); only the message changes from the v0.1.2 HTTPS text, D-03 snapshot holds
+- [Phase 4]: 04-02: requires { email: 'real' } is re-read at render, reconcile, menu open, and click time (no poll, no observer); anchors and cooling items are never flipped
 
 ### Pending Todos
 
@@ -109,8 +112,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T01:04:32.230Z
-Stopped at: Completed 04-01-PLAN.md
+Last session: 2026-10-08T01:12:15.622Z
+Stopped at: Completed 04-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

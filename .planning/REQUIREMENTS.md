@@ -11,7 +11,7 @@ Inputs: `notes/actions-menu-individual-consent.md` (decisions), `notes/webhook-t
 ### Actions menu (admin theme)
 
 - [x] **MENU-01**: Config accepts a `menus[]` entry (`id`, `label`, `icon`, `placement: "contact"`, `scope`, `items[]`), where each item is a normal button definition with a unique `id` and its own `action`. Configs with only `buttons[]` render exactly as in v0.1.2.
-- [ ] **MENU-02**: Per-location overrides work per menu item through the existing `locations[id].buttons[itemId]` (false hides the item, an object overrides fields). A menu with no visible items does not render.
+- [x] **MENU-02**: Per-location overrides work per menu item through the existing `locations[id].buttons[itemId]` (false hides the item, an object overrides fields). A menu with no visible items does not render.
 - [x] **MENU-03**: Staff see one "Actions" trigger in the contact name row, inside the existing `.ghlc-group`. It is a native `<button>` with `aria-haspopup="menu"` and `aria-expanded`, and opens a panel of native `<button role="menuitem">` items.
 - [x] **MENU-04**: Staff can operate the menu by keyboard. Enter, Space, or ArrowDown opens it and focuses the first item. Arrow keys, Home, and End move between items. Esc closes it and returns focus to the trigger. Tab closes it.
 - [x] **MENU-05**: The menu closes on outside click, on item activation, and on SPA navigation or contact change. The panel is not clipped by the name row (overflow tested).
@@ -25,9 +25,9 @@ Inputs: `notes/actions-menu-individual-consent.md` (decisions), `notes/webhook-t
 - [ ] **ITEM-02**: Send Invite posts the unchanged v0.1.2 payload to the existing trigger `bde416ab`, now scoped to Xcelsior only (fixes the `scope: "all"` bug).
 - [ ] **ITEM-03**: Send individual consent posts the standard payload with `buttonId: "send-individual-consent"` to the new consent Inbound Webhook. No new payload fields.
 - [ ] **ITEM-04**: Resend Consent Hub link posts the standard payload with `buttonId: "resend-consent-hub"` to the same consent webhook.
-- [ ] **ITEM-05**: Copy contact ID uses the existing `copyContactId` handler.
-- [ ] **ITEM-06**: Each webhook item uses a 60 s per-item cooldown (Send Invite moves from 10 s to 60 s).
-- [ ] **ITEM-07**: Send individual consent shows as unavailable with a reason when the record's email is empty or matches the synthetic dedupe pattern (`+<digits>@`).
+- [x] **ITEM-05**: Copy contact ID uses the existing `copyContactId` handler.
+- [x] **ITEM-06**: Each webhook item uses a 60 s per-item cooldown (Send Invite moves from 10 s to 60 s).
+- [x] **ITEM-07**: Send individual consent shows as unavailable with a reason when the record's email is empty or matches the synthetic dedupe pattern (`+<digits>@`).
 
 ### Consent workflow (ClinX 365 build spec)
 
@@ -47,7 +47,7 @@ Inputs: `notes/actions-menu-individual-consent.md` (decisions), `notes/webhook-t
 
 ### Release
 
-- [ ] **REL-01**: `test/run.mjs` and `test/harness.html` cover menu rendering, keyboard, per-item state and cooldown, scope rules, plain-button backward compatibility, no re-render loop, and the synthetic-email pre-check. The full suite is green.
+- [x] **REL-01**: `test/run.mjs` and `test/harness.html` cover menu rendering, keyboard, per-item state and cooldown, scope rules, plain-button backward compatibility, no re-render loop, and the synthetic-email pre-check. The full suite is green.
 - [ ] **REL-02**: Version strings are bumped to 0.2.0 per the README release checklist. The annotated tag `v0.2.0` and the push happen only after Rob approves.
 - [ ] **REL-03**: A live-test checklist covers the inject-into-logged-in-tab run, every menu item on a real Xcelsior owner and member, and each refusal path. It includes a rollback step (snippet tag back to v0.1.2).
 - [ ] **REL-04**: The README documents the `menus[]` config shape and the consent webhook item IDs.
@@ -79,7 +79,7 @@ Deferred (see `seeds/consent-actions-hardening.md`):
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | MENU-01 | Phase 4 | Complete |
-| MENU-02 | Phase 4 | Pending |
+| MENU-02 | Phase 4 | Complete |
 | MENU-03 | Phase 4 | Complete |
 | MENU-04 | Phase 4 | Complete |
 | MENU-05 | Phase 4 | Complete |
@@ -90,9 +90,9 @@ Deferred (see `seeds/consent-actions-hardening.md`):
 | ITEM-02 | Phase 4 | Pending |
 | ITEM-03 | Phase 4 | Pending |
 | ITEM-04 | Phase 4 | Pending |
-| ITEM-05 | Phase 4 | Pending |
-| ITEM-06 | Phase 4 | Pending |
-| ITEM-07 | Phase 4 | Pending |
+| ITEM-05 | Phase 4 | Complete |
+| ITEM-06 | Phase 4 | Complete |
+| ITEM-07 | Phase 4 | Complete |
 | CONS-01 | Phase 5 | Pending |
 | CONS-02 | Phase 5 | Pending |
 | CONS-03 | Phase 5 | Pending |
@@ -103,7 +103,7 @@ Deferred (see `seeds/consent-actions-hardening.md`):
 | HUB-02 | Phase 5 | Pending |
 | HUB-03 | Phase 5 | Pending |
 | HUB-04 | Phase 5 | Pending |
-| REL-01 | Phase 4 | Pending |
+| REL-01 | Phase 4 | Complete |
 | REL-02 | Phase 6 | Pending |
 | REL-03 | Phase 6 | Pending |
 | REL-04 | Phase 4 | Pending |

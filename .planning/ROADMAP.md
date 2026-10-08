@@ -51,7 +51,7 @@ Numbering is continuous across milestones (v0.2.0 starts at Phase 4).
   4. When the open record's email is empty or synthetic (`+<digits>@`), Send individual consent shows as unavailable with a reason while the other items stay usable; per-location overrides can hide or change single items, and a menu with no visible items does not render.
   5. `node test/run.mjs` is green with new checks for menu rendering, keyboard, per-item state and cooldown, scope rules, plain-button compatibility, the synthetic-email pre-check, and no re-render loop (observer count unchanged from v0.1.2), every v0.1.2 static rule still passes, `test/harness.html` exercises the menu offline, and the README documents the `menus[]` shape and the consent item IDs.
 
-**Plans**: 1/3 plans executed (sequential waves 1 → 2 → 3; all share `src/ghl-customizer.js` or `test/run.mjs`)
+**Plans**: 2/3 plans executed (sequential waves 1 → 2 → 3; all share `src/ghl-customizer.js` or `test/run.mjs`)
 
 Plans:
 **Wave 1**
@@ -60,7 +60,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 04-02-PLAN.md — Per-item behavior: states and trigger feedback, 60 s per-item cooldown, "Not configured" for an empty URL, the `requires: { email: "real" }` synthetic-email pre-check, per-item overrides, scope, empty menus, validation, verify menuIds
+- [x] 04-02-PLAN.md — Per-item behavior: states and trigger feedback, 60 s per-item cooldown, "Not configured" for an empty URL, the `requires: { email: "real" }` synthetic-email pre-check, per-item overrides, scope, empty menus, validation, verify menuIds
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -108,6 +108,6 @@ Phases execute in numeric order: 4 → 5 → 6 (4 and 5 are independent; 6 needs
 | 1. Foundation, Context & Workflow Buttons | v0.1.0 | 3/3 | Complete | 2026-09-24 |
 | 2. Location Logo Switching | v0.1.0 | 2/2 | Complete | 2026-09-24 |
 | 3. Accent Colors & Delivery | v0.1.0 | 2/2 | Complete | 2026-09-25 |
-| 4. Actions Menu | v0.2.0 | 1/3 | In Progress|  |
+| 4. Actions Menu | v0.2.0 | 2/3 | In Progress|  |
 | 5. Individual Consent Backend | v0.2.0 | 0/TBD | Not started | - |
 | 6. Release v0.2.0 | v0.2.0 | 0/TBD | Not started | - |
