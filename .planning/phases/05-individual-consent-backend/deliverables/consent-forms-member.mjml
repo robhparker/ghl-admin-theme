@@ -19,8 +19,12 @@
 
   AUDIENCE
   The member themselves, never the owner. Guards R-03..R-07 in the workflow
-  keep shared, missing, owner-matching, and synthetic (+id@) addresses out,
-  so this email only ever reaches an address that belongs to the member.
+  reduce the chance this reaches a non-member address: they refuse a
+  missing email, a synthetic one (+digits@ or +pat-id@), and one equal to
+  the owner's saved email. Residual cases (accepted, BUILD-SPEC section 8):
+  an email saved on this member that really belongs to another member, and
+  a plus-address of another form. Even then the link opens only this
+  member's card, never the family.
 
   THE LINK (the entire point of this email)
     https://join.xcelsiorhealth.com/consent-hub?t={{contact.consent_hub_token}}

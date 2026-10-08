@@ -121,6 +121,15 @@ check('header: paste target, subject, click tracking off', () => {
   return line ? null : 'no header line stating click tracking OFF';
 });
 
+check('header: recipient claim is hedged and names the residual cases (code review WR-02, IN-01)', () => {
+  const n = need(); if (n) return n;
+  if (/only ever reaches/i.test(header)) return 'header still claims the email "only ever reaches" the member';
+  const flat = header.replace(/\s+/g, ' ');
+  const req = ['reduce the chance', 'Residual cases', 'belongs to another member', 'only this member\'s card'];
+  const missing = req.filter((t) => !flat.includes(t));
+  return missing.length ? 'header lacks ' + JSON.stringify(missing) : null;
+});
+
 check('size: under the Gmail clip threshold', () => {
   const n = need(); if (n) return n;
   const size = Buffer.byteLength(html, 'utf8');

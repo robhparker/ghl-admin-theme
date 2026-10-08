@@ -486,6 +486,14 @@ if (args.stage >= 3) {
     return miss.length ? 'section 8 missing ' + miss.join(', ') : true;
   });
 
+  check('(x1) section 8 accepts the member-to-member shared email risk with a staff rule (code review WR-02)', () => {
+    const s8 = section(H2[8]);
+    if (s8 === null) return 'section 8 missing';
+    const req = ['Residual risk accepted (code review WR-02)', 'one member\'s own card, never the family', 'confirming with the member that the saved email is their own', '`hint_membership_id`'];
+    const miss = req.filter((x) => !s8.includes(x));
+    return miss.length ? 'section 8 missing ' + JSON.stringify(miss) : true;
+  });
+
   check('(r) section 11 mentions Draft and adhoc_', () => {
     const s11 = section(H2[11]);
     if (s11 === null) return 'section 11 missing';

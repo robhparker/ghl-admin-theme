@@ -139,9 +139,9 @@ out.push(JSON.stringify(found) === JSON.stringify(H2)
   : 'not ok - readme: H2s: got ' + JSON.stringify(found));
 
 const req = ['n8n changes do not ship until you click Publish', 'dbe383be-ac63-433a-af8e-5564d948aec9', '// v8: PART-1 PREFILL',
-  'Lookup Member Docs', 'adhoc_', 'Q-1', 'Q-2', 'Q-3', 'Q-4'];
+  'Lookup Member Docs', 'adhoc_', 'Q-1', 'Q-2', 'Q-3', 'Q-4', 'Q-5'];
 const miss = req.filter((s) => !r.includes(s));
-out.push(miss.length ? 'not ok - readme: required strings: missing ' + JSON.stringify(miss) : 'ok - readme: required strings present (Publish, versionId, v8 header, Lookup Member Docs, adhoc_, Q-1..Q-4)');
+out.push(miss.length ? 'not ok - readme: required strings: missing ' + JSON.stringify(miss) : 'ok - readme: required strings present (Publish, versionId, v8 header, Lookup Member Docs, adhoc_, Q-1..Q-5)');
 
 const files = ['BUILD-SPEC-clinx-consent-webhook.md', 'wf2-consent-hub-status.member-scope.json', 'wf2-member-scope.diff', 'COMPLETION-PATH.md',
   'README.md', 'consent-forms-member.mjml', 'consent-forms-member.html'];
