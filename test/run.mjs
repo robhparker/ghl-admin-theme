@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
-import { createShim } from './dom-shim.mjs';
+import { createShim, snapshot } from './dom-shim.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
@@ -3329,6 +3329,17 @@ const menuParts = (shim, id = 'testActions') => {
   return { wrapper, trigger, panel, items };
 };
 
+// D-03 baseline: the header and contact group snapshots (dom-shim snapshot(),
+// groups in document order joined with a newline) produced from the v0.1.2
+// tag's own source and fixture by a throwaway script outside the repository
+// (see 04-01-SUMMARY.md for the command). Never regenerate these from the
+// working tree: they are the immutable v0.1.2 reference.
+const V012_SNAPSHOT = Object.freeze({
+  boot: "<div class=\"ghlc-group\" data-ghlc-placement=\"header\" style=\"--ghlc-primary: #c2410c; --ghlc-primary-text: #ffffff; --ghlc-focus: #c2410c;\"><a class=\"ghlc-btn ghlc-btn--link\" data-ghlc-button-id=\"supportLink\" data-ghlc-ctx=\"locA|c1\" data-ghlc-generation=\"1\" data-ghlc-label=\"Support\" data-ghlc-placement=\"header\" data-state=\"ready\" href=\"https://example.test/support\" rel=\"noopener noreferrer\" target=\"_blank\"><span aria-hidden=\"true\" class=\"ghlc-btn__icon\"><svg aria-hidden=\"true\" focusable=\"false\" viewBox=\"0 0 24 24\"><path d=\"M14 4h6v6\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path><path d=\"M20 4L11 13\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path><path d=\"M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg></span><span class=\"ghlc-btn__label\">\"Support\"</span><span aria-live=\"polite\" class=\"ghlc-btn__msg\" role=\"status\"></span></a><a class=\"ghlc-btn ghlc-btn--link\" data-ghlc-button-id=\"locOnlyLink\" data-ghlc-ctx=\"locA|c1\" data-ghlc-generation=\"1\" data-ghlc-label=\"Location Settings\" data-ghlc-placement=\"header\" data-state=\"ready\" href=\"/v2/location/locA/settings\" target=\"_self\"><span aria-hidden=\"true\" class=\"ghlc-btn__icon\"><svg aria-hidden=\"true\" focusable=\"false\" viewBox=\"0 0 24 24\"><path d=\"M9.5 14.5L14.5 9.5\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path><path d=\"M13 7l2-2a3.5 3.5 0 0 1 5 5l-2 2\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path><path d=\"M11 17l-2 2a3.5 3.5 0 0 1-5-5l2-2\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg></span><span class=\"ghlc-btn__label\">\"Location Settings\"</span><span aria-live=\"polite\" class=\"ghlc-btn__msg\" role=\"status\"></span></a><button aria-disabled=\"true\" class=\"ghlc-btn\" data-ghlc-button-id=\"badTypeBtn\" data-ghlc-ctx=\"locA|c1\" data-ghlc-generation=\"1\" data-ghlc-label=\"Bad Type\" data-ghlc-placement=\"header\" data-state=\"unavailable\" disabled=\"\" title=\"Action not available\" type=\"button\"><span aria-hidden=\"true\" class=\"ghlc-btn__icon\"></span><span class=\"ghlc-btn__label\">\"Bad Type\"</span><span aria-live=\"polite\" class=\"ghlc-btn__msg\" role=\"status\">\"Action not available\"</span></button></div>\n<div class=\"ghlc-group\" data-ghlc-placement=\"contact\" style=\"--ghlc-primary: #c2410c; --ghlc-primary-text: #ffffff; --ghlc-focus: #c2410c;\"><button class=\"ghlc-btn\" data-ghlc-bound=\"1\" data-ghlc-button-id=\"sendInvite\" data-ghlc-ctx=\"locA|c1\" data-ghlc-generation=\"1\" data-ghlc-label=\"Send Invite\" data-ghlc-placement=\"contact\" data-state=\"ready\" type=\"button\"><span aria-hidden=\"true\" class=\"ghlc-btn__icon\"><svg aria-hidden=\"true\" focusable=\"false\" viewBox=\"0 0 24 24\"><path d=\"M21 3L10.5 13.5\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path><path d=\"M21 3L14 21L10.5 13.5L3 10L21 3Z\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg></span><span class=\"ghlc-btn__label\">\"Send Invite\"</span><span aria-live=\"polite\" class=\"ghlc-btn__msg\" role=\"status\"></span></button><button aria-disabled=\"true\" class=\"ghlc-btn\" data-ghlc-button-id=\"badHandlerBtn\" data-ghlc-ctx=\"locA|c1\" data-ghlc-generation=\"1\" data-ghlc-label=\"Bad Handler\" data-ghlc-placement=\"contact\" data-state=\"unavailable\" disabled=\"\" title=\"Action not available\" type=\"button\"><span aria-hidden=\"true\" class=\"ghlc-btn__icon\"></span><span class=\"ghlc-btn__label\">\"Bad Handler\"</span><span aria-live=\"polite\" class=\"ghlc-btn__msg\" role=\"status\">\"Action not available\"</span></button><button class=\"ghlc-btn\" data-ghlc-bound=\"1\" data-ghlc-button-id=\"copyIdBtn\" data-ghlc-ctx=\"locA|c1\" data-ghlc-generation=\"1\" data-ghlc-label=\"Copy Contact ID\" data-ghlc-placement=\"contact\" data-state=\"ready\" type=\"button\"><span aria-hidden=\"true\" class=\"ghlc-btn__icon\"><svg aria-hidden=\"true\" focusable=\"false\" viewBox=\"0 0 24 24\"><path d=\"M3 6h18v12H3z\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path><path d=\"M3 7l9 6l9-6\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg></span><span class=\"ghlc-btn__label\">\"Copy Contact ID\"</span><span aria-live=\"polite\" class=\"ghlc-btn__msg\" role=\"status\"></span></button></div>",
+  queued: "<div class=\"ghlc-group\" data-ghlc-placement=\"header\" style=\"--ghlc-primary: #c2410c; --ghlc-primary-text: #ffffff; --ghlc-focus: #c2410c;\"><a class=\"ghlc-btn ghlc-btn--link\" data-ghlc-button-id=\"supportLink\" data-ghlc-ctx=\"locA|c1\" data-ghlc-generation=\"1\" data-ghlc-label=\"Support\" data-ghlc-placement=\"header\" data-state=\"ready\" href=\"https://example.test/support\" rel=\"noopener noreferrer\" target=\"_blank\"><span aria-hidden=\"true\" class=\"ghlc-btn__icon\"><svg aria-hidden=\"true\" focusable=\"false\" viewBox=\"0 0 24 24\"><path d=\"M14 4h6v6\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path><path d=\"M20 4L11 13\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path><path d=\"M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg></span><span class=\"ghlc-btn__label\">\"Support\"</span><span aria-live=\"polite\" class=\"ghlc-btn__msg\" role=\"status\"></span></a><a class=\"ghlc-btn ghlc-btn--link\" data-ghlc-button-id=\"locOnlyLink\" data-ghlc-ctx=\"locA|c1\" data-ghlc-generation=\"1\" data-ghlc-label=\"Location Settings\" data-ghlc-placement=\"header\" data-state=\"ready\" href=\"/v2/location/locA/settings\" target=\"_self\"><span aria-hidden=\"true\" class=\"ghlc-btn__icon\"><svg aria-hidden=\"true\" focusable=\"false\" viewBox=\"0 0 24 24\"><path d=\"M9.5 14.5L14.5 9.5\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path><path d=\"M13 7l2-2a3.5 3.5 0 0 1 5 5l-2 2\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path><path d=\"M11 17l-2 2a3.5 3.5 0 0 1-5-5l2-2\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg></span><span class=\"ghlc-btn__label\">\"Location Settings\"</span><span aria-live=\"polite\" class=\"ghlc-btn__msg\" role=\"status\"></span></a><button aria-disabled=\"true\" class=\"ghlc-btn\" data-ghlc-button-id=\"badTypeBtn\" data-ghlc-ctx=\"locA|c1\" data-ghlc-generation=\"1\" data-ghlc-label=\"Bad Type\" data-ghlc-placement=\"header\" data-state=\"unavailable\" disabled=\"\" title=\"Action not available\" type=\"button\"><span aria-hidden=\"true\" class=\"ghlc-btn__icon\"></span><span class=\"ghlc-btn__label\">\"Bad Type\"</span><span aria-live=\"polite\" class=\"ghlc-btn__msg\" role=\"status\">\"Action not available\"</span></button></div>\n<div class=\"ghlc-group\" data-ghlc-placement=\"contact\" style=\"--ghlc-primary: #c2410c; --ghlc-primary-text: #ffffff; --ghlc-focus: #c2410c;\"><button class=\"ghlc-btn\" data-ghlc-bound=\"1\" data-ghlc-button-id=\"sendInvite\" data-ghlc-ctx=\"locA|c1\" data-ghlc-generation=\"1\" data-ghlc-label=\"Send Invite\" data-ghlc-placement=\"contact\" data-state=\"queued\" disabled=\"\" type=\"button\"><span aria-hidden=\"true\" class=\"ghlc-btn__icon\"><svg aria-hidden=\"true\" focusable=\"false\" viewBox=\"0 0 24 24\"><path d=\"M21 3L10.5 13.5\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path><path d=\"M21 3L14 21L10.5 13.5L3 10L21 3Z\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg></span><span class=\"ghlc-btn__label\">\"Workflow triggered\"</span><span aria-live=\"polite\" class=\"ghlc-btn__msg\" role=\"status\"></span></button><button aria-disabled=\"true\" class=\"ghlc-btn\" data-ghlc-button-id=\"badHandlerBtn\" data-ghlc-ctx=\"locA|c1\" data-ghlc-generation=\"1\" data-ghlc-label=\"Bad Handler\" data-ghlc-placement=\"contact\" data-state=\"unavailable\" disabled=\"\" title=\"Action not available\" type=\"button\"><span aria-hidden=\"true\" class=\"ghlc-btn__icon\"></span><span class=\"ghlc-btn__label\">\"Bad Handler\"</span><span aria-live=\"polite\" class=\"ghlc-btn__msg\" role=\"status\">\"Action not available\"</span></button><button class=\"ghlc-btn\" data-ghlc-bound=\"1\" data-ghlc-button-id=\"copyIdBtn\" data-ghlc-ctx=\"locA|c1\" data-ghlc-generation=\"1\" data-ghlc-label=\"Copy Contact ID\" data-ghlc-placement=\"contact\" data-state=\"ready\" type=\"button\"><span aria-hidden=\"true\" class=\"ghlc-btn__icon\"><svg aria-hidden=\"true\" focusable=\"false\" viewBox=\"0 0 24 24\"><path d=\"M3 6h18v12H3z\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path><path d=\"M3 7l9 6l9-6\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg></span><span class=\"ghlc-btn__label\">\"Copy Contact ID\"</span><span aria-live=\"polite\" class=\"ghlc-btn__msg\" role=\"status\"></span></button></div>",
+  ready: "<div class=\"ghlc-group\" data-ghlc-placement=\"header\" style=\"--ghlc-primary: #c2410c; --ghlc-primary-text: #ffffff; --ghlc-focus: #c2410c;\"><a class=\"ghlc-btn ghlc-btn--link\" data-ghlc-button-id=\"supportLink\" data-ghlc-ctx=\"locA|c1\" data-ghlc-generation=\"1\" data-ghlc-label=\"Support\" data-ghlc-placement=\"header\" data-state=\"ready\" href=\"https://example.test/support\" rel=\"noopener noreferrer\" target=\"_blank\"><span aria-hidden=\"true\" class=\"ghlc-btn__icon\"><svg aria-hidden=\"true\" focusable=\"false\" viewBox=\"0 0 24 24\"><path d=\"M14 4h6v6\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path><path d=\"M20 4L11 13\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path><path d=\"M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg></span><span class=\"ghlc-btn__label\">\"Support\"</span><span aria-live=\"polite\" class=\"ghlc-btn__msg\" role=\"status\"></span></a><a class=\"ghlc-btn ghlc-btn--link\" data-ghlc-button-id=\"locOnlyLink\" data-ghlc-ctx=\"locA|c1\" data-ghlc-generation=\"1\" data-ghlc-label=\"Location Settings\" data-ghlc-placement=\"header\" data-state=\"ready\" href=\"/v2/location/locA/settings\" target=\"_self\"><span aria-hidden=\"true\" class=\"ghlc-btn__icon\"><svg aria-hidden=\"true\" focusable=\"false\" viewBox=\"0 0 24 24\"><path d=\"M9.5 14.5L14.5 9.5\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path><path d=\"M13 7l2-2a3.5 3.5 0 0 1 5 5l-2 2\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path><path d=\"M11 17l-2 2a3.5 3.5 0 0 1-5-5l2-2\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg></span><span class=\"ghlc-btn__label\">\"Location Settings\"</span><span aria-live=\"polite\" class=\"ghlc-btn__msg\" role=\"status\"></span></a><button aria-disabled=\"true\" class=\"ghlc-btn\" data-ghlc-button-id=\"badTypeBtn\" data-ghlc-ctx=\"locA|c1\" data-ghlc-generation=\"1\" data-ghlc-label=\"Bad Type\" data-ghlc-placement=\"header\" data-state=\"unavailable\" disabled=\"\" title=\"Action not available\" type=\"button\"><span aria-hidden=\"true\" class=\"ghlc-btn__icon\"></span><span class=\"ghlc-btn__label\">\"Bad Type\"</span><span aria-live=\"polite\" class=\"ghlc-btn__msg\" role=\"status\">\"Action not available\"</span></button></div>\n<div class=\"ghlc-group\" data-ghlc-placement=\"contact\" style=\"--ghlc-primary: #c2410c; --ghlc-primary-text: #ffffff; --ghlc-focus: #c2410c;\"><button class=\"ghlc-btn\" data-ghlc-bound=\"1\" data-ghlc-button-id=\"sendInvite\" data-ghlc-ctx=\"locA|c1\" data-ghlc-generation=\"1\" data-ghlc-label=\"Send Invite\" data-ghlc-placement=\"contact\" data-state=\"ready\" type=\"button\"><span aria-hidden=\"true\" class=\"ghlc-btn__icon\"><svg aria-hidden=\"true\" focusable=\"false\" viewBox=\"0 0 24 24\"><path d=\"M21 3L10.5 13.5\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path><path d=\"M21 3L14 21L10.5 13.5L3 10L21 3Z\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg></span><span class=\"ghlc-btn__label\">\"Send Invite\"</span><span aria-live=\"polite\" class=\"ghlc-btn__msg\" role=\"status\"></span></button><button aria-disabled=\"true\" class=\"ghlc-btn\" data-ghlc-button-id=\"badHandlerBtn\" data-ghlc-ctx=\"locA|c1\" data-ghlc-generation=\"1\" data-ghlc-label=\"Bad Handler\" data-ghlc-placement=\"contact\" data-state=\"unavailable\" disabled=\"\" title=\"Action not available\" type=\"button\"><span aria-hidden=\"true\" class=\"ghlc-btn__icon\"></span><span class=\"ghlc-btn__label\">\"Bad Handler\"</span><span aria-live=\"polite\" class=\"ghlc-btn__msg\" role=\"status\">\"Action not available\"</span></button><button class=\"ghlc-btn\" data-ghlc-bound=\"1\" data-ghlc-button-id=\"copyIdBtn\" data-ghlc-ctx=\"locA|c1\" data-ghlc-generation=\"1\" data-ghlc-label=\"Copy Contact ID\" data-ghlc-placement=\"contact\" data-state=\"ready\" type=\"button\"><span aria-hidden=\"true\" class=\"ghlc-btn__icon\"><svg aria-hidden=\"true\" focusable=\"false\" viewBox=\"0 0 24 24\"><path d=\"M3 6h18v12H3z\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path><path d=\"M3 7l9 6l9-6\" fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg></span><span class=\"ghlc-btn__label\">\"Copy Contact ID\"</span><span aria-live=\"polite\" class=\"ghlc-btn__msg\" role=\"status\"></span></button></div>",
+});
+
 async function bootMenu(config = withMenu(), { contact = JANE, clipboard = null, ...extra } = {}) {
   const shim = createShim({ pathname: CONTACT_PATH, search: '?ghlc-debug=1', fixture: loadFixture(), ...extra });
   const shell = shim.buildShell({ sidebarMode: 'location', contact });
@@ -3605,6 +3616,202 @@ scenario('menu keyboard: opening focuses the first enabled item, skipping an una
   same(shim.document.activeElement, items[1], 'tInvite, not tBroken');
   assert.equal(items[1].getAttribute('data-ghlc-button-id'), 'tInvite');
   assert.equal(logCount(shim, 'menu-open'), 1);
+  assert.equal(shim.errors.length, 0);
+});
+
+const docPointer = (shim) => shim.listenerCount(shim.document, 'pointerdown');
+const pointerdown = (shim, target) => target.dispatchEvent(new shim.Event('pointerdown', { bubbles: true, cancelable: true }));
+
+scenario('menu close: outside pointerdown closes; trigger and item pointerdowns do not; one document listener while open', async () => {
+  const { shim, GHLC } = await bootMenu();
+  const parts = menuParts(shim);
+  const { trigger, items } = parts;
+  assert.equal(docPointer(shim), 0, 'no document listener before any open');
+  trigger.click();
+  assert.equal(docPointer(shim), 1, 'one document listener while open');
+  same(shim.document.activeElement, items[0]);
+  pointerdown(shim, trigger);
+  assert.ok(isOpen(parts), 'a press on the trigger is not outside');
+  assert.equal(docPointer(shim), 1);
+  pointerdown(shim, items[1]);
+  assert.ok(isOpen(parts), 'a press on an item is not outside');
+  assert.equal(docPointer(shim), 1);
+  pointerdown(shim, shim.document.body);
+  assert.ok(isClosed(parts), 'an outside press closes');
+  assert.equal(docPointer(shim), 0, 'listener removed on close');
+  same(shim.document.activeElement, items[0], 'an outside press does not pull focus to the trigger');
+  assert.equal(GHLC.__test.getState().menu, null);
+  assert.equal(logCount(shim, 'menu-close', 'outside'), 1);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('menu close: activation, Escape, Tab, and toggle each remove the document listener', async () => {
+  const written = [];
+  const { shim, GHLC } = await bootMenu(withMenu(), { clipboard: { writeText: async (t) => { written.push(t); } } });
+  const parts = menuParts(shim);
+  const { trigger, items } = parts;
+  const closedClean = (why) => {
+    assert.ok(isClosed(parts), `${why}: closed`);
+    assert.equal(docPointer(shim), 0, `${why}: listener removed`);
+    assert.equal(GHLC.__test.getState().menu, null, `${why}: no open menu`);
+  };
+  trigger.click();
+  assert.equal(docPointer(shim), 1);
+  items[2].click();
+  closedClean('activation');
+  await shim.flush();
+  assert.deepEqual(written, ['c1']);
+
+  trigger.click();
+  assert.equal(docPointer(shim), 1);
+  shim.pressKey(shim.document.activeElement, 'Escape');
+  closedClean('escape');
+
+  trigger.click();
+  assert.equal(docPointer(shim), 1);
+  shim.pressKey(shim.document.activeElement, 'Tab');
+  closedClean('tab');
+
+  trigger.click();
+  assert.equal(docPointer(shim), 1);
+  trigger.click();
+  closedClean('toggle');
+
+  // Re-opening an open menu never stacks a second listener.
+  trigger.click();
+  trigger.focus();
+  shim.pressKey(trigger, 'ArrowDown');
+  shim.pressKey(trigger, 'ArrowUp');
+  assert.equal(docPointer(shim), 1, 'at most one listener');
+  trigger.click();
+  closedClean('toggle again');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('menu close: navigating to another contact closes the menu and renders a fresh closed menu', async () => {
+  const { shim, GHLC } = await bootMenu();
+  const old = menuParts(shim);
+  old.trigger.click();
+  assert.equal(docPointer(shim), 1);
+  shim.navigate('/v2/location/locA/contacts/detail/c2', { via: 'pushState' });
+  shim.setContact(C2);
+  await shim.flush();
+  assert.equal(docPointer(shim), 0);
+  assert.equal(GHLC.__test.getState().menu, null);
+  const fresh = menuParts(shim);
+  assert.ok(fresh.wrapper, 'a menu renders for the new contact');
+  assert.ok(fresh.wrapper !== old.wrapper, 'a fresh wrapper');
+  assert.equal(fresh.wrapper.getAttribute('data-ghlc-ctx'), 'locA|c2');
+  assert.equal(fresh.trigger.getAttribute('aria-expanded'), 'false');
+  assert.equal(fresh.panel.hidden, true);
+  assert.equal(old.wrapper.isConnected, false);
+  assert.equal(shim.document.querySelectorAll('.ghlc-menu').length, 1);
+  assert.ok(logCount(shim, 'menu-close', 'navigation') >= 1, 'closed by the navigation signal');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('menu close: same-contact SPA navigation closes the menu without a re-render', async () => {
+  const { shim, GHLC } = await bootMenu();
+  const parts = menuParts(shim);
+  parts.trigger.click();
+  const generation = GHLC.__test.getState().generation;
+  shim.navigate(CONTACT_PATH + '?tab=notes', { via: 'replaceState' });
+  await shim.flush();
+  assert.ok(isClosed(parts));
+  assert.equal(docPointer(shim), 0);
+  same(menuParts(shim).wrapper, parts.wrapper, 'same wrapper element');
+  assert.equal(parts.wrapper.isConnected, true);
+  assert.equal(GHLC.__test.getState().generation, generation, 'generation unchanged');
+  assert.equal(logCount(shim, 'rerender'), 0);
+  assert.equal(logCount(shim, 'menu-close', 'navigation'), 1);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('menu close: a native re-render of the contact region closes the open menu and leaves one closed menu', async () => {
+  const { shim, GHLC } = await bootMenu();
+  const old = menuParts(shim);
+  old.trigger.click();
+  assert.equal(docPointer(shim), 1);
+  shim.setContact(JANE);
+  await shim.flush();
+  const menus = shim.document.querySelectorAll('.ghlc-menu');
+  assert.equal(menus.length, 1, 'exactly one menu after the re-render');
+  const fresh = menuParts(shim);
+  assert.equal(fresh.trigger.getAttribute('aria-expanded'), 'false');
+  assert.equal(fresh.panel.hidden, true);
+  assert.equal(old.wrapper.isConnected, false);
+  assert.equal(docPointer(shim), 0, 'no listener left behind');
+  assert.equal(GHLC.__test.getState().menu, null);
+  assert.equal(logCount(shim, 'menu-close', 'detached'), 1);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('menu observers: opening, closing, activating, and flashing never schedule a re-render', async () => {
+  const { shim } = await bootMenu();
+  await shim.advanceTimers(50);
+  const parts = menuParts(shim);
+  for (let i = 0; i < 3; i++) {
+    parts.trigger.click();
+    assert.ok(isOpen(parts));
+    shim.pressKey(shim.document.activeElement, 'Escape');
+    assert.ok(isClosed(parts));
+  }
+  parts.trigger.click();
+  parts.items[0].click();
+  await shim.flush();
+  assert.equal(parts.trigger.getAttribute('data-ghlc-flash'), 'ok');
+  await shim.advanceTimers(4000);
+  await shim.advanceTimers(60000);
+  assert.equal(parts.items[0].getAttribute('data-state'), 'ready', 'the 60 s cooldown ran out');
+  assert.equal(logCount(shim, 'rerender'), 0, 'no re-render scheduled');
+  assert.equal(shim.observers().length, 9, 'observer count unchanged from v0.1.2');
+  assert.equal(brandingRegs(shim).length, 3);
+  assert.equal(themeRegs(shim).length, 2);
+  assert.ok(shim.observers().every((o) => o.target.isConnected), 'every observer target is live');
+  same(parts.panel.closest('.ghlc-group'), contactGroup(shim), 'the panel lives inside the contact group');
+  assert.equal(shim.errors.length, 0);
+});
+
+check('menu css: the panel is positioned against .ghlc-group and no group or menu rule clips it', () => {
+  const css = fs.readFileSync(path.join(root, 'src', 'ghl-customizer.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const rules = [];
+  css.replace(/([^{}]+)\{([^{}]*)\}/g, (_, selector, body) => {
+    rules.push({ selector: selector.trim(), body });
+    return '';
+  });
+  const body = (selector) => {
+    const rule = rules.find((r) => r.selector === selector);
+    assert.ok(rule, `rule ${selector} exists`);
+    return rule.body;
+  };
+  assert.match(body('.ghlc-group'), /position:\s*relative/);
+  const panel = body('.ghlc-menu__panel');
+  assert.match(panel, /position:\s*absolute/);
+  assert.match(panel, /top:/);
+  assert.match(panel, /z-index:/);
+  assert.match(body('.ghlc-menu__panel[hidden]'), /display:\s*none/);
+  const scoped = rules.filter((r) => r.selector.includes('.ghlc-group') || r.selector.includes('.ghlc-menu'));
+  assert.ok(scoped.length >= 8, `group and menu rules found (${scoped.length})`);
+  for (const r of scoped) {
+    assert.ok(!/overflow[^:]*:\s*(hidden|clip)/.test(r.body), `${r.selector} must not clip`);
+  }
+});
+
+scenario('menu D-03: a buttons-only config renders byte-for-byte as v0.1.2', async () => {
+  const config = loadFixture();
+  delete config.menus;
+  const { shim } = await bootWithConfig(config);
+  const snap = () => [...groupsOf(shim)].map(snapshot).join('\n');
+  assert.equal(snap(), V012_SNAPSHOT.boot, 'boot');
+  byId(shim, 'sendInvite').click();
+  await shim.flush();
+  assert.equal(snap(), V012_SNAPSHOT.queued, 'after a Send Invite click');
+  await shim.advanceTimers(3000);
+  assert.equal(snap(), V012_SNAPSHOT.ready, 'after the cooldown');
+  assert.equal(shim.observers().length, 9);
+  assert.equal(shim.listenerCount(shim.document, 'pointerdown'), 0);
+  assert.equal(shim.listenerCount(shim.document, 'keydown'), 0);
+  assert.equal(shim.document.querySelectorAll('.ghlc-menu').length, 0);
   assert.equal(shim.errors.length, 0);
 });
 

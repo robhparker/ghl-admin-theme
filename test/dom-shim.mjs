@@ -60,6 +60,24 @@ export class PopStateEvent extends Event {
   }
 }
 
+// Pure, deterministic DOM serializer for regression snapshots (D-03). An
+// element is its lowercase tag, its attributes except style sorted by name,
+// then style (when non-empty) from style.cssText, then its children; a text
+// node is its JSON-quoted data; every other node type serializes to ''.
+export function snapshot(node) {
+  if (!node) return '';
+  if (node.nodeType === 3) return JSON.stringify(node.textContent);
+  if (node.nodeType !== 1) return '';
+  const tag = String(node.tagName).toLowerCase();
+  const attrs = node.attributes
+    .filter((a) => a.name !== 'style')
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .map((a) => ` ${a.name}="${a.value}"`)
+    .join('');
+  const css = node.style && node.style.cssText ? ` style="${node.style.cssText}"` : '';
+  return `<${tag}${attrs}${css}>${node.childNodes.map(snapshot).join('')}</${tag}>`;
+}
+
 class EventTargetImpl {
   constructor() {
     this._listeners = new Map();
@@ -1178,6 +1196,7 @@ export function createShim(options = {}) {
     listenerCount,
     observers,
     pressKey,
+    snapshot,
     Event,
     CustomEvent,
     KeyboardEvent,
