@@ -235,7 +235,7 @@ Under each branch -> **Send Email** (action names "Resend hub invite: LP Family"
 - Track link clicks = OFF, Sync edits = OFF (same as d6cf9af1)
 - Recipient = the contact in context, which is the owner on both paths
 
-verify in ClinX UI (V-04): Track link clicks is OFF on every Send Email action in this workflow (the four here and the one in §4.7), so the `?t=` hub link is never rewritten. If it differs (the toggle reverts after save): turn it off again, save, reload, reopen. Do not publish with tracking on.
+verify in ClinX UI (V-04): Track link clicks is OFF on every Send Email action in this workflow (the four here and the one in §4.7, plus its copy if §4.6's None branch repeats §4.7), so the `?t=` hub link is never rewritten. If it differs (the toggle reverts after save): turn it off again, save, reload, reopen. Do not publish with tracking on.
 
 After every save of this workflow, reopen all four actions and confirm each template still renders in the panel preview with the right subject. Template bindings can silently revert to quick compose after a save.
 
@@ -254,3 +254,65 @@ Why four leaves: D-06 says use the same email the Consents Needed workflow sends
 6.3 Order: build everything in Draft -> send the §1.4 sample -> review the run log (it should end at R-01 for `SAMPLE_CONTACT_ID`) -> reload and re-check every branch -> **Publish**. Phase 6 runs the live checklist with test contacts only (never a real patient), after the admin-theme items get this workflow's URL.
 
 6.4 Remember the apply order from §0.1: wf2 Build Status v9 must already be published in n8n. n8n changes do not ship until you click Publish.
+
+## 7. Rename the Send Invite workflow
+
+7.1 Automation -> Workflows -> open workflow `3dff9d94-403f-41ae-8496-c47320fc0ea6`, "WEBHOOK TEST Send Hint JOIN LINK & Reminders" (D-09). Rename it to "[Ready] Admin Menu: Send Invite (webhook)". Change nothing else: the Inbound Webhook trigger `bde416ab-a074-4946-bf99-7266eb1b0f4e`, the Find Contact by Webhook Contact ID step, the Longevity/DPC If/Else, and both emails stay exactly as they are. Renaming does not change the webhook URL, so the admin-theme Send Invite item keeps working with no config change.
+
+7.2 Save -> reload -> confirm the new name, that the trigger id is still `bde416ab-a074-4946-bf99-7266eb1b0f4e`, and that the workflow is still Published. If a rename puts a published workflow into a draft state, publish it again and reload.
+
+7.3 Optional (D-09; Rob's choice): on its "Contact not found" branch, which today ends silently, add Internal Notification -> body = `Send Invite failed: contact not found. Request {{inboundWebhookRequest.requestId}}, contact {{inboundWebhookRequest.contactId}}.` Then End. Same recipients as §0.6.
+
+7.4 For information only: Send Invite inherits the Longevity branch. A contact tagged `longevity-interest` (or `form:longevity`, `trigger:longevity`, `reason:longevity`) without `trigger:direct` gets the Longevity Hint Link email from the Send Invite item. This milestone does not change that (STATE.md concern); keep it in mind during Phase 6 testing.
+
+## 8. Security and privacy (AR-03-01)
+
+What this workflow changes for the accepted risk AR-03-01 (D-14):
+
+- **Volume grows; disclosure does not.** This adds a second public Inbound Webhook URL (the first is Send Invite's). Anyone holding it can post any `contactId` and `buttonId` and make the workflow send consent emails, so spam or confusing-email volume can grow. Disclosure does not grow: mail only ever goes to the address on file for the resolved contact (the member's own email, or the owner's), and every guard (R-01 to R-09) runs server-side in ClinX, whatever the client sent. The admin-theme 60 s cooldown per item is the only throttle.
+- **No patient data in URLs** beyond the opaque hub token in the email link. The webhook payload is unchanged from v0.1.2. No new PHI flows through n8n: wf2 already receives the token and returns card data, and v9 reduces what a member token can see to that member's own card.
+- **Tokens** are 256-bit cryptographic random values (32 bytes from web crypto or Node crypto, never Math random) with the `adhoc_` prefix. The test token shown by Test your Code is never stored.
+- **Notes and notifications** carry the reason, the staff fix, the buttonId, the requestId, and the contact id only. No names, dates of birth, contact details, or clinical data.
+- **Contact resolution is by ID only**, never by email or phone (§2), so a shared email cannot redirect an action to the wrong family member.
+- **Deferred:** server-side dedupe and INV-01..05 stay in the hardening seed (`seeds/consent-actions-hardening.md` in admin-theme).
+
+## 9. Refusal register
+
+Every refusal follows §0.5: restore the clicked contact if needed, Note, Internal Notification, End. The notification body is `Consent action refused (R-xx): <Note text> Action {{inboundWebhookRequest.buttonId}}, request {{inboundWebhookRequest.requestId}}, contact {{inboundWebhookRequest.contactId}}.` except for R-01, which has its own text because there is no contact.
+
+| Id | Branch/step | Condition | Note text | Notification text | Staff fix |
+|---|---|---|---|---|---|
+| R-01 | §2.2, any | Find Contact by `{{inboundWebhookRequest.contactId}}` finds nothing | none (there is no contact) | `Consent action failed: contact not found. Action {{inboundWebhookRequest.buttonId}}, request {{inboundWebhookRequest.requestId}}, contact {{inboundWebhookRequest.contactId}}.` | Reload the contact record and press the item again; if it repeats, the contact was deleted or merged |
+| R-02 | §3.2, None branch | `buttonId` is neither `send-individual-consent` nor `resend-consent-hub` | "Consent action failed: unknown action ({{inboundWebhookRequest.buttonId}}). No email sent. Check the Actions menu item id in the admin-theme config." | §0.5 format with the Note text | Rob checks the item id in `config/agency-config.json` |
+| R-03 | §4.1, A | Contact Tags does not include `family-member` | "Not a family member. Use Resend Consent Hub link on the owner." | §0.5 format with the Note text | Use Resend Consent Hub link on the owner |
+| R-04 | §4.2, A | Tag `synthetic-email`, OR Email empty, OR Email contains `+{{contact.hint_patient_id}}@` | "Member has no own email. Enter their real email first, or use Resend Consent Hub link on the owner." | §0.5 format with the Note text | Enter the member's real email and save, or use Resend Consent Hub link on the owner |
+| R-05 | §4.3 and §4.4 step 2, A | Owner Contact ID empty OR Hint Membership ID empty; or the owner contact is not found (Note gets the suffix " (owner contact not found)") | "Legacy member without an owner link. Needs backfill before an individual consent can be sent." | §0.5 format with the Note text | This is a legacy member: Rob backfills the owner link and membership id first |
+| R-06 | §4.4 step 5, A | Owner's Email equals `{{inboundWebhookRequest.email}}` | "Member's email matches the owner's. Use Resend Consent Hub link on the owner." | §0.5 format with the Note text | Use Resend Consent Hub link on the owner, or give the member their own email |
+| R-07 | §4.5, A | Consent Status is `complete` | "Already complete. Nothing to send." | §0.5 format with the Note text | None needed; the member's forms are done |
+| R-08 | §5.2 step 2 and §5.3 step 1, B | Member's owner not found, or the contact has no owner link and is not an owner | "No owner found for this member. Check the owner link or use the owner's own record." | §0.5 format with the Note text | Open the owner's record and press Resend there, or ask Rob to fix the owner link |
+| R-09 | §5.2 step 4 and §5.3 step 2, B | The owner's Consent Hub Token is empty | "The owner has no Consent Hub link (legacy or never invited). Needs a hub token before a link can be resent." | §0.5 format with the Note text | Rob mints or backfills the owner's hub token (legacy owners have none) |
+
+## 10. Verify in ClinX UI checklist
+
+Tick each while building (or in the Phase 6 live run where the check needs a real run log). V-01 to V-09 are required by D-07 and D-05a; V-10 and V-11 are planner additions.
+
+| Id | Where | What to check | If it differs | Result |
+|---|---|---|---|---|
+| V-01 (D-07, required) | §2.1 | After Find Contact, `{{contact.*}}` and the Send Email recipient are the found contact | Do not publish | |
+| V-02 (D-07, required) | §3.1 | How `{{inboundWebhookRequest.buttonId}}` appears in the If/Else picker | Stop; a workaround changes D-01 | |
+| V-03 (D-07, required) | §1.4 | The captured trigger sample includes `buttonId` | Re-send the sample; if still missing, do not continue | |
+| V-04 (D-07, required) | §5.4, §4.7 | Track link clicks OFF on every Send Email action (four in §5.4, one or two in §4.7) | Turn off, save, reload, reopen; never publish with tracking on | |
+| V-05 (D-04 #4, required) | §4.4, §5.2 | Find Contact switches the context to the found contact; "Restore member" switches back; a failed Find Contact leaves the member; equals compare case sensitivity | Use the D-04 alternative (drop §4.4) and accept the named residual risk | |
+| V-06 (D-05a, required) | §4.6 | Custom Code is available on the plan (Premium) | Stop and tell Rob | |
+| V-07 (D-05a, required) | §4.6 step 3 | Custom Code output variable name and the merge syntax inserted for `token` (write it here) | Re-test the code; if no picker entry, stop and tell Rob | |
+| V-08 (D-05a, required) | §4.6 step 2 | Test your Code returns `adhoc_` plus 64 hex, so crypto exists in the runtime | Do not publish; stop and tell Rob (Python `secrets.token_hex(32)` only with Rob's approval) | |
+| V-09 (D-05a, required) | §4.6 to §4.7 | The token written by Update Contact Field appears in the next Send Email's link | Add a Find Contact by `{{inboundWebhookRequest.contactId}}` after the write, test again | |
+| V-10 (planner addition) | §4.2 | A "contains" value resolves the merge field `+{{contact.hint_patient_id}}@` per contact | Delete the third condition; accept the plus-addressing residual risk | |
+| V-11 (planner addition) | §4.6 | No other workflow triggers on a Consent Hub Token change | Do not publish until Rob reads that workflow | |
+
+## 11. Rollback
+
+- **Consent workflow:** set "[Ready] Admin Menu: Consent Actions (webhook)" back to Draft. The two admin-theme consent items then fail as requests (the client shows its unconfirmed or failed state), and the Phase 6 rollback to the admin-theme v0.1.2 tag removes the items entirely. Nothing else depends on this workflow.
+- **Send Invite rename:** renaming it back to "WEBHOOK TEST Send Hint JOIN LINK & Reminders" is cosmetic; the trigger URL never changed.
+- **wf2:** the rollback order lives in this folder's README. Unpublish (Draft) the consent workflow FIRST, then clear or ignore member `adhoc_` tokens, and only then roll wf2 back to v8, because under v8 a member's own link shows the whole family.
+- **Minted member tokens** (`adhoc_` values in members' Consent Hub Token) are harmless while wf2 v9 is live: each opens only that member's card. Clearing them is optional; no other workflow reads them (§4.8, V-11).
