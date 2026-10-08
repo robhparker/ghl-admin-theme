@@ -107,7 +107,7 @@ Plans:
   3. The checklist includes a rollback step (snippet tag back to `v0.1.2` in both URLs) that restores the plain Send Invite button with no ClinX change.
   4. The annotated tag `v0.2.0` is created and pushed only after Rob gives explicit approval; until then nothing is tagged or pushed, and after approval jsDelivr serves the v0.2.0 assets.
 
-**Plans**: 2/5 plans executed (sequential waves 1 → 5; 06-01 to 06-03 run now, 06-04 waits on Rob's consent URL, 06-05 waits on Rob's D-02 approval)
+**Plans**: 3/5 plans executed (sequential waves 1 → 5; 06-01 to 06-03 run now, 06-04 waits on Rob's consent URL, 06-05 waits on Rob's D-02 approval)
 
 Plans:
 **Wave 1**
@@ -120,7 +120,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 06-03-PLAN.md — Rewrite of the unpushed history only (origin/main..main) to remove the patient ids from content and messages: preview on a scratch branch with eight checks (tracer), then a local backup branch and a compare-and-swap of main; `--history` scan passes
+- [x] 06-03-PLAN.md — Rewrite of the unpushed history only (origin/main..main) to remove the patient ids from content and messages: preview on a scratch branch with eight checks (tracer), then a local backup branch and a compare-and-swap of main; `--history` scan passes
 
 **Wave 4** *(blocked on Wave 3 completion and on Rob building the ClinX consent workflow)*
 
@@ -142,4 +142,4 @@ Phases execute in numeric order: 4 → 5 → 6 (4 and 5 are independent; 6 needs
 | 3. Accent Colors & Delivery | v0.1.0 | 2/2 | Complete | 2026-09-25 |
 | 4. Actions Menu | v0.2.0 | 3/3 | In Progress|  |
 | 5. Individual Consent Backend | v0.2.0 | 3/3 | In Progress|  |
-| 6. Release v0.2.0 | v0.2.0 | 2/5 | In Progress|  |
+| 6. Release v0.2.0 | v0.2.0 | 3/5 | In Progress|  |

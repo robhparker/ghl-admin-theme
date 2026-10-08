@@ -5,17 +5,17 @@ milestone_name: Actions menu + Send individual consent
 current_phase: 06
 current_phase_name: Release v0.2.0
 status: executing
-stopped_at: Completed 06-02-PLAN.md
-last_updated: "2026-10-08T15:55:39.847Z"
+stopped_at: Completed 06-03-PLAN.md
+last_updated: "2026-10-08T16:04:31.126Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 06 execution started
-state_head: bd49af4efc8b50df6f8568d238af65d0dc38b526
+state_head: 02484827f2b59b401a11d41703ddb55b2b2f2785
 progress:
   total_phases: 3
   completed_phases: 3
   total_plans: 11
-  completed_plans: 8
-  percent: 73
+  completed_plans: 9
+  percent: 82
 ---
 
 # Project State
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-10-07)
 ## Current Position
 
 Phase: 06 (Release v0.2.0) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 06 execution started
 
-Progress: [███████░░░] 73%
+Progress: [████████░░] 82%
 
 ## Performance Metrics
 
@@ -74,6 +74,7 @@ Progress: [███████░░░] 73%
 | Phase 05 P03 | 6min | 2 tasks | 8 files |
 | Phase 06 P01 | 6min | 2 tasks | 7 files |
 | Phase 06 P02 | 4min | 2 tasks | 6 files |
+| Phase 06 P03 | 5 min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -102,6 +103,7 @@ Decisions are logged in PROJECT.md Key Decisions table (full log). Milestone v0.
 - [Phase 06]: 06-01: RB rows are recorded after PR-01/PR-02 as the PR-03 rehearsal; an RB or PR row recorded before the pre-release rows finish is ORDER-VIOLATION
 - [Phase 06]: 06-02: scrub keeps each EXAMPLE id at the replaced id's character offset (same 16-char length), so 06-03 pairs ids by position
 - [Phase 06]: 06-02: prepush-scan.cjs --history exit 0 (PASS 7/7) is the hard gate before any push or tag; history email and hl-id lines are informational for the D-02 decision
+- [Phase 06]: 06-03: unpushed history rewritten (origin/main..main, 76 commits) with scrub-history.cjs; local backup/pre-scrub-20261008 at f419f61 is never pushed; restore with git update-ref refs/heads/main f419f61 ac1f69d
 
 ### Pending Todos
 
@@ -127,8 +129,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T15:55:34.746Z
-Stopped at: Completed 06-02-PLAN.md
+Last session: 2026-10-08T16:04:31.099Z
+Stopped at: Completed 06-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
