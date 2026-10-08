@@ -81,17 +81,18 @@ Plans:
   4. With the wf2 Build Status diff applied, opening the hub with a member-held `consent_hub_token` shows only that member's card (and the hub page renders one card with return-to-hub still working), while an owner token shows the whole family exactly as today; diffs use placeholder secrets and carry a Publish-in-n8n reminder.
   5. The member email MJML matches the Consent Hub Invite style, has no GoHighLevel mention and no em or en dashes, has click tracking off, and links to `https://join.xcelsiorhealth.com/consent-hub?t={{contact.consent_hub_token}}`; tracing a member's completion shows it flows through the unchanged path (Parts 1-3, Family Consent Form Submitted workflow, wf3 recount against the owner) so the owner's hub shows that member as done.
 
-**Plans**: 3 plans (wave 1: 05-01 and 05-02 in parallel; wave 2: 05-03). Canonical deliverables stay uncommitted in `~/Repos/clients/xcelsior/`; byte-identical mirrors are committed under `phases/05-individual-consent-backend/deliverables/`.
+**Plans**: 1/3 plans executed (wave 1: 05-01 and 05-02 in parallel; wave 2: 05-03). Canonical deliverables stay uncommitted in `~/Repos/clients/xcelsior/`; byte-identical mirrors are committed under `phases/05-individual-consent-backend/deliverables/`.
 
 Plans:
 **Wave 1**
 
-- [ ] 05-01-PLAN.md — wf2 member scope: Build Status v9 on the live v8 base (the repo mirror is stale v6), edited workflow JSON and diff, offline harness (adhoc_ token end to end, owner byte-identity, hub v11 one-card render, return-to-hub), COMPLETION-PATH.md (HUB-04, D-11 no hub change)
+- [x] 05-01-PLAN.md — wf2 member scope: Build Status v9 on the live v8 base (the repo mirror is stale v6), edited workflow JSON and diff, offline harness (adhoc_ token end to end, owner byte-identity, hub v11 one-card render, return-to-hub), COMPLETION-PATH.md (HUB-04, D-11 no hub change)
 - [ ] 05-02-PLAN.md — ClinX build spec: consent Inbound Webhook workflow (Find Contact by ID, buttonId branch, guards R-03..R-07, adhoc_ token mint via Custom Code, resend via the four d6cf9af1 invite leaves), Send Invite rename, AR-03-01, verify-in-ClinX-UI checklist V-01..V-11, staged spec checker
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [ ] 05-03-PLAN.md — Member email MJML compiled with build.sh, proposal README (apply order with Publish reminder, v9 paste block, rollback, open questions), phase gate check-phase05.sh (mirrors byte-identical, xcelsior repo untouched)
+
 **UI hint**: yes
 
 ### Phase 6: Release v0.2.0
@@ -119,5 +120,5 @@ Phases execute in numeric order: 4 → 5 → 6 (4 and 5 are independent; 6 needs
 | 2. Location Logo Switching | v0.1.0 | 2/2 | Complete | 2026-09-24 |
 | 3. Accent Colors & Delivery | v0.1.0 | 2/2 | Complete | 2026-09-25 |
 | 4. Actions Menu | v0.2.0 | 3/3 | In Progress|  |
-| 5. Individual Consent Backend | v0.2.0 | 0/3 | Planned | - |
+| 5. Individual Consent Backend | v0.2.0 | 1/3 | In Progress|  |
 | 6. Release v0.2.0 | v0.2.0 | 0/TBD | Not started | - |

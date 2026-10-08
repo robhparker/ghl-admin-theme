@@ -40,10 +40,10 @@ Inputs: `notes/actions-menu-individual-consent.md` (decisions), `notes/webhook-t
 
 ### Hub and member email
 
-- [ ] **HUB-01**: The wf2 (hub status) Build Status diff returns only the token holder's card when the holder is not the owner (`owner_contact_id` set or `member_type` != owner). Owner tokens behave exactly as today.
+- [x] **HUB-01**: The wf2 (hub status) Build Status diff returns only the token holder's card when the holder is not the owner (`owner_contact_id` set or `member_type` != owner). Owner tokens behave exactly as today.
 - [ ] **HUB-02**: The hub-page diff (if any is needed) lets a member-scoped hub render one card and keeps the return-to-hub step working. Secrets are placeholders, and a Publish-in-n8n reminder is included.
 - [ ] **HUB-03**: The member email MJML follows the Consent Hub Invite style. It has no GoHighLevel mention, no em or en dashes, click tracking off, and the link `https://join.xcelsiorhealth.com/consent-hub?t={{contact.consent_hub_token}}`.
-- [ ] **HUB-04**: A member completing via their own hub flows through the unchanged path (Parts 1-3, the Family Consent Form Submitted workflow, the wf3 recount against the owner), and the owner's hub shows that member as done.
+- [x] **HUB-04**: A member completing via their own hub flows through the unchanged path (Parts 1-3, the Family Consent Form Submitted workflow, the wf3 recount against the owner), and the owner's hub shows that member as done.
 
 ### Release
 
@@ -99,10 +99,10 @@ Deferred (see `seeds/consent-actions-hardening.md`):
 | CONS-04 | Phase 5 | Pending |
 | CONS-05 | Phase 5 | Pending |
 | CONS-06 | Phase 5 | Pending |
-| HUB-01 | Phase 5 | Pending |
+| HUB-01 | Phase 5 | Complete |
 | HUB-02 | Phase 5 | Pending |
 | HUB-03 | Phase 5 | Pending |
-| HUB-04 | Phase 5 | Pending |
+| HUB-04 | Phase 5 | Complete |
 | REL-01 | Phase 4 | Complete |
 | REL-02 | Phase 6 | Pending |
 | REL-03 | Phase 6 | Pending |

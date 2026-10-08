@@ -5,17 +5,17 @@ milestone_name: Actions menu + Send individual consent
 current_phase: 5
 current_phase_name: Individual Consent Backend
 status: executing
-stopped_at: Completed 04-03-PLAN.md
-last_updated: "2026-10-08T03:11:41.562Z"
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-10-08T03:20:35.784Z"
 last_activity: 2026-10-07
 last_activity_desc: Phase 4 execution started
-state_head: 86b53d7f7b63e4f19835a04b1bd8c8f06bd0f056
+state_head: 23f62a0ee2e78595935a083a519eb279454a61e3
 progress:
   total_phases: 3
   completed_phases: 3
   total_plans: 6
-  completed_plans: 3
-  percent: 50
+  completed_plans: 4
+  percent: 67
 ---
 
 # Project State
@@ -25,16 +25,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-07)
 
 **Core value:** From an open contact record, a staff member can press one button and reliably trigger the right HighLevel workflow for that exact contact and location, with no stale context and no duplicate sends.
-**Current focus:** Phase 4 — Actions Menu
+**Current focus:** Phase 5 — Individual Consent Backend
 
 ## Current Position
 
-Phase: 5 (Individual Consent Backend) — READY TO EXECUTE
-Plan: 3 of 3
-Status: Ready to execute
-Last activity: 2026-10-07 — Phase 4 execution started
+Phase: 5 (Individual Consent Backend) — EXECUTING
+Plan: 2 of 3 (05-01 complete)
+Status: Executing
+Last activity: 2026-10-07 — Completed 05-01 (wf2 member scope, harness 22/22)
 
-Progress: [█████░░░░░] 50%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
@@ -69,6 +69,7 @@ Progress: [█████░░░░░] 50%
 | Phase 04 P01 | 9min | 3 tasks | 4 files |
 | Phase 04 P02 | 6min | 2 tasks | 2 files |
 | Phase 04 P03 | 4min | 2 tasks | 5 files |
+| Phase 05 P01 | 7min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,7 @@ Decisions are logged in PROJECT.md Key Decisions table (full log). Milestone v0.
 - [Phase 4]: 04-02: requires { email: 'real' } is re-read at render, reconcile, menu open, and click time (no poll, no observer); anchors and cooling items are never flipped
 - [Phase 4]: [04-03]: Shipped xcelsiorActions menu scoped to Cp2XxBsRoyKS2CUf1Hwi; Send Invite moved out of scope-all buttons with unchanged URL/payload and 60 s cooldown; consent items ship url '' (Not configured) until Phase 6
 - [Phase 4]: [04-03]: Checks that must prove a buttons-only config delete menus from a loaded fixture copy (fixture now carries harnessActions scoped to locM)
+- [Phase 05]: 05-01: wf2 deliverable synced to the live v8 roster (F-1); Build Status v9 scopes member tokens (owner_contact_id set or member_type != owner; legacy fails closed); owner tokens byte-identical to v8; hub v11 unchanged (D-11)
 
 ### Pending Todos
 
@@ -115,8 +117,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T01:17:36.021Z
-Stopped at: Completed 04-03-PLAN.md
+Last session: 2026-10-08T03:20:35.764Z
+Stopped at: Completed 05-01-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
