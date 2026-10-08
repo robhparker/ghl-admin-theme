@@ -3815,6 +3815,276 @@ scenario('menu D-03: a buttons-only config renders byte-for-byte as v0.1.2', asy
   assert.equal(shim.errors.length, 0);
 });
 
+// ---- Per-item behavior (Plan 04-02 Task 1: MENU-06, ITEM-05, ITEM-06, D-09..D-11, D-15) ----
+
+const MENU_HOOK_2 = 'https://services.leadconnectorhq.com/hooks/TEST-MENU-2';
+const tSecond = () => ({ id: 'tSecond', label: 'Second Hook', icon: 'mail', action: { type: 'webhook', url: MENU_HOOK_2, cooldownMs: 60000, extraFields: { source: 'ghlc-harness' } } });
+
+scenario('menu items: failed, unconfirmed, and network outcomes stay on the item and flash on the trigger', async () => {
+  {
+    const { shim } = await bootMenu();
+    shim.setFetchMode('error');
+    const parts = menuParts(shim);
+    const { trigger } = parts;
+    const invite = parts.items[0];
+    trigger.click();
+    invite.click();
+    await shim.flush();
+    assert.equal(shim.fetchLog.length, 1);
+    assert.equal(invite.getAttribute('data-state'), 'failed');
+    assert.equal(label(invite), 'Failed — retry');
+    assert.equal(invite.hasAttribute('aria-disabled'), false, 'a failed item is activatable');
+    assert.equal(invite.hasAttribute('disabled'), false);
+    assert.equal(label(trigger), 'Actions · Failed');
+    assert.equal(trigger.getAttribute('data-ghlc-flash'), 'failed');
+    assert.ok(msg(trigger).startsWith('Menu Invite: Workflow did not accept the request (HTTP 500'), msg(trigger));
+    shim.setFetchMode('ok');
+    trigger.click();
+    assert.ok(isOpen(parts), 'reopened');
+    same(shim.document.activeElement, invite, 'a failed item is the first enabled item');
+    invite.click();
+    await shim.flush();
+    assert.equal(shim.fetchLog.length, 2, 'retry sends a second POST');
+    assert.notEqual(shim.fetchLog[0].bodyJson.requestId, shim.fetchLog[1].bodyJson.requestId);
+    assert.equal(invite.getAttribute('data-state'), 'queued');
+    assert.equal(label(trigger), 'Actions · Workflow triggered');
+    assert.equal(shim.errors.length, 0);
+  }
+  {
+    const { shim } = await bootMenu();
+    shim.setFetchMode('cors');
+    const parts = menuParts(shim);
+    const invite = parts.items[0];
+    parts.trigger.click();
+    invite.click();
+    await shim.flush();
+    assert.equal(shim.fetchLog.length, 2, 'cors attempt plus one no-cors retry');
+    assert.equal(invite.getAttribute('data-state'), 'queued');
+    assert.equal(label(invite), 'Sent (unconfirmed)');
+    assert.ok(msg(invite).includes('did not confirm'));
+    assert.equal(label(parts.trigger), 'Actions · Sent (unconfirmed)');
+    assert.equal(parts.trigger.getAttribute('data-ghlc-flash'), 'ok');
+    assert.ok(msg(parts.trigger).startsWith('Menu Invite: The workflow endpoint did not confirm'), msg(parts.trigger));
+    assert.equal(shim.errors.length, 0);
+  }
+  {
+    const { shim } = await bootMenu();
+    shim.setFetchMode('offline');
+    const parts = menuParts(shim);
+    const invite = parts.items[0];
+    parts.trigger.click();
+    invite.click();
+    await shim.flush();
+    assert.equal(shim.fetchLog.length, 2);
+    assert.equal(invite.getAttribute('data-state'), 'failed');
+    assert.ok(/connection/i.test(msg(invite)));
+    assert.equal(label(parts.trigger), 'Actions · Failed');
+    assert.equal(parts.trigger.getAttribute('data-ghlc-flash'), 'failed');
+    assert.ok(/connection/i.test(msg(parts.trigger)));
+    assertNoLeak(shim.console.lines, [...LEAK_STRINGS, 'TEST-MENU', 'Menu Invite'], 'menu items outcomes');
+    assert.equal(shim.errors.length, 0);
+  }
+});
+
+scenario("menu items: Copy contact ID copies the open contact's id and reports on the trigger (ITEM-05)", async () => {
+  {
+    const written = [];
+    const { shim } = await bootMenu(withMenu(), { clipboard: { writeText: async (t) => { written.push(t); } } });
+    const parts = menuParts(shim);
+    const copy = parts.items[2];
+    assert.equal(copy.getAttribute('data-ghlc-button-id'), 'tCopy');
+    parts.trigger.click();
+    copy.click();
+    await shim.flush();
+    assert.deepEqual(written, ['c1']);
+    assert.equal(copy.getAttribute('data-state'), 'ready');
+    assert.equal(msg(copy), 'Contact ID copied');
+    assert.equal(label(parts.trigger), 'Actions · Contact ID copied');
+    assert.equal(parts.trigger.getAttribute('data-ghlc-flash'), 'ok');
+    assert.equal(msg(parts.trigger), 'Copy Item: Contact ID copied');
+    assert.equal(shim.fetchLog.length, 0);
+    assert.equal(shim.errors.length, 0);
+  }
+  {
+    const { shim } = await bootMenu();
+    assert.equal(shim.window.navigator.clipboard, undefined);
+    const parts = menuParts(shim);
+    const copy = parts.items[2];
+    parts.trigger.click();
+    copy.click();
+    await shim.flush();
+    assert.equal(copy.getAttribute('data-state'), 'failed');
+    assert.equal(label(parts.trigger), 'Actions · Failed');
+    assert.equal(parts.trigger.getAttribute('data-ghlc-flash'), 'failed');
+    assert.equal(msg(parts.trigger), 'Copy Item: Clipboard unavailable');
+    assert.equal(shim.errors.length, 0);
+  }
+});
+
+scenario('menu items: a 60 s cooldown keyed by item id blocks only that item (ITEM-06, D-09, D-10)', async () => {
+  const { shim } = await bootMenu(withMenu({ items: [tInvite(), tSecond(), tCopy()] }));
+  const parts = menuParts(shim);
+  const [invite, second] = parts.items;
+  parts.trigger.click();
+  invite.click();
+  await shim.flush();
+  // t0: tInvite's send.
+  assert.equal(shim.fetchLog.length, 1);
+  assert.equal(invite.getAttribute('data-state'), 'queued');
+  assert.equal(invite.getAttribute('aria-disabled'), 'true');
+  parts.trigger.click();
+  assert.ok(isOpen(parts));
+  same(shim.document.activeElement, second, 'a queued item is skipped when opening');
+  invite.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 1, 'a queued item sends nothing');
+  assert.ok(isOpen(parts), 'an inert activation leaves the menu open');
+  await shim.advanceTimers(30000);
+  assert.equal(second.getAttribute('data-state'), 'ready', "another item is usable during tInvite's cooldown");
+  second.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 2);
+  assert.equal(shim.fetchLog[1].bodyJson.buttonId, 'tSecond');
+  assert.equal(shim.fetchLog[1].url, MENU_HOOK_2);
+  assert.equal(second.getAttribute('data-state'), 'queued');
+  await shim.advanceTimers(29999);
+  assert.equal(invite.getAttribute('data-state'), 'queued', 'tInvite still queued at +59999 ms');
+  assert.equal(second.getAttribute('data-state'), 'queued');
+  await shim.advanceTimers(1);
+  assert.equal(invite.getAttribute('data-state'), 'ready', 'tInvite ready at +60000 ms');
+  assert.equal(invite.hasAttribute('aria-disabled'), false);
+  assert.equal(label(invite), 'Menu Invite');
+  assert.equal(second.getAttribute('data-state'), 'queued', 'tSecond runs its own 60 s');
+  await shim.advanceTimers(29999);
+  assert.equal(second.getAttribute('data-state'), 'queued');
+  await shim.advanceTimers(1);
+  assert.equal(second.getAttribute('data-state'), 'ready');
+  assert.equal(shim.fetchLog.length, 2);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario("menu items: an item's cooldown survives a same-context region re-render", async () => {
+  const { shim } = await bootMenu();
+  const before = menuParts(shim);
+  const first = before.items[0];
+  before.trigger.click();
+  first.click();
+  await shim.flush();
+  assert.equal(first.getAttribute('data-state'), 'queued');
+  await shim.advanceTimers(1000);
+  shim.setContact(JANE);
+  await shim.flush();
+  const parts = menuParts(shim);
+  const restored = parts.items[0];
+  assert.ok(restored !== first, 'the item was recreated by the re-render');
+  assert.equal(restored.getAttribute('data-ghlc-button-id'), 'tInvite');
+  assert.equal(restored.getAttribute('data-state'), 'queued', 'recreated inside the cooldown window stays queued');
+  assert.equal(msg(restored), 'Recently sent — wait before sending again');
+  assert.equal(restored.getAttribute('aria-disabled'), 'true');
+  parts.trigger.click();
+  restored.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 1, 'no second POST inside the cooldown');
+  assert.ok(isOpen(parts));
+  await shim.advanceTimers(58999);
+  assert.equal(restored.getAttribute('data-state'), 'queued');
+  await shim.advanceTimers(1);
+  assert.equal(restored.getAttribute('data-state'), 'ready', 'cooldown expires at the original deadline');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('menu items: an empty or missing webhook url renders "Not configured" and never sends (D-15)', async () => {
+  const tEmpty = { id: 'tEmpty', label: 'Empty Url', icon: 'mail', action: { type: 'webhook', url: '', cooldownMs: 60000, extraFields: { source: 'ghlc-harness' } } };
+  const tMissing = { id: 'tMissing', label: 'Missing Url', icon: 'mail', action: { type: 'webhook', cooldownMs: 60000 } };
+  const { shim } = await bootMenu(withMenu({ items: [tInvite(), tEmpty, tMissing, tCopy()] }));
+  const parts = menuParts(shim);
+  const [invite, empty, missing] = parts.items;
+  for (const item of [empty, missing]) {
+    assert.equal(item.getAttribute('data-state'), 'unavailable');
+    assert.equal(item.getAttribute('title'), 'Not configured');
+    assert.equal(msg(item), 'Not configured');
+    assert.equal(item.getAttribute('aria-disabled'), 'true');
+    assert.equal(item.hasAttribute('disabled'), false);
+    assert.equal(item.hasAttribute('data-ghlc-bound'), false, 'no click is bound');
+  }
+  parts.trigger.click();
+  same(shim.document.activeElement, invite);
+  shim.pressKey(invite, 'ArrowDown');
+  same(shim.document.activeElement, empty, 'an unconfigured item is focusable');
+  empty.click();
+  shim.pressKey(empty, 'Enter');
+  await shim.flush();
+  shim.pressKey(empty, 'ArrowDown');
+  same(shim.document.activeElement, missing);
+  missing.click();
+  shim.pressKey(missing, ' ');
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 0, 'nothing is ever sent');
+  assert.equal(parts.trigger.getAttribute('aria-expanded'), 'true', 'inert activations leave the menu open');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario("menu items: a late result for a previous contact never lands on the new contact's menu", async () => {
+  const { shim } = await bootMenu();
+  shim.setFetchMode('hold');
+  const old = menuParts(shim);
+  const oldInvite = old.items[0];
+  old.trigger.click();
+  oldInvite.click();
+  assert.equal(oldInvite.getAttribute('data-state'), 'submitting');
+  shim.navigate('/v2/location/locA/contacts/detail/c2', { via: 'pushState' });
+  shim.setContact(C2);
+  await shim.flush();
+  const fresh = menuParts(shim);
+  assert.ok(fresh.wrapper && fresh.wrapper !== old.wrapper, 'a new menu for the new contact');
+  assert.equal(fresh.wrapper.getAttribute('data-ghlc-ctx'), 'locA|c2');
+  assert.equal(fresh.items[0].getAttribute('data-state'), 'ready');
+  shim.releaseFetch();
+  await shim.flush();
+  assert.equal(label(fresh.trigger), 'Actions', 'the new trigger never flashes the old result');
+  assert.equal(fresh.trigger.hasAttribute('data-ghlc-flash'), false);
+  assert.equal(msg(fresh.trigger), '');
+  assert.equal(fresh.items[0].getAttribute('data-state'), 'ready');
+  assert.equal(oldInvite.getAttribute('data-state'), 'submitting', 'the old item is never updated');
+  assert.equal(shim.fetchLog.length, 1);
+  assert.equal(logCount(shim, 'webhook-discarded'), 1);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('menu items: a stale click on an item is refused and sends nothing', async () => {
+  const { shim } = await bootMenu();
+  const parts = menuParts(shim);
+  const invite = parts.items[0];
+  parts.trigger.click();
+  shim.setPath('/v2/location/locA/contacts/detail/c9');
+  invite.click();
+  assert.equal(invite.getAttribute('data-state'), 'unavailable');
+  assert.ok(msg(invite).includes('Context changed'));
+  assert.equal(shim.fetchLog.length, 0, 'nothing is sent for a stale click');
+  assert.equal(logCount(shim, 'stale-click'), 1);
+  await shim.flush();
+  const fresh = menuParts(shim);
+  assert.equal(parts.wrapper.isConnected, false, 'the stale menu is replaced once the DOM catches up');
+  assert.equal(fresh.wrapper.getAttribute('data-ghlc-ctx'), 'locA|c9');
+  assert.equal(fresh.items[0].getAttribute('data-state'), 'ready');
+  assert.equal(shim.fetchLog.length, 0);
+  assert.equal(shim.errors.length, 0);
+});
+
+check('unit: resolveAction reports "Not configured" for an empty or missing webhook url and keeps the HTTPS message otherwise', () => {
+  const api = throwawayApi();
+  const resolve = (placement, action) => api.resolveAction({ id: 'x', placement, action });
+  for (const action of [{ type: 'webhook', url: '' }, { type: 'webhook' }, { type: 'webhook', url: null }]) {
+    const r = resolve('contact', action);
+    assert.equal(r.kind, 'unavailable');
+    assert.equal(r.message, 'Not configured', JSON.stringify(action));
+  }
+  assert.equal(resolve('contact', { type: 'webhook', url: 'http://services.leadconnectorhq.com/hooks/x' }).message, 'Webhook URL must use HTTPS');
+  assert.equal(resolve('contact', { type: 'webhook', url: 'javascript:alert(1)' }).message, 'Webhook URL must use HTTPS');
+  assert.equal(resolve('header', { type: 'webhook', url: '' }).message, 'Requires an open contact');
+  assert.equal(resolve('contact', { type: 'webhook', url: 'https://services.leadconnectorhq.com/hooks/x' }).kind, 'webhook');
+});
+
 // ---------------------------------------------------------------------------
 // Run
 // ---------------------------------------------------------------------------
