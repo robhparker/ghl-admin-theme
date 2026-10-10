@@ -74,7 +74,7 @@
           },
           "action": {
             "type": "webhook",
-            "url": "",
+            "url": "https://services.leadconnectorhq.com/hooks/Cp2XxBsRoyKS2CUf1Hwi/webhook-trigger/e50d051c-210d-4b03-b817-ab8bc19fd214",
             "cooldownMs": 60000,
             "extraFields": {
               "source": "ghl-customizer"
@@ -87,7 +87,7 @@
           "icon": "mail",
           "action": {
             "type": "webhook",
-            "url": "",
+            "url": "https://services.leadconnectorhq.com/hooks/Cp2XxBsRoyKS2CUf1Hwi/webhook-trigger/e50d051c-210d-4b03-b817-ab8bc19fd214",
             "cooldownMs": 60000,
             "extraFields": {
               "source": "ghl-customizer"

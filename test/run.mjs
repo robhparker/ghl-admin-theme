@@ -88,6 +88,8 @@ const ADAPTER_ONLY = [
 
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SECRET_KEY_RE = /token|secret|api.?key|password|bearer/i;
+// Phase 6 D-01: the consent workflow's Inbound Webhook (Xcelsior Health, lowercase uuid).
+const CONSENT_TRIGGER_RE = /^https:\/\/services\.leadconnectorhq\.com\/hooks\/Cp2XxBsRoyKS2CUf1Hwi\/webhook-trigger\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const LEAK_STRINGS = ['hooks/', 'jane@', '5550100', 'requestId'];
 
 // Values created inside the vm realm have a different Object.prototype; strip
@@ -348,8 +350,11 @@ check('config: both JSON files parse, validate, use HTTPS webhooks, and carry no
     assert.equal(item.action.cooldownMs, 60000, `${item.id} cools down for 60 s (D-10)`);
     assert.deepEqual(item.action.extraFields, { source: 'ghl-customizer' }, `${item.id} adds no payload field (D-14)`);
   }
-  assert.equal(consent.action.url, '', 'Send individual consent stays "Not configured" until Phase 6 (D-15)');
-  assert.equal(hub.action.url, '', 'Resend Consent Hub link stays "Not configured" until Phase 6 (D-15)');
+  assert.equal(consent.action.url, hub.action.url, 'both consent items share the one consent webhook (D-01)');
+  assert.match(consent.action.url, CONSENT_TRIGGER_RE, 'the consent url is an Xcelsior Health Inbound Webhook trigger (D-01)');
+  assert.notEqual(consent.action.url, invite.action.url, 'the consent url is not the Send Invite trigger (D-01)');
+  const consentTriggerId = consent.action.url.split('/').pop();
+  assert.ok(!fs.readFileSync(path.join(root, 'README.md'), 'utf8').includes(consentTriggerId), 'README never carries the consent trigger id (D-01)');
   assert.deepEqual(consent.requires, { email: 'real' }, 'Send individual consent needs a real email (D-16)');
   assert.equal(hub.requires, undefined, 'Resend Consent Hub link has no requires rule');
   assert.deepEqual(copy.action, { type: 'handler', handler: 'copyContactId' });
@@ -3346,8 +3351,9 @@ scenario('sample: the shipped config boots at Dummy Clinic with its logo overrid
 // exact served file. Bodies run after the whole file is evaluated, so the menu
 // helpers declared below (same, menuParts, bootMenu, MENU_CONSENT_HOOK) are in scope.
 
-scenario('sample: an Xcelsior contact record shows one Actions menu with the four items in order; Send Invite posts the unchanged payload and cools down 60 s', async () => {
+scenario('sample: an Xcelsior contact record shows one Actions menu with the four items in order; Send Invite posts the unchanged payload and cools down 60 s; both consent items post to the one consent webhook with their own buttonId', async () => {
   const sample = JSON.parse(sampleText);
+  const consentUrl = sample.menus[0].items.find((i) => i.id === 'send-individual-consent').action.url;
   const { shim } = await bootWithConfig(sample, { pathname: SAMPLE_XCELSIOR_CONTACT_PATH });
   const written = [];
   shim.window.navigator.clipboard = { writeText: async (t) => { written.push(t); } };
@@ -3369,8 +3375,7 @@ scenario('sample: an Xcelsior contact record shows one Actions menu with the fou
   assert.deepEqual(parts.items.map((i) => label(i)), SAMPLE_ITEM_LABELS);
   const [invite, consent, hub, copy] = parts.items;
   for (const item of [consent, hub]) {
-    assert.equal(item.getAttribute('data-state'), 'unavailable', `${item.getAttribute('data-ghlc-button-id')} is unavailable`);
-    assert.equal(item.getAttribute('title'), 'Not configured', 'D-15');
+    assert.equal(item.getAttribute('data-state'), 'ready', `${item.getAttribute('data-ghlc-button-id')} is ready with the shipped consent url (D-01)`);
   }
   assert.equal(invite.getAttribute('data-state'), 'ready');
   assert.equal(copy.getAttribute('data-state'), 'ready');
@@ -3399,12 +3404,27 @@ scenario('sample: an Xcelsior contact record shows one Actions menu with the fou
   await shim.advanceTimers(1);
   assert.equal(invite.getAttribute('data-state'), 'ready', 'Send Invite is ready again at 60 s');
 
-  // D-15: both consent items are inert.
-  parts.trigger.click();
-  consent.click();
+  // D-01: both consent items post the standard payload to the one consent webhook, each with its own buttonId.
+  if (!isOpen(parts)) parts.trigger.click();
   hub.click();
   await shim.flush();
-  assert.equal(shim.fetchLog.length, 1, 'the consent items never POST while their url is empty');
+  assert.equal(shim.fetchLog.length, 2, 'Resend Consent Hub link posts once');
+  const hubCall = shim.fetchLog[1];
+  assert.equal(hubCall.url, consentUrl, 'Resend Consent Hub link posts to the consent webhook');
+  assert.equal(hubCall.method, 'POST');
+  assert.deepEqual(Object.keys(hubCall.bodyJson).sort(), PAYLOAD_KEYS, 'the standard payload (D-14)');
+  assert.equal(hubCall.bodyJson.buttonId, 'resend-consent-hub');
+  assert.equal(hubCall.bodyJson.contactId, 'c1');
+  if (!isOpen(parts)) parts.trigger.click();
+  consent.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 3, 'Send individual consent posts once');
+  const consentCall = shim.fetchLog[2];
+  assert.equal(consentCall.url, consentUrl, 'Send individual consent posts to the same consent webhook');
+  assert.equal(consentCall.method, 'POST');
+  assert.deepEqual(Object.keys(consentCall.bodyJson).sort(), PAYLOAD_KEYS, 'the standard payload (D-14)');
+  assert.equal(consentCall.bodyJson.buttonId, 'send-individual-consent');
+  assert.equal(consentCall.bodyJson.contactId, 'c1');
 
   // ITEM-05: Copy contact ID.
   if (!isOpen(parts)) parts.trigger.click();
@@ -3420,7 +3440,7 @@ scenario('sample: an Xcelsior contact record shows one Actions menu with the fou
 });
 
 scenario('sample: with the consent URL filled in, both consent items post the standard payload with their own buttonId, and a synthetic email disables only Send individual consent', async () => {
-  // MENU_CONSENT_HOOK stands in for the Phase 6 consent URL (the shim intercepts any /hooks/ URL).
+  // MENU_CONSENT_HOOK stands in for the shipped consent URL, so this scenario does not depend on it (the shim intercepts any /hooks/ URL).
   const filled = () => {
     const clone = JSON.parse(sampleText);
     for (const item of clone.menus[0].items) {

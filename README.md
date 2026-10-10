@@ -152,9 +152,9 @@ The shipped `xcelsiorActions` menu, scoped to Xcelsior Health only:
       { "id": "sendInvite", "label": "Send Invite", "icon": "send",
         "action": { "type": "webhook", "url": "https://services.leadconnectorhq.com/hooks/...", "cooldownMs": 60000, "extraFields": { "source": "ghl-customizer" } } },
       { "id": "send-individual-consent", "label": "Send individual consent", "icon": "mail", "requires": { "email": "real" },
-        "action": { "type": "webhook", "url": "", "cooldownMs": 60000, "extraFields": { "source": "ghl-customizer" } } },
+        "action": { "type": "webhook", "url": "https://services.leadconnectorhq.com/hooks/...", "cooldownMs": 60000, "extraFields": { "source": "ghl-customizer" } } },
       { "id": "resend-consent-hub", "label": "Resend Consent Hub link", "icon": "mail",
-        "action": { "type": "webhook", "url": "", "cooldownMs": 60000, "extraFields": { "source": "ghl-customizer" } } },
+        "action": { "type": "webhook", "url": "https://services.leadconnectorhq.com/hooks/...", "cooldownMs": 60000, "extraFields": { "source": "ghl-customizer" } } },
       { "id": "copyContactId", "label": "Copy contact ID", "icon": "copy",
         "action": { "type": "handler", "handler": "copyContactId" } }
     ]
@@ -169,7 +169,7 @@ Consent item IDs. These are the `buttonId` values the consent Inbound Webhook wo
 | `send-individual-consent` | Send individual consent |
 | `resend-consent-hub` | Resend Consent Hub link |
 
-Both items share one URL, the consent workflow's Inbound Webhook trigger. They post the standard payload above with no new fields; only `buttonId` tells them apart. Until that workflow's URL is filled in, both ship with `"url": ""` and show "Not configured".
+Both items share one URL, the consent workflow's Inbound Webhook trigger. They post the standard payload above with no new fields; only `buttonId` tells them apart. The shipped config carries that URL in both items. Setting an item's `url` back to `""` makes it "Not configured" again: it never sends, and nothing changes in ClinX.
 
 ### Example location entry
 
@@ -195,7 +195,7 @@ The shipped sample, `config/agency-config.json`, demonstrates agency defaults, t
 ## Security notes
 
 - **The config is public.** Anyone with its URL, and anyone browsing the public repository, can read it. Never put tokens, API keys, passwords, patient data, or contact data in it. The test suite rejects keys that look like secrets in both the sample and the fixture.
-- **The Inbound Webhook URL is in the config by design.** This is a staff-only tool and the trade-off was accepted knowingly: anyone holding the URL can enqueue the workflow. If it is abused, regenerate the trigger URL in the HighLevel workflow, update `config/agency-config.json`, tag a new version, and update the tag in the snippet.
+- **Two Inbound Webhook URLs are in the config by design:** Send Invite's, and the consent workflow's, which both consent items share. This is a staff-only tool and the trade-off was accepted knowingly: anyone holding a URL can enqueue its workflow. If one is abused, regenerate that trigger in its HighLevel workflow, update `config/agency-config.json` (both consent items for the consent URL), tag a new version, and update the tag in the snippet.
 - **Config never executes code.** The only action types are `link`, `webhook`, and `handler`; unknown types render unavailable, and handler names resolve against a fixed allowlist inside the script.
 - **All URLs are `https`.** The config URL, logo URLs, link hrefs (or `mailto:`, `tel:`, same-origin paths), and webhook URLs are checked before use; credentialed URLs are refused.
 - **The script never writes HTML strings.** Every config value reaches the page through text nodes and attributes on elements the script creates itself. Logo image requests carry `referrerpolicy="no-referrer"`.
