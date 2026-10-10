@@ -5,17 +5,17 @@ milestone_name: Actions menu + Send individual consent
 current_phase: 06
 current_phase_name: Release v0.2.0
 status: executing
-stopped_at: Completed 06-03-PLAN.md
-last_updated: "2026-10-08T16:04:31.126Z"
+stopped_at: Completed 06-04-PLAN.md
+last_updated: "2026-10-10T04:36:50.344Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 06 execution started
-state_head: 02484827f2b59b401a11d41703ddb55b2b2f2785
+state_head: 67cb44c0680986755c8a9c2af2dceba13a052db2
 progress:
   total_phases: 3
   completed_phases: 3
   total_plans: 11
-  completed_plans: 9
-  percent: 82
+  completed_plans: 10
+  percent: 91
 ---
 
 # Project State
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-10-07)
 ## Current Position
 
 Phase: 06 (Release v0.2.0) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-10-08 — Phase 06 execution started
 
-Progress: [████████░░] 82%
+Progress: [█████████░] 91%
 
 ## Performance Metrics
 
@@ -75,6 +75,7 @@ Progress: [████████░░] 82%
 | Phase 06 P01 | 6min | 2 tasks | 7 files |
 | Phase 06 P02 | 4min | 2 tasks | 6 files |
 | Phase 06 P03 | 5 min | 2 tasks | 1 files |
+| Phase 06 P04 | 2min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -104,6 +105,8 @@ Decisions are logged in PROJECT.md Key Decisions table (full log). Milestone v0.
 - [Phase 06]: 06-02: scrub keeps each EXAMPLE id at the replaced id's character offset (same 16-char length), so 06-03 pairs ids by position
 - [Phase 06]: 06-02: prepush-scan.cjs --history exit 0 (PASS 7/7) is the hard gate before any push or tag; history email and hl-id lines are informational for the D-02 decision
 - [Phase 06]: 06-03: unpushed history rewritten (origin/main..main, 76 commits) with scrub-history.cjs; local backup/pre-scrub-20261008 at f419f61 is never pushed; restore with git update-ref refs/heads/main f419f61 ac1f69d
+- [Phase 06]: 06-04: consent trigger URL wired into both consent items by exact two-line edit; it lives only in config/agency-config.json and tests derive it from the parsed config
+- [Phase 06]: 06-04: ClinX consent workflow redesigned in pilot (V-05): one Find Contact per run, Branch A D-04 alternative, V-09b replaces Reload member, Branch B forwards with R-13 loop guard; BUILD-SPEC update owed
 
 ### Pending Todos
 
@@ -118,6 +121,7 @@ None yet.
 - [Phase 1]: Webhook URL lives in public config (accepted trade-off AR-03-01 for a staff-only tool); anyone with the URL can enqueue the workflow. v0.2.0 adds a second public URL (consent webhook); volume risk grows, disclosure does not (links only go to the address on file). v2 hardening (INV-01..05) removes it.
 - [Phase 1]: HighLevel states custom JS/CSS is unsupported; a HighLevel UI update can break mount points at any time. Graceful degradation is a hard requirement; `GHLC.verify()` is the first diagnostic.
 - [Phase 3]: Location Business Profile logos live on HighLevel's storage; a re-upload changes the URL, so a config that points at one needs a follow-up tag. HighLevel's nav icons are black images, so a dark `sidebarBg` leaves them low-contrast; the 40px logo slot makes padded logos small.
+- Rob's mailbox confirmation of consent pilot runs 0101-0106 pending; prerequisite for the 06-05 push decision
 
 ## Deferred Items
 
@@ -129,8 +133,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-08T16:04:31.099Z
-Stopped at: Completed 06-03-PLAN.md
+Last session: 2026-10-10T04:36:50.320Z
+Stopped at: Completed 06-04-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
