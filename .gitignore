@@ -1,3 +1,9 @@
 .DS_Store
 node_modules/
 *.log
+
+# Local tool/runtime artifacts (may hold live HighLevel page snapshots; never publish)
+.playwright-mcp/
+.gsd/
+.planning/milestone.lock
+.planning/state.json
