@@ -227,7 +227,11 @@
     // #delete-contact-trigger; the primary email and phone are stateful
     // inputs inside elements whose ids are literally "contact.email" and
     // "contact.phone" (looked up by id, never by CSS, because of the dot).
+    // The delete control is permission-gated: Account Users do not get it.
+    // contactPanelId is that same panel, used as the mount when the control
+    // is absent. It must stay the id in contactRegion's first selector.
     contactToolbarAnchorId: 'delete-contact-trigger',
+    contactPanelId: 'record-details-lhs',
     contactEmailFieldId: 'contact.email',
     contactPhoneFieldId: 'contact.phone',
     contactEmail: Object.freeze(['a[href^="mailto:"]', 'input[type="email"]']),
@@ -277,17 +281,42 @@
     return findFirst(selectors.headerMount, document);
   }
 
-  // The contact toolbar is the name row that contains the delete trigger
-  // (verified live); the class-based candidates remain as fallbacks.
-  function findContactMount() {
+  // Name row that contains the delete trigger, or null. HighLevel renders
+  // that control only for users who can delete the contact.
+  function contactToolbarParent() {
     var anchor = document.getElementById(selectors.contactToolbarAnchorId);
     if (anchor && anchor.parentNode && anchor.parentNode.nodeType === 1) return anchor.parentNode;
-    return findFirst(selectors.contactMount, document);
+    return null;
+  }
+
+  // The verified contact panel. Present for every role; the class candidates
+  // in contactMount were checked live and do not exist in HighLevel's DOM.
+  function contactPanelEl() {
+    var panel = document.getElementById(selectors.contactPanelId);
+    return panel && panel.nodeType === 1 ? panel : null;
+  }
+
+  // Prefer the name row when the delete control is there (admin layout).
+  // Otherwise mount on the panel so Account Users still get contact actions.
+  // The class list stays last for shells that imitate the older markup.
+  function findContactMount() {
+    return contactToolbarParent() || contactPanelEl() || findFirst(selectors.contactMount, document);
   }
   function contactMountVia() {
-    var anchor = document.getElementById(selectors.contactToolbarAnchorId);
-    if (anchor && anchor.parentNode && anchor.parentNode.nodeType === 1) return 'toolbar-anchor';
+    if (contactToolbarParent()) return 'toolbar-anchor';
+    if (contactPanelEl()) return 'record-panel';
     return findFirst(selectors.contactMount, document) ? 'selector' : null;
+  }
+
+  // Name-row mounts append, so the group sits beside the native controls.
+  // The panel fallback prepends: the details column scrolls, and a group
+  // appended under every field would open its menu below the visible area.
+  function insertGroup(mount, group) {
+    if (!contactToolbarParent() && mount === contactPanelEl() && mount.firstChild) {
+      mount.insertBefore(group, mount.firstChild);
+      return;
+    }
+    mount.appendChild(group);
   }
 
   function findContactRegion() {
@@ -415,9 +444,9 @@
   }
 
   // Presence of every mount selector, for verify mode (FND-04), plus the name
-  // of the contact-mount strategy that resolved ('toolbar-anchor', 'selector',
-  // or null). No element or config value leaves the adapter: only booleans
-  // and that strategy name.
+  // of the contact-mount strategy that resolved ('toolbar-anchor',
+  // 'record-panel', 'selector', or null). No element or config value leaves
+  // the adapter: only booleans and that strategy name.
   function probe() {
     return {
       sidebar: !!document.querySelector(selectors.sidebar),
@@ -445,6 +474,7 @@
     findFirst: findFirst,
     findHeaderMount: findHeaderMount,
     findContactMount: findContactMount,
+    insertGroup: insertGroup,
     findContactRegion: findContactRegion,
     findRegionRoot: findRegionRoot,
     readContactEmail: readContactEmail,
@@ -1669,7 +1699,7 @@
     var group = document.createElement('div');
     group.setAttribute('class', OWN.groupClass);
     group.setAttribute('data-' + NS + '-placement', placement);
-    mount.appendChild(group);
+    adapter.insertGroup(mount, group);
     // A group recreated by an observer-driven re-render carries the current
     // theme from its first frame; a default-colored button is never shown.
     applyGroupTheme(group, state.theme.tokens);

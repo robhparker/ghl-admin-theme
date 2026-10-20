@@ -1674,6 +1674,61 @@ scenario('live DOM: email field that fills in after render recovers the button b
   assert.equal(shim.errors.length, 0);
 });
 
+scenario('live DOM: a contact panel without #delete-contact-trigger still mounts the Actions menu', async () => {
+  const { shim, shell, GHLC } = await bootMenu();
+  assert.equal(GHLC.verify().mounts.contactMountVia, 'selector', 'class fallback still applies when neither live anchor is present');
+  const doc = shim.document;
+  const host = shell.main || shell.contactRegion.parentNode;
+  shell.contactRegion.parentNode.removeChild(shell.contactRegion);
+  const lhs = doc.createElement('div'); lhs.setAttribute('id', 'record-details-lhs');
+  const nameRow = doc.createElement('div'); nameRow.setAttribute('class', 'flex items-center justify-between gap-2');
+  const name = doc.createElement('span'); name.textContent = '(Example) Jordan Smith';
+  nameRow.appendChild(name);
+  const emailField = doc.createElement('div'); emailField.setAttribute('id', 'contact.email');
+  const emailInput = doc.createElement('input'); emailInput.setAttribute('type', 'text'); emailInput.value = 'jordan.smith@example.com';
+  emailField.appendChild(emailInput);
+  lhs.appendChild(nameRow); lhs.appendChild(emailField);
+  host.appendChild(lhs);
+  assert.equal(doc.getElementById('delete-contact-trigger'), null, 'Account User markup has no delete control');
+  GHLC.__test.renderAll();
+  await shim.flush();
+
+  const parts = menuParts(shim);
+  assert.ok(parts.wrapper, 'Actions menu rendered');
+  assert.equal(shim.document.querySelectorAll('.ghlc-menu').length, 1);
+  const group = contactGroup(shim);
+  same(group.parentNode, lhs, 'contact group mounted on #record-details-lhs');
+  same(lhs.firstChild, group, 'panel fallback places the group at the top of the details column');
+  same(group.nextSibling, nameRow);
+  const report = GHLC.verify();
+  assert.equal(report.mounts.contactMount, true);
+  assert.equal(report.mounts.contactMountVia, 'record-panel');
+  assert.equal(report.contactFields.email, true);
+  const header = headerGroup(shim);
+  assert.ok(header, 'header placement still rendered');
+  assert.equal(lhs.contains(header), false, 'header group stayed out of the contact panel');
+  parts.trigger.click();
+  parts.items[0].click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 1, 'a menu item still sends');
+  assert.equal(JSON.parse(shim.fetchLog[0].body).email, 'jordan.smith@example.com');
+
+  // The delete control appearing later (an admin view of the same panel) must
+  // return the group to the name row and leave the header group alone.
+  const del = doc.createElement('i'); del.setAttribute('id', 'delete-contact-trigger');
+  nameRow.appendChild(del);
+  GHLC.__test.renderAll();
+  await shim.flush();
+  const restored = menuParts(shim);
+  assert.ok(restored.wrapper, 'Actions menu still rendered once the delete control exists');
+  const nameGroup = contactGroup(shim);
+  same(nameGroup.parentNode, nameRow, 'delete control present: mount returns to the name row');
+  same(nameRow.lastChild, nameGroup, 'name-row mount still appends beside the native controls');
+  assert.equal(GHLC.verify().mounts.contactMountVia, 'toolbar-anchor');
+  same(headerGroup(shim), header, 'header group was not rebuilt');
+  assert.equal(shim.errors.length, 0);
+});
+
 scenario('observers: own writes do not cause render loops', async () => {
   const { shim } = await bootContactPage();
   await shim.advanceTimers(50);
