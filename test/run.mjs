@@ -306,7 +306,7 @@ check('harness: test/harness.html carries the required HighLevel shell, router h
   assert.ok(banner && /theme/i.test(banner[1]), 'the harness banner mentions the theme demo');
   // Phase 4 (REL-01, MENU-05, D-07): Location M contacts carry the fixture's Actions menu,
   // a synthetic-email contact, and the name-row and synthetic-email controls.
-  for (const s of ['locM/contacts/detail/cX', 'locM/contacts/detail/cS', 'owner+12@example.test', 'hx-clip-name-row', 'hx-synthetic-email', "getElementById('hx-clip-name-row')", "getElementById('hx-synthetic-email')"]) {
+  for (const s of ['locM/contacts/detail/cX', 'locM/contacts/detail/cS', 'owner+12@example.test', 'hx-clip-name-row', 'hx-synthetic-email', "getElementById('hx-clip-name-row')", "getElementById('hx-synthetic-email')", "'class': 'record-tags'", "id: 'tag-' + t", 'hx-toggle-tag', "getElementById('hx-toggle-tag')"]) {
     assert.ok(harness.includes(s), `harness must contain ${s}`);
   }
   assert.ok(/actions menu/i.test(banner[1]), 'the harness banner mentions the Actions menu');
@@ -341,7 +341,7 @@ check('config: both JSON files parse, validate, use HTTPS webhooks, and carry no
   assert.equal(menu.placement, 'contact');
   assert.deepEqual(menu.scope, ['Cp2XxBsRoyKS2CUf1Hwi'], 'the menu is scoped to Xcelsior Health only (D-13)');
   assert.deepEqual(menu.items.map((i) => i.id), ['sendInvite', 'send-individual-consent', 'resend-consent-hub', 'copyContactId'], 'D-12 item order');
-  assert.deepEqual(menu.items.map((i) => i.label), ['Send Invite', 'Send individual consent', 'Resend Consent Hub link', 'Copy contact ID']);
+  assert.deepEqual(menu.items.map((i) => i.label), ['Send Invite', 'Email this member their own consent forms', 'Resend Consent Hub link', 'Copy contact ID']);
   const [invite, consent, hub, copy] = menu.items;
   assert.equal(invite.action.type, 'webhook');
   assert.equal(invite.action.url, 'https://services.leadconnectorhq.com/hooks/Cp2XxBsRoyKS2CUf1Hwi/webhook-trigger/bde416ab-a074-4946-bf99-7266eb1b0f4e', 'the Send Invite trigger URL is unchanged');
@@ -357,6 +357,12 @@ check('config: both JSON files parse, validate, use HTTPS webhooks, and carry no
   assert.ok(!fs.readFileSync(path.join(root, 'README.md'), 'utf8').includes(consentTriggerId), 'README never carries the consent trigger id (D-01)');
   assert.deepEqual(consent.requires, { email: 'real' }, 'Send individual consent needs a real email (D-16)');
   assert.equal(hub.requires, undefined, 'Resend Consent Hub link has no requires rule');
+  // Contact-kind visibility: the individual item is for tagged family members only;
+  // the hub link is for family members and members; the other two are always shown.
+  assert.deepEqual(consent.showWhen, { tagsAny: ['family-member'] });
+  assert.deepEqual(hub.showWhen, { tagsAny: ['family-member', 'hint-complete', 'consents-needed', 'all-consents-complete'] });
+  assert.equal(invite.showWhen, undefined, 'Send Invite is always shown');
+  assert.equal(copy.showWhen, undefined, 'Copy contact ID is always shown');
   assert.deepEqual(copy.action, { type: 'handler', handler: 'copyContactId' });
   for (const item of menu.items) assert.ok(!('placement' in item), `${item.id}: items take placement from the menu`);
   assert.ok(sample.buttons.some((b) => b.placement === 'header' && b.action.type === 'link'), 'sample must ship a header link button');
@@ -1951,6 +1957,7 @@ scenario('verify: report shape and hygiene', async () => {
     contactMountVia: 'selector',
     contactEmailField: false,
     contactPhoneField: false,
+    contactTags: false,
     sidebarNavActive: true,
   });
   assert.deepEqual(plain(r.contactFields), { email: true, phone: true, emailCandidates: 1, phoneCandidates: 1 });
@@ -2020,7 +2027,7 @@ scenario('boot: window.GHLC is the only global the script adds', async () => {
   await shim.flush();
   const added = Object.keys(shim.window).filter((k) => !before.has(k) && k !== '__GHLC_TEST__');
   assert.deepEqual(added, ['GHLC']);
-  assert.deepEqual(Object.keys(GHLC).sort(), ['__test', 'ready', 'verify', 'version']);
+  assert.deepEqual(Object.keys(GHLC).sort(), ['__test', 'diagnose', 'ready', 'verify', 'version']);
 });
 
 // ---------------------------------------------------------------------------
@@ -3339,7 +3346,9 @@ const SAMPLE_XCELSIOR_PRIMARY = '#2d3e50';
 const SAMPLE_XCELSIOR_CONTACT_PATH = `/v2/location/${SAMPLE_XCELSIOR}/contacts/detail/c1`;
 const SAMPLE_INVITE_URL = 'https://services.leadconnectorhq.com/hooks/Cp2XxBsRoyKS2CUf1Hwi/webhook-trigger/bde416ab-a074-4946-bf99-7266eb1b0f4e';
 const SAMPLE_ITEM_IDS = ['sendInvite', 'send-individual-consent', 'resend-consent-hub', 'copyContactId'];
-const SAMPLE_ITEM_LABELS = ['Send Invite', 'Send individual consent', 'Resend Consent Hub link', 'Copy contact ID'];
+const SAMPLE_ITEM_LABELS = ['Send Invite', 'Email this member their own consent forms', 'Resend Consent Hub link', 'Copy contact ID'];
+// A tagged family member: the one contact kind that sees all four shipped items.
+const SAMPLE_DEPENDENT_TAGS = ['family-member', 'consent-pending'];
 const PAYLOAD_KEYS = ['buttonId', 'contactId', 'email', 'locationId', 'phone', 'requestId', 'sentAt', 'source'];
 const SAMPLE_LEAKS = ['leadconnectorhq', 'hooks/', 'jsdelivr', 'Dummy Clinic', '#0f766e', '#0b3b3a', 'Xcelsior', '#2d3e50', 'msgsndr', 'googleapis', 'locationPhotos'];
 
@@ -3409,7 +3418,7 @@ scenario('sample: the shipped config boots at Dummy Clinic with its logo overrid
 scenario('sample: an Xcelsior contact record shows one Actions menu with the four items in order; Send Invite posts the unchanged payload and cools down 60 s; both consent items post to the one consent webhook with their own buttonId', async () => {
   const sample = JSON.parse(sampleText);
   const consentUrl = sample.menus[0].items.find((i) => i.id === 'send-individual-consent').action.url;
-  const { shim } = await bootWithConfig(sample, { pathname: SAMPLE_XCELSIOR_CONTACT_PATH });
+  const { shim } = await bootMenu(sample, { contact: { ...JANE, tags: SAMPLE_DEPENDENT_TAGS }, pathname: SAMPLE_XCELSIOR_CONTACT_PATH });
   const written = [];
   shim.window.navigator.clipboard = { writeText: async (t) => { written.push(t); } };
 
@@ -3505,7 +3514,7 @@ scenario('sample: with the consent URL filled in, both consent items post the st
   };
   const stateOf = (parts, id) => parts.items.find((i) => i.getAttribute('data-ghlc-button-id') === id);
   {
-    const { shim } = await bootMenu(filled(), { contact: { email: 'owner+12@example.test', phone: '+15555550100' }, pathname: SAMPLE_XCELSIOR_CONTACT_PATH });
+    const { shim } = await bootMenu(filled(), { contact: { email: 'owner+12@example.test', phone: '+15555550100', tags: SAMPLE_DEPENDENT_TAGS }, pathname: SAMPLE_XCELSIOR_CONTACT_PATH });
     const parts = menuParts(shim, 'xcelsiorActions');
     const consent = stateOf(parts, 'send-individual-consent');
     const hub = stateOf(parts, 'resend-consent-hub');
@@ -3528,7 +3537,7 @@ scenario('sample: with the consent URL filled in, both consent items post the st
     assert.equal(shim.errors.length, 0);
   }
   {
-    const { shim } = await bootMenu(filled(), { contact: JANE, pathname: SAMPLE_XCELSIOR_CONTACT_PATH });
+    const { shim } = await bootMenu(filled(), { contact: { ...JANE, tags: SAMPLE_DEPENDENT_TAGS }, pathname: SAMPLE_XCELSIOR_CONTACT_PATH });
     const parts = menuParts(shim, 'xcelsiorActions');
     const consent = stateOf(parts, 'send-individual-consent');
     assert.equal(consent.getAttribute('data-state'), 'ready');
@@ -3544,7 +3553,7 @@ scenario('sample: with the consent URL filled in, both consent items post the st
     assert.equal(shim.errors.length, 0);
   }
   {
-    const { shim } = await bootMenu(filled(), { contact: { phone: '+15555550100' }, pathname: SAMPLE_XCELSIOR_CONTACT_PATH });
+    const { shim } = await bootMenu(filled(), { contact: { phone: '+15555550100', tags: SAMPLE_DEPENDENT_TAGS }, pathname: SAMPLE_XCELSIOR_CONTACT_PATH });
     const parts = menuParts(shim, 'xcelsiorActions');
     assertNeedsReal(stateOf(parts, 'send-individual-consent'), 'send-individual-consent (phone only)');
     assertNoLeak(shim.console.lines, SAMPLE_LEAKS, 'sample consent phone-only');
@@ -4920,7 +4929,7 @@ check('unit: isSyntheticEmail matches the +digits@ dedupe pattern only', () => {
 scenario("harness fixture: Location M shows the harness Actions menu and the fixture's other locations render as before", async () => {
   const LOC_M_CONTACT = '/v2/location/locM/contacts/detail/c1';
   {
-    const { shim } = await bootContactPage({ pathname: LOC_M_CONTACT });
+    const { shim } = await bootMenu(loadFixture(), { contact: { ...JANE, tags: ['family-member'] }, pathname: LOC_M_CONTACT });
     assert.equal(shim.document.querySelectorAll('.ghlc-menu').length, 1, 'one Actions menu at Location M');
     const parts = menuParts(shim, 'harnessActions');
     assert.ok(parts.wrapper, 'the harnessActions menu rendered');
@@ -4948,12 +4957,544 @@ scenario("harness fixture: Location M shows the harness Actions menu and the fix
     assert.equal(shim.errors.length, 0);
   }
   {
-    const { shim } = await bootMenu(loadFixture(), { contact: { email: 'owner+12@example.test', phone: '+15555550004' }, pathname: LOC_M_CONTACT });
+    const { shim } = await bootMenu(loadFixture(), { contact: { email: 'owner+12@example.test', phone: '+15555550004', tags: ['family-member'] }, pathname: LOC_M_CONTACT });
     const parts = menuParts(shim, 'harnessActions');
     assertNeedsReal(parts.items[1], 'menuConsent (synthetic email)');
     assert.equal(parts.items[0].getAttribute('data-state'), 'ready', 'only the consent item is affected');
     assert.equal(shim.errors.length, 0);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Contact-kind visibility (showWhen) and the "Why?" view (v0.3.0)
+// The rule reads the open contact's tags row. Each matrix row is one scenario.
+// ---------------------------------------------------------------------------
+
+const MEMBER_TAGS = ['family-member', 'hint-complete', 'consents-needed', 'all-consents-complete'];
+const kIndividual = (extra = {}) => ({ id: 'kIndividual', label: 'Own Forms', icon: 'mail', requires: { email: 'real' }, showWhen: { tagsAny: ['family-member'] }, action: { type: 'webhook', url: MENU_CONSENT_HOOK, cooldownMs: 60000, extraFields: { source: 'ghlc-harness' } }, ...extra });
+const kHub = (extra = {}) => ({ id: 'kHub', label: 'Hub Link', icon: 'mail', showWhen: { tagsAny: MEMBER_TAGS }, action: { type: 'webhook', url: MENU_HOOK_2, cooldownMs: 60000, extraFields: { source: 'ghlc-harness' } }, ...extra });
+const kindMenu = (items = [tInvite(), kIndividual(), kHub(), tCopy()]) => withMenu({ items });
+const tagged = (tags, base = JANE, extra = {}) => ({ ...base, tags, ...extra });
+const idOf = (el) => el.getAttribute('data-ghlc-button-id');
+const shownIds = (shim, menuId = 'testActions') => menuParts(shim, menuId).items.filter((i) => !i.hasAttribute('hidden')).map(idOf);
+const itemById = (shim, id) => menuParts(shim).items.find((i) => idOf(i) === id);
+const tagChips = (shim) => shim.document.querySelector('.record-tags .hx-tag-chips');
+const syncTagHeader = (shim) => {
+  const n = tagChips(shim).querySelectorAll('[id^="tag-"]').length;
+  shim.document.querySelector('.record-tags p').textContent = n ? `Tags (${n})` : 'Tags ';
+};
+const addTag = (shim, name) => { tagChips(shim).appendChild(shim.el('span', { id: `tag-${name}`, class: 'record-tag-chip' }, [name])); syncTagHeader(shim); };
+const removeTag = (shim, name) => { const chip = shim.document.getElementById(`tag-${name}`); chip.parentNode.removeChild(chip); syncTagHeader(shim); };
+const ALL_FOUR = ['tInvite', 'kIndividual', 'kHub', 'tCopy'];
+
+const KIND_ROWS = [
+  ['a lead (no tags at all)', [], ['tInvite', 'tCopy']],
+  ['an owner (hint-complete, consents-needed)', ['hint-complete', 'consents-needed'], ['tInvite', 'kHub', 'tCopy']],
+  ['a solo member (hint-complete, all-consents-complete)', ['Hint-Complete', 'all-consents-complete'], ['tInvite', 'kHub', 'tCopy']],
+  ['a tagged dependent (family-member)', ['family-member', 'consent-pending'], ALL_FOUR],
+  ['a legacy dependent (unrelated tags only)', ['imported-2026', 'vip'], ['tInvite', 'tCopy']],
+];
+for (const [what, tags, expected] of KIND_ROWS) {
+  scenario(`showWhen matrix: ${what} sees ${expected.join(', ')}`, async () => {
+    const { shim } = await bootMenu(kindMenu(), { contact: tagged(tags) });
+    const parts = menuParts(shim);
+    assert.deepEqual(parts.items.map(idOf), ALL_FOUR, 'every item stays in the DOM, in config order');
+    assert.deepEqual(shownIds(shim), expected);
+    assert.equal(parts.wrapper.hasAttribute('hidden'), false);
+    // Hidden items keep their own state; only the hidden attribute marks them.
+    for (const item of parts.items) assert.equal(item.getAttribute('data-state'), 'ready', `${idOf(item)} state is untouched by the rule`);
+    // Keyboard only ever lands on a visible item.
+    parts.trigger.focus();
+    shim.pressKey(parts.trigger, 'Enter');
+    assert.ok(isOpen(parts));
+    const visited = [];
+    for (let i = 0; i < expected.length; i++) {
+      visited.push(idOf(shim.document.activeElement));
+      shim.pressKey(shim.document.activeElement, 'ArrowDown');
+    }
+    assert.deepEqual(visited, expected, 'ArrowDown walks the visible items only');
+    assert.equal(idOf(shim.document.activeElement), expected[0], 'and wraps');
+    shim.pressKey(shim.document.activeElement, 'End');
+    assert.equal(idOf(shim.document.activeElement), expected[expected.length - 1]);
+    shim.pressKey(shim.document.activeElement, 'Home');
+    assert.equal(idOf(shim.document.activeElement), expected[0]);
+    assert.equal(shim.fetchLog.length, 0);
+    assert.equal(shim.errors.length, 0);
+  });
+}
+
+scenario('showWhen: a tagged dependent with a synthetic email sees the individual item, greyed with its reason', async () => {
+  const { shim } = await bootMenu(kindMenu(), { contact: tagged(['family-member'], SYNTHETIC_CONTACT) });
+  assert.deepEqual(shownIds(shim), ALL_FOUR, 'the kind rule shows it');
+  assertNeedsReal(itemById(shim, 'kIndividual'), 'kIndividual');
+  assert.equal(itemById(shim, 'kHub').getAttribute('data-state'), 'ready');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('showWhen signal missing: with no tags row the rule hides by default, and unknown "show" shows', async () => {
+  const always = kHub({ id: 'kLoose', label: 'Loose', showWhen: { tagsAny: ['family-member'], unknown: 'show' } });
+  const { shim, GHLC } = await bootMenu(kindMenu([tInvite(), kIndividual(), kHub(), always, tCopy()]), { contact: JANE });
+  assert.equal(shim.document.querySelector('.record-tags'), null, 'this contact region has no tags row');
+  assert.deepEqual(shownIds(shim), ['tInvite', 'kLoose', 'tCopy']);
+  assert.equal(GHLC.verify().mounts.contactTags, false);
+  const v = GHLC.__test.showWhenVerdict(kIndividual());
+  assert.equal(v.show, false);
+  assert.equal(v.why, 'unknown');
+  assert.equal(v.read.why, 'missing');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('showWhen signal incomplete: a header count that disagrees with the chips reads as unknown', async () => {
+  const { shim, GHLC } = await bootMenu(kindMenu(), { contact: tagged(['family-member', 'hint-complete'], JANE, { tagCount: 5 }) });
+  assert.deepEqual(shownIds(shim), ['tInvite', 'tCopy'], 'a possibly partial list never shows a consent item');
+  const v = GHLC.__test.showWhenVerdict(kHub());
+  assert.equal(v.why, 'unknown');
+  assert.deepEqual(plain(v.read), { ok: false, why: 'count', expected: 5, found: 2 });
+  // A header the script does not recognise is unknown too.
+  shim.document.querySelector('.record-tags p').textContent = 'Labels';
+  assert.equal(GHLC.__test.showWhenVerdict(kHub()).read.why, 'header');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('showWhen loading: a tags row that mounts after the first render shows the items through the observer, once', async () => {
+  const { shim, shell } = await bootMenu(kindMenu(), { contact: JANE });
+  const before = menuParts(shim).wrapper;
+  assert.deepEqual(shownIds(shim), ['tInvite', 'tCopy'], 'nothing wrong is shown while the tags are missing');
+  const rerenders = logCount(shim, 'rerender');
+  shell.contactRegion.appendChild(shim.buildTagsRow(['family-member']));
+  await shim.flush();
+  assert.deepEqual(shownIds(shim), ALL_FOUR, 'the items appear when the tags row mounts');
+  same(menuParts(shim).wrapper, before, 'the menu wrapper is not rebuilt');
+  assert.equal(logCount(shim, 'rerender') - rerenders, 1, 'exactly one coalesced re-render');
+  await shim.advanceTimers(1000);
+  assert.equal(logCount(shim, 'rerender') - rerenders, 1, 'showing the items causes no further render');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('showWhen changes while open: adding a tag shows the item on the same open menu; removing it hides the item and moves focus', async () => {
+  const { shim } = await bootMenu(kindMenu(), { contact: tagged([]) });
+  const parts = menuParts(shim);
+  parts.trigger.click();
+  assert.ok(isOpen(parts));
+  assert.deepEqual(shownIds(shim), ['tInvite', 'tCopy']);
+  addTag(shim, 'family-member');
+  await shim.flush();
+  same(menuParts(shim).wrapper, parts.wrapper, 'the wrapper survives the tag change');
+  assert.ok(isOpen(parts), 'the menu stays open');
+  assert.deepEqual(shownIds(shim), ALL_FOUR);
+  const individual = itemById(shim, 'kIndividual');
+  individual.focus();
+  removeTag(shim, 'family-member');
+  await shim.flush();
+  assert.ok(isOpen(parts), 'still open after the tag is removed');
+  assert.deepEqual(shownIds(shim), ['tInvite', 'tCopy']);
+  assert.equal(individual.hasAttribute('hidden'), true);
+  assert.equal(idOf(shim.document.activeElement), 'tInvite', 'focus left the hidden item for the first enabled one');
+  assert.equal(shim.listenerCount(shim.document, 'pointerdown'), 1, 'still exactly one document listener');
+  assert.equal(shim.fetchLog.length, 0);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('showWhen click time: a tag that went away with no mutation is caught on the press, and nothing is sent', async () => {
+  const { shim } = await bootMenu(kindMenu(), { contact: tagged(['hint-complete']) });
+  const parts = menuParts(shim);
+  const hub = itemById(shim, 'kHub');
+  assert.equal(hub.hasAttribute('hidden'), false);
+  parts.trigger.click();
+  // An attribute write is not a childList mutation: the observers never see it.
+  shim.document.getElementById('tag-hint-complete').setAttribute('id', 'tag-former-member');
+  await shim.flush();
+  assert.equal(hub.hasAttribute('hidden'), false, 'not noticed yet');
+  hub.click();
+  await shim.flush();
+  assert.equal(shim.fetchLog.length, 0, 'nothing is sent');
+  assert.equal(hub.hasAttribute('hidden'), true, 'the press applied the rule');
+  assert.equal(label(parts.trigger), 'Actions · Unavailable');
+  assert.equal(msg(parts.trigger), 'Hub Link: Not available for this contact');
+  assert.equal(logCount(shim, 'show-when-refused', 'kHub'), 1);
+  // Reopening the menu also re-reads the rule (the same hook requires uses).
+  shim.document.getElementById('tag-former-member').setAttribute('id', 'tag-hint-complete');
+  parts.trigger.click();
+  assert.equal(hub.hasAttribute('hidden'), false, 'opening the menu re-reads the tags');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('showWhen: a menu whose every item is hidden is not shown, and returns when an item does', async () => {
+  const { shim } = await bootMenu(kindMenu([kIndividual(), kHub()]), { contact: tagged([]) });
+  const parts = menuParts(shim);
+  assert.ok(parts.wrapper, 'the wrapper exists');
+  assert.equal(parts.wrapper.hasAttribute('hidden'), true, 'but it is hidden');
+  assert.deepEqual(shownIds(shim), []);
+  addTag(shim, 'hint-complete');
+  await shim.flush();
+  same(menuParts(shim).wrapper, parts.wrapper);
+  assert.equal(parts.wrapper.hasAttribute('hidden'), false, 'the menu returns with its first visible item');
+  assert.deepEqual(shownIds(shim), ['kHub']);
+  parts.trigger.click();
+  assert.ok(isOpen(parts));
+  removeTag(shim, 'hint-complete');
+  await shim.flush();
+  assert.equal(parts.wrapper.hasAttribute('hidden'), true, 'hidden again');
+  assert.equal(shim.listenerCount(shim.document, 'pointerdown'), 0, 'and the open menu was closed with it');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('showWhen navigation: a dependent then a lead, nothing carries over', async () => {
+  const { shim } = await bootMenu(kindMenu(), { contact: tagged(['family-member']) });
+  const first = menuParts(shim).wrapper;
+  assert.deepEqual(shownIds(shim), ALL_FOUR);
+  shim.navigate('/v2/location/locA/contacts/detail/c2', { via: 'pushState' });
+  shim.setContact(tagged([], C2));
+  await shim.flush();
+  const fresh = menuParts(shim);
+  assert.ok(fresh.wrapper !== first, 'a new menu for the new contact');
+  assert.equal(fresh.wrapper.getAttribute('data-ghlc-ctx'), 'locA|c2');
+  assert.deepEqual(shownIds(shim), ['tInvite', 'tCopy'], 'the lead sees no consent item');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('showWhen: tagsNone hides when the tag is present, and a plain contact button follows the same rule', async () => {
+  const cfg = kindMenu([tInvite(), kHub({ id: 'kNotVip', label: 'Not VIP', showWhen: { tagsNone: ['VIP'] } }), tCopy()]);
+  cfg.buttons = [...cfg.buttons, { id: 'plainKind', label: 'Plain Kind', placement: 'contact', scope: 'all', showWhen: { tagsAny: ['family-member'], tagsNone: ['vip'] }, action: { type: 'handler', handler: 'copyContactId' } }];
+  const { shim } = await bootMenu(cfg, { contact: tagged(['family-member']) });
+  const plainBtn = byId(shim, 'plainKind');
+  assert.ok(plainBtn && plainBtn.parentNode === contactGroup(shim), 'the plain button renders in the contact group');
+  assert.equal(plainBtn.hasAttribute('hidden'), false);
+  assert.deepEqual(shownIds(shim), ['tInvite', 'kNotVip', 'tCopy']);
+  addTag(shim, 'vip');
+  await shim.flush();
+  same(byId(shim, 'plainKind'), plainBtn, 'the same node');
+  assert.equal(plainBtn.hasAttribute('hidden'), true, 'tagsNone wins over tagsAny');
+  assert.deepEqual(shownIds(shim), ['tInvite', 'tCopy']);
+  removeTag(shim, 'vip');
+  await shim.flush();
+  assert.equal(plainBtn.hasAttribute('hidden'), false);
+  assert.equal(shim.errors.length, 0);
+});
+
+check('showWhen validation: only the small rule vocabulary is accepted, on contact controls only', () => {
+  const api = throwawayApi();
+  const base = loadFixture();
+  delete base.menus;
+  const withItems = (items) => ({ ...base, menus: [testMenu({ items })] });
+  const MSG = 'menus[0].items[1].showWhen must be { "tagsAny"?: string[], "tagsNone"?: string[], "unknown"?: "hide" | "show" } with at least one tag list';
+  const good = [
+    { tagsAny: ['family-member'] },
+    { tagsNone: ['vip'] },
+    { tagsAny: ['a', 'b'], tagsNone: ['c'], unknown: 'show' },
+    { tagsAny: ['a'], unknown: 'hide' },
+  ];
+  for (const showWhen of good) {
+    assert.equal(api.validateConfig(withItems([tInvite(), kHub({ showWhen })])).ok, true, JSON.stringify(showWhen));
+    assert.equal(api.isShowWhenRule(showWhen), true);
+  }
+  const bad = [
+    ['an empty object', {}],
+    ['unknown alone', { unknown: 'hide' }],
+    ['an unknown key', { tagsAny: ['a'], tagsAll: ['b'] }],
+    ['an expression string', 'tags.includes("a")'],
+    ['an array', [{ tagsAny: ['a'] }]],
+    ['null', null],
+    ['true', true],
+    ['an empty list', { tagsAny: [] }],
+    ['a list that is a string', { tagsAny: 'family-member' }],
+    ['a non-string tag', { tagsAny: ['a', 7] }],
+    ['a blank tag', { tagsAny: ['  '] }],
+    ['a tag over 64 characters', { tagsAny: ['x'.repeat(65)] }],
+    ['more than 20 tags', { tagsAny: Array.from({ length: 21 }, (_, i) => `t${i}`) }],
+    ['a bad unknown value', { tagsAny: ['a'], unknown: 'maybe' }],
+    ['a bad tagsNone beside a good tagsAny', { tagsAny: ['a'], tagsNone: [] }],
+  ];
+  for (const [what, showWhen] of bad) {
+    const result = api.validateConfig(withItems([tInvite(), kHub({ showWhen })]));
+    assert.equal(result.ok, false, `showWhen ${what} must fail validation`);
+    assert.ok(result.errors.includes(MSG), `showWhen ${what} names the field (${JSON.stringify(result.errors)})`);
+    assert.equal(api.showWhenVerdict({ id: 'x', showWhen }).show, false, `showWhen ${what} fails closed if it ever reached a render`);
+  }
+  const n = base.buttons.length;
+  const headerRule = { ...base, buttons: [...base.buttons, { id: 'hdr', label: 'Hdr', placement: 'header', scope: 'all', showWhen: { tagsAny: ['a'] }, action: { type: 'link', href: 'https://example.test/' } }] };
+  assert.ok(api.validateConfig(headerRule).errors.includes(`buttons[${n}].showWhen needs placement contact`), 'a header button cannot carry the rule');
+  const contactRule = { ...base, buttons: [...base.buttons, { id: 'ctc', label: 'Ctc', placement: 'contact', scope: 'all', showWhen: { tagsAny: ['a'] }, action: { type: 'handler', handler: 'copyContactId' } }] };
+  assert.equal(api.validateConfig(contactRule).ok, true, 'a contact button may carry the rule');
+  assert.equal(api.validateConfig(withItems([tInvite(), tConsent()])).ok, true, 'configs without the rule are unaffected');
+  assert.deepEqual(plain(api.showWhenVerdict(tInvite())), { show: true, why: 'no-rule' });
+});
+
+scenario('showWhen: a config whose rule is malformed is never adopted', async () => {
+  const shim = createShim({ pathname: CONTACT_PATH, search: '?ghlc-debug=1', fixture: loadFixture() });
+  shim.buildShell({ sidebarMode: 'location', contact: tagged(['family-member']) });
+  shim.setConfigResponse({ status: 200, body: kindMenu([tInvite(), kHub({ showWhen: { tags: ['family-member'] } })]) });
+  const GHLC = shim.run(src);
+  await GHLC.__test.boot();
+  await shim.flush();
+  assert.equal(shim.document.querySelectorAll('.ghlc-menu').length, 0, 'no menu from a rejected config');
+  assert.equal(logCount(shim, 'config-invalid'), 1);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('showWhen logs: diagnostics never carry a tag read from the page', async () => {
+  const PAGE_ONLY = 'zz-page-only-tag';
+  const { shim, GHLC } = await bootMenu(kindMenu(), { contact: tagged([PAGE_ONLY]) });
+  const parts = menuParts(shim);
+  parts.trigger.click();
+  addTag(shim, 'family-member');
+  await shim.flush();
+  removeTag(shim, 'family-member');
+  await shim.flush();
+  shim.pressKey(parts.trigger, '?');
+  const report = GHLC.verify();
+  assert.ok(logCount(shim, 'show-when', 'kIndividual') >= 2, 'the rule changes are logged by id');
+  assertNoLeak(shim.console.lines, [...LEAK_STRINGS, PAGE_ONLY, 'Own Forms', 'Hub Link', 'Menu Invite'], 'showWhen logs');
+  assert.ok(!JSON.stringify(report).includes(PAGE_ONLY), 'verify() never reports a page tag');
+  assert.ok(!JSON.stringify(GHLC.diagnose()).includes(PAGE_ONLY), 'diagnose() never reports a page tag');
+  assert.ok(!shim.document.querySelector('.ghlc-why').textContent.includes(PAGE_ONLY), 'nor does the Why view');
+  assert.equal(shim.errors.length, 0);
+});
+
+// ---- "Why?" view ----
+
+const whyEl = (shim) => shim.document.querySelector('.ghlc-why');
+const whyLines = (shim) => [...whyEl(shim).querySelectorAll('.ghlc-why__title, .ghlc-why__line')].map((n) => n.textContent);
+const whyItem = (GHLC, id) => plain(GHLC.diagnose().items.find((i) => i.id === id));
+const altClick = (shim, target) => {
+  const evt = new shim.Event('click', { bubbles: true, cancelable: true });
+  evt.altKey = true;
+  target.dispatchEvent(evt);
+};
+
+scenario('why view: "?" on the open menu or the trigger, and Alt-click, each open it once; Escape, an outside press, and navigation close it', async () => {
+  const { shim } = await bootMenu(kindMenu(), { contact: tagged([]) });
+  const parts = menuParts(shim);
+  assert.equal(whyEl(shim), null);
+  // "?" on an item of the open menu.
+  parts.trigger.click();
+  const result = shim.pressKey(shim.document.activeElement, '?');
+  assert.equal(result.keydownPrevented, true, 'the key is consumed');
+  assert.ok(whyEl(shim), 'the Why view is open');
+  same(whyEl(shim).parentNode, parts.wrapper, 'it lives inside the menu wrapper');
+  assert.ok(isClosed(parts), 'the menu itself closed');
+  assert.equal(shim.document.querySelectorAll('.ghlc-why').length, 1);
+  assert.equal(shim.listenerCount(shim.document, 'pointerdown'), 1, 'one document listener while open');
+  same(shim.document.activeElement, whyEl(shim).querySelector('.ghlc-why__copy'), 'focus lands on Copy report');
+  // "?" again does nothing; Escape closes and returns focus to the trigger.
+  shim.pressKey(shim.document.activeElement, '?');
+  assert.equal(shim.document.querySelectorAll('.ghlc-why').length, 1);
+  shim.pressKey(shim.document.activeElement, 'Escape');
+  assert.equal(whyEl(shim), null);
+  same(shim.document.activeElement, parts.trigger);
+  assert.equal(shim.listenerCount(shim.document, 'pointerdown'), 0);
+  // "?" on the focused trigger with the menu closed.
+  shim.pressKey(parts.trigger, '?');
+  assert.ok(whyEl(shim));
+  pointerdown(shim, whyEl(shim));
+  assert.ok(whyEl(shim), 'a press inside the view keeps it open');
+  pointerdown(shim, shim.document.body);
+  assert.equal(whyEl(shim), null, 'an outside press closes it');
+  assert.equal(shim.listenerCount(shim.document, 'pointerdown'), 0);
+  // Alt-click toggles; the Close button closes; a plain click opens the menu instead.
+  altClick(shim, parts.trigger);
+  assert.ok(whyEl(shim));
+  assert.ok(isClosed(parts), 'Alt-click does not open the menu');
+  altClick(shim, parts.trigger);
+  assert.equal(whyEl(shim), null);
+  altClick(shim, parts.trigger);
+  whyEl(shim).querySelector('.ghlc-why__close').click();
+  assert.equal(whyEl(shim), null);
+  altClick(shim, parts.trigger);
+  parts.trigger.click();
+  assert.equal(whyEl(shim), null, 'opening the menu closes the view');
+  assert.ok(isOpen(parts));
+  parts.trigger.click();
+  // Navigation closes it and drops its listener.
+  altClick(shim, parts.trigger);
+  shim.navigate('/v2/location/locA/contacts/detail/c2', { via: 'pushState' });
+  shim.setContact(tagged([], C2));
+  await shim.flush();
+  assert.equal(whyEl(shim), null);
+  assert.equal(shim.listenerCount(shim.document, 'pointerdown'), 0);
+  // A "?" typed anywhere else on the page does nothing.
+  shim.pressKey(shim.document.body, '?');
+  shim.pressKey(shim.document.querySelector('.hl_header'), '?');
+  assert.equal(whyEl(shim), null);
+  assert.equal(shim.fetchLog.length, 0);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('why view: a lead sees why each consent item is hidden, by id, with the header facts', async () => {
+  const { shim, GHLC } = await bootMenu(kindMenu(), { contact: tagged([]) });
+  shim.pressKey(menuParts(shim).trigger, '?');
+  const lines = whyLines(shim);
+  assert.equal(lines[0], `GHL Customizer ${pkgVersion} - why report`);
+  assert.deepEqual(lines.slice(1, 6), ['location: locA', 'contact: c1', 'mount: selector', 'tags: readable (0)', 'email: found; phone: found']);
+  assert.ok(lines.includes('- Menu Invite [tInvite]: Ready'));
+  assert.ok(lines.includes('- Own Forms [kIndividual]: Hidden: this contact has none of the tags family-member'));
+  assert.ok(lines.includes(`- Hub Link [kHub]: Hidden: this contact has none of the tags ${MEMBER_TAGS.join(', ')}`));
+  assert.ok(lines.includes('- Copy Item [tCopy]: Ready'));
+  assert.deepEqual(whyItem(GHLC, 'kIndividual'), { id: 'kIndividual', menuId: 'testActions', shown: false, state: 'ready', code: 'hidden-rule', text: 'Hidden: this contact has none of the tags family-member' });
+  assert.deepEqual(whyItem(GHLC, 'tInvite'), { id: 'tInvite', menuId: 'testActions', shown: true, state: 'ready', code: 'ready', text: 'Ready' });
+  // Plain contact buttons are listed too, before the menu items.
+  assert.deepEqual(plain(GHLC.diagnose().items.slice(0, 3).map((i) => i.id)), ['sendInvite', 'badHandlerBtn', 'copyIdBtn']);
+  assert.equal(whyItem(GHLC, 'badHandlerBtn').text, 'Greyed: Action not available');
+  assert.deepEqual(plain(GHLC.verify().why), plain(GHLC.diagnose()), 'verify() carries the same report');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('why view: tags that cannot be read, or a tag the rule excludes, are named as the reason', async () => {
+  {
+    const { GHLC } = await bootMenu(kindMenu(), { contact: JANE });
+    assert.equal(whyItem(GHLC, 'kHub').text, "Hidden: could not read this contact's tags (tags row not found)");
+    assert.equal(whyItem(GHLC, 'kHub').code, 'hidden-tags-unreadable');
+    assert.deepEqual(plain(GHLC.diagnose().tags), { readable: false, why: 'missing', expected: null, found: null });
+    assert.ok(GHLC.__test.diagnoseLines(GHLC.diagnose()).includes('tags: unreadable (tags row not found)'));
+  }
+  {
+    const { GHLC } = await bootMenu(kindMenu(), { contact: tagged(['family-member', 'vip'], JANE, { tagCount: 5 }) });
+    assert.equal(whyItem(GHLC, 'kIndividual').text, "Hidden: could not read this contact's tags (Tags header says 5, 2 found)");
+    assert.deepEqual(plain(GHLC.diagnose().tags), { readable: false, why: 'count', expected: 5, found: 2 });
+  }
+  {
+    const { GHLC } = await bootMenu(kindMenu([tInvite(), kHub({ showWhen: { tagsNone: ['vip'] } })]), { contact: tagged(['VIP']) });
+    assert.deepEqual(whyItem(GHLC, 'kHub'), { id: 'kHub', menuId: 'testActions', shown: false, state: 'ready', code: 'hidden-rule', text: 'Hidden: this contact has the tag vip' });
+  }
+});
+
+scenario('why view: greyed items say which contact field or config problem is the cause', async () => {
+  {
+    // Neither email nor phone: the classic "why is Send Invite greyed out".
+    const { shim, GHLC } = await bootMenu(kindMenu(), { contact: { name: 'No Fields', tags: ['family-member'] } });
+    assert.deepEqual(whyItem(GHLC, 'tInvite'), { id: 'tInvite', menuId: 'testActions', shown: true, state: 'unavailable', code: 'no-contact-fields', text: 'Greyed: email not found, phone not found' });
+    assert.ok(GHLC.__test.diagnoseLines(GHLC.diagnose()).includes('email: not found; phone: not found'));
+    // Two email candidates: the script refuses to guess, and the view says so.
+    const region = shim.document.querySelector('.hl_contact-details-header');
+    region.appendChild(shim.el('a', { href: 'mailto:one@example.test' }, ['one']));
+    region.appendChild(shim.el('a', { href: 'mailto:two@example.test' }, ['two']));
+    assert.equal(whyItem(GHLC, 'tInvite').text, 'Greyed: email ambiguous (2 candidates), phone not found');
+    assert.equal(shim.errors.length, 0);
+  }
+  {
+    const { GHLC } = await bootMenu(kindMenu(), { contact: tagged(['family-member'], SYNTHETIC_CONTACT) });
+    assert.deepEqual(whyItem(GHLC, 'kIndividual'), { id: 'kIndividual', menuId: 'testActions', shown: true, state: 'unavailable', code: 'needs-real-email', text: 'Greyed: email is a synthetic address' });
+    assert.ok(GHLC.__test.diagnoseLines(GHLC.diagnose()).includes('email: synthetic; phone: found'));
+  }
+  {
+    const { GHLC } = await bootMenu(kindMenu(), { contact: tagged(['family-member'], { phone: '+15555550100' }) });
+    assert.equal(whyItem(GHLC, 'kIndividual').text, 'Greyed: email is empty');
+  }
+  {
+    const empty = { ...tInvite(), id: 'tEmpty', label: 'Empty Url', action: { type: 'webhook', url: '' } };
+    const plainHttp = { ...tInvite(), id: 'tHttp', label: 'Plain Http', action: { type: 'webhook', url: 'http://services.leadconnectorhq.com/hooks/x' } };
+    const cfg = kindMenu([tInvite(), empty, plainHttp, tBroken(), tCopy(), tScoped()]);
+    cfg.locations.locA.buttons = { tCopy: false };
+    const { GHLC } = await bootMenu(cfg, { contact: tagged([]) });
+    assert.deepEqual([whyItem(GHLC, 'tEmpty').code, whyItem(GHLC, 'tEmpty').text], ['not-configured', 'Greyed: Not configured']);
+    assert.deepEqual([whyItem(GHLC, 'tHttp').code, whyItem(GHLC, 'tHttp').text], ['action-unavailable', 'Greyed: Webhook URL must use HTTPS']);
+    assert.equal(whyItem(GHLC, 'tBroken').text, 'Greyed: Action not available');
+    assert.deepEqual(whyItem(GHLC, 'tCopy'), { id: 'tCopy', menuId: 'testActions', shown: false, state: null, code: 'override-off', text: "Turned off by this location's override" });
+    assert.deepEqual(whyItem(GHLC, 'tScoped'), { id: 'tScoped', menuId: 'testActions', shown: false, state: null, code: 'out-of-scope', text: 'Not in scope for this location' });
+  }
+});
+
+scenario('why view: sending, cooldown with the seconds left, and a failure are reported', async () => {
+  const { shim, GHLC } = await bootMenu(kindMenu(), { contact: tagged(['family-member']) });
+  const parts = menuParts(shim);
+  const invite = itemById(shim, 'tInvite');
+  shim.setFetchMode('hold');
+  parts.trigger.click();
+  invite.click();
+  assert.deepEqual([whyItem(GHLC, 'tInvite').code, whyItem(GHLC, 'tInvite').text], ['sending', 'Sending…']);
+  shim.releaseFetch();
+  await shim.flush();
+  assert.deepEqual([whyItem(GHLC, 'tInvite').code, whyItem(GHLC, 'tInvite').text], ['cooldown', 'Greyed: sent recently, ready again in 60 s']);
+  await shim.advanceTimers(18000);
+  assert.equal(whyItem(GHLC, 'tInvite').text, 'Greyed: sent recently, ready again in 42 s');
+  await shim.advanceTimers(42000);
+  assert.equal(whyItem(GHLC, 'tInvite').text, 'Ready');
+  shim.setFetchMode('error');
+  parts.trigger.click();
+  itemById(shim, 'kHub').click();
+  await shim.flush();
+  const failed = whyItem(GHLC, 'kHub');
+  assert.equal(failed.code, 'failed');
+  assert.ok(failed.text.startsWith('Failed: Workflow did not accept the request (HTTP '), failed.text);
+  assert.ok(!JSON.stringify(GHLC.diagnose()).includes('hooks/'), 'no URL in the report');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('why view: with no contact open, or at a location outside the menu scope, every line says so', async () => {
+  const { shim, GHLC } = await bootMenu(kindMenu(), { contact: tagged([]) });
+  shim.navigate('/v2/location/locB/contacts/detail/c1', { via: 'pushState' });
+  await shim.flush();
+  assert.equal(whyItem(GHLC, 'tInvite').code, 'out-of-scope');
+  shim.navigate('/v2/location/locA/dashboard', { via: 'pushState' });
+  shim.setContact(null);
+  await shim.flush();
+  const report = GHLC.diagnose();
+  assert.equal(report.contactId, null);
+  assert.ok(report.items.length >= 4);
+  assert.ok(report.items.every((i) => i.code === 'no-contact' && i.text === 'No contact record is open' && i.shown === false));
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('why view: Copy report puts the same lines on the clipboard, with no email, phone, name, URL, or page tag', async () => {
+  const PAGE_ONLY = 'zz-page-only-tag';
+  const written = [];
+  const { shim, GHLC } = await bootMenu(kindMenu(), { contact: tagged([PAGE_ONLY], { ...JANE, name: 'Jane Private' }), clipboard: { writeText: async (t) => { written.push(t); } } });
+  shim.pressKey(menuParts(shim).trigger, '?');
+  const copy = whyEl(shim).querySelector('.ghlc-why__copy');
+  assert.equal(copy.textContent, 'Copy report');
+  copy.click();
+  await shim.flush();
+  assert.equal(written.length, 1);
+  assert.equal(copy.textContent, 'Copied');
+  assert.equal(written[0], whyLines(shim).join('\n'), 'the clipboard holds exactly the lines on screen');
+  assert.ok(written[0].includes('contact: c1') && written[0].includes('[kIndividual]'));
+  for (const s of ['jane@', '5550100', 'Jane Private', 'hooks/', 'leadconnectorhq', 'TEST-', PAGE_ONLY, 'requestId']) {
+    assert.ok(!written[0].includes(s), `the copied report must not contain "${s}"`);
+    assert.ok(!JSON.stringify(GHLC.diagnose()).includes(s), `diagnose() must not contain "${s}"`);
+  }
+  assert.ok(whyEl(shim), 'copying leaves the view open');
+  assert.equal(shim.fetchLog.length, 0);
+  assert.equal(shim.errors.length, 0);
+  // No clipboard: the button says so and nothing throws.
+  const second = await bootMenu(kindMenu(), { contact: tagged([]) });
+  second.shim.pressKey(menuParts(second.shim).trigger, '?');
+  const copy2 = whyEl(second.shim).querySelector('.ghlc-why__copy');
+  copy2.click();
+  await second.shim.flush();
+  assert.equal(copy2.textContent, 'Clipboard unavailable');
+  assert.equal(second.shim.errors.length, 0);
+});
+
+scenario('why view: opening, copying, and closing change no item state and schedule no re-render', async () => {
+  const { shim, GHLC } = await bootMenu(kindMenu(), { contact: tagged(['family-member'], SYNTHETIC_CONTACT), clipboard: { writeText: async () => {} } });
+  const parts = menuParts(shim);
+  const snapshotOf = () => parts.items.map((i) => [idOf(i), i.getAttribute('data-state'), i.hasAttribute('hidden'), i.getAttribute('data-ghlc-reason')].join('|'));
+  const before = snapshotOf();
+  const rerenders = logCount(shim, 'rerender');
+  shim.pressKey(parts.trigger, '?');
+  whyEl(shim).querySelector('.ghlc-why__copy').click();
+  await shim.flush();
+  GHLC.diagnose();
+  shim.pressKey(shim.document.activeElement, 'Escape');
+  await shim.flush();
+  await shim.advanceTimers(1000);
+  assert.deepEqual(snapshotOf(), before, 'no item changed');
+  assert.equal(logCount(shim, 'rerender'), rerenders, 'no re-render was scheduled');
+  assert.equal(shim.document.querySelectorAll('.ghlc-menu').length, 1);
+  assert.equal(shim.fetchLog.length, 0);
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('why view: a native re-render of the contact region drops the view and its listener', async () => {
+  const { shim } = await bootMenu(kindMenu(), { contact: tagged([]) });
+  shim.pressKey(menuParts(shim).trigger, '?');
+  assert.ok(whyEl(shim));
+  shim.setContact(tagged([]));
+  await shim.flush();
+  assert.equal(whyEl(shim), null);
+  assert.equal(shim.listenerCount(shim.document, 'pointerdown'), 0);
+  assert.equal(shim.document.querySelectorAll('.ghlc-menu').length, 1, 'one fresh closed menu');
+  assert.equal(shim.errors.length, 0);
 });
 
 // ---------------------------------------------------------------------------

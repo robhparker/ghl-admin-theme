@@ -67,10 +67,13 @@
         },
         {
           "id": "send-individual-consent",
-          "label": "Send individual consent",
+          "label": "Email this member their own consent forms",
           "icon": "mail",
           "requires": {
             "email": "real"
+          },
+          "showWhen": {
+            "tagsAny": ["family-member"]
           },
           "action": {
             "type": "webhook",
@@ -85,6 +88,9 @@
           "id": "resend-consent-hub",
           "label": "Resend Consent Hub link",
           "icon": "mail",
+          "showWhen": {
+            "tagsAny": ["family-member", "hint-complete", "consents-needed", "all-consents-complete"]
+          },
           "action": {
             "type": "webhook",
             "url": "https://services.leadconnectorhq.com/hooks/Cp2XxBsRoyKS2CUf1Hwi/webhook-trigger/e50d051c-210d-4b03-b817-ab8bc19fd214",

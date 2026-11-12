@@ -25,9 +25,13 @@
  *   menus          array?   Array<{ id: string, label: string, icon?: string, placement: 'contact',
  *                              scope: 'all' | string[], items: MenuItem[] }>
  *   MenuItem       object   a button definition without placement: { id, label, icon?, scope?, action,
- *                           requires?: { email: 'real' } }. scope defaults to the menu's. requires makes the item
- *                           unavailable while the open record's email is empty or synthetic (+digits@); any other
- *                           requires value is a validation error. Ids are
+ *                           requires?: { email: 'real' }, showWhen?: ShowWhen }. scope defaults to the menu's.
+ *                           requires makes the item unavailable while the open record's email is empty or
+ *                           synthetic (+digits@); any other requires value is a validation error.
+ *                           showWhen (also allowed on a contact-placement button) hides the control unless the
+ *                           open contact's tags match: { tagsAny?: string[], tagsNone?: string[],
+ *                           unknown?: 'hide' | 'show' }, at least one list, 'hide' by default when the tags
+ *                           cannot be read; any other showWhen value is a validation error. Ids are
  *                           unique across buttons and every menu's items; locations[id].buttons[itemId] overrides an item.
  *   Action         object   { type: 'link', href: string, target?: string }
  *                         | { type: 'webhook', url: string, extraFields?: object, cooldownMs?: number }
@@ -135,6 +139,8 @@
     menuTriggerSel: '.' + NS + '-menu__trigger',
     menuPanelSel: '.' + NS + '-menu__panel',
     menuItemSel: '[data-' + NS + '-menuitem]',
+    // The "Why?" troubleshooting view rendered inside a menu wrapper.
+    whyClass: NS + '-why',
     // Marks on the native logo element while a non-native tier is showing.
     logoClass: NS + '-logo',
     logoAttr: 'data-' + NS + '-logo',
@@ -234,6 +240,14 @@
     contactPanelId: 'record-details-lhs',
     contactEmailFieldId: 'contact.email',
     contactPhoneFieldId: 'contact.phone',
+    // Verified live 2026-11-11 (365.clinx.net contact record): the tags row
+    // is div.record-tags inside #record-details-lhs. Its header <p> reads
+    // "Tags (N)", or just "Tags" when the contact has none; each tag is a
+    // span.record-tag-chip whose id is "tag-" + the tag name.
+    contactTags: '.record-tags',
+    contactTagsHeader: 'p',
+    contactTagChip: '[id^="tag-"]',
+    contactTagIdPrefix: 'tag-',
     contactEmail: Object.freeze(['a[href^="mailto:"]', 'input[type="email"]']),
     contactPhone: Object.freeze(['a[href^="tel:"]', 'input[type="tel"]']),
     sidebarLogo: '#sidebar-v2 img.agency-logo',
@@ -397,6 +411,36 @@
     return readInputValue(region, selectors.contactPhone[1]);
   }
 
+  var TAGS_HEADER_RE = /^\s*Tags\s*(?:\(\s*(\d+)\s*\))?\s*$/i;
+
+  /**
+   * The open contact's tags, for the showWhen rule. Returns
+   *   { ok: true, tags: string[] }               trimmed, lowercased
+   *   { ok: false, why: 'missing' }              no tags row (or more than one)
+   *   { ok: false, why: 'header' }               header text not recognised
+   *   { ok: false, why: 'count', expected, found } header count and chips disagree
+   * A list that might be partial is never returned as a list: the header
+   * count is the completeness check, so a collapsed or half-rendered row
+   * reads as unknown and the rule's `unknown` setting decides.
+   */
+  function readContactTags(region) {
+    if (!region) return { ok: false, why: 'missing' };
+    var rows = region.querySelectorAll(selectors.contactTags);
+    if (rows.length !== 1) return { ok: false, why: 'missing' };
+    var header = rows[0].querySelector(selectors.contactTagsHeader);
+    var match = header ? TAGS_HEADER_RE.exec(header.textContent || '') : null;
+    if (!match) return { ok: false, why: 'header' };
+    var expected = match[1] === undefined ? 0 : parseInt(match[1], 10);
+    var chips = rows[0].querySelectorAll(selectors.contactTagChip);
+    if (chips.length !== expected) return { ok: false, why: 'count', expected: expected, found: chips.length };
+    var tags = [];
+    for (var i = 0; i < chips.length; i++) {
+      var name = (chips[i].getAttribute('id') || '').slice(selectors.contactTagIdPrefix.length).trim().toLowerCase();
+      if (name) tags.push(name);
+    }
+    return { ok: true, tags: tags };
+  }
+
   /**
    * The outermost element HighLevel replaces wholesale when it re-renders an
    * area (.hl_header, the contact region). The mount is either that root or
@@ -457,6 +501,7 @@
       contactRegion: !!findContactRegion(),
       contactEmailField: !!document.getElementById(selectors.contactEmailFieldId),
       contactPhoneField: !!document.getElementById(selectors.contactPhoneFieldId),
+      contactTags: readContactTags(findContactRegion()).ok,
       sidebarLogo: !!document.querySelector(selectors.sidebarLogo),
       headerLogo: !!document.querySelector(selectors.headerLogo),
       locationSwitcher: !!document.querySelector(selectors.locationSwitcher),
@@ -479,6 +524,8 @@
     findRegionRoot: findRegionRoot,
     readContactEmail: readContactEmail,
     readContactPhone: readContactPhone,
+    readContactTags: readContactTags,
+    contactMountVia: contactMountVia,
     // Default logo mount; config.agency.logoMount may select the other one.
     logoMount: 'sidebar',
     findLogoMount: findLogoMount,
@@ -734,10 +781,44 @@
     if (button.requires !== undefined && !isRealEmailRule(button.requires)) {
       errors.push(where + '.requires must be { "email": "real" } when present');
     }
+    // showWhen fails closed the same way: a rule that does not parse is a
+    // validation error, never an item that is silently always shown. It reads
+    // the open contact's tags, so it only makes sense on a contact control.
+    if (button.showWhen !== undefined) {
+      if (!isShowWhenRule(button.showWhen)) {
+        errors.push(where + '.showWhen must be { "tagsAny"?: string[], "tagsNone"?: string[], "unknown"?: "hide" | "show" } with at least one tag list');
+      } else if (!isItem && button.placement !== 'contact') {
+        errors.push(where + '.showWhen needs placement contact');
+      }
+    }
   }
 
   function isRealEmailRule(rule) {
     return isPlainObject(rule) && Object.keys(rule).length === 1 && hasOwn(rule, 'email') && rule.email === 'real';
+  }
+
+  // The whole showWhen vocabulary: two tag lists and what to do when the
+  // tags cannot be read. Nothing else is accepted, and nothing is evaluated.
+  var SHOW_WHEN_KEYS = Object.freeze(['tagsAny', 'tagsNone', 'unknown']);
+  var SHOW_WHEN_UNKNOWN = Object.freeze(['hide', 'show']);
+  var MAX_RULE_TAGS = 20;
+  var MAX_TAG_LENGTH = 64;
+
+  function isTagList(value) {
+    return Array.isArray(value) && value.length >= 1 && value.length <= MAX_RULE_TAGS &&
+      value.every(function (tag) {
+        return typeof tag === 'string' && tag.trim().length >= 1 && tag.length <= MAX_TAG_LENGTH;
+      });
+  }
+
+  function isShowWhenRule(rule) {
+    if (!isPlainObject(rule)) return false;
+    var keys = Object.keys(rule);
+    if (!keys.every(function (key) { return SHOW_WHEN_KEYS.indexOf(key) !== -1; })) return false;
+    if (!hasOwn(rule, 'tagsAny') && !hasOwn(rule, 'tagsNone')) return false;
+    if (hasOwn(rule, 'tagsAny') && !isTagList(rule.tagsAny)) return false;
+    if (hasOwn(rule, 'tagsNone') && !isTagList(rule.tagsNone)) return false;
+    return !hasOwn(rule, 'unknown') || SHOW_WHEN_UNKNOWN.indexOf(rule.unknown) !== -1;
   }
 
   // D-01: a menu is { id, label, icon?, placement: 'contact', scope, items[] }.
@@ -982,6 +1063,8 @@
     fieldWait: null,
     // Buttons section: the open menu { menuId, menu, wrapper, trigger, panel, onDocPointer } or null; at most one is open.
     menu: null,
+    // Buttons section: the open "Why?" view { wrapper, el, trigger, onDocPointer } or null.
+    why: null,
     // What the last served config said, even when it was not adopted (verify).
     lastSchemaVersion: null,
     lastEnabled: null,
@@ -1034,6 +1117,7 @@
     state.generation += 1;
     // An open menu belongs to the old context (D-06).
     closeMenu('context', false);
+    closeWhy(false);
     // Timers from the previous context die with it (BTN-06): a cooldown for an
     // old element must never flip a new one. Pending re-renders and mount
     // waits belong to the old route too; the new route starts them afresh.
@@ -1337,6 +1421,9 @@
       bindClick(button, el);
       settleBoundState(action, button.id, el);
     }
+    // A control with no showWhen rule is never touched here, so a config
+    // without the rule renders exactly as before.
+    if (button.showWhen !== undefined) applyVisibility(button, el);
     return el;
   }
 
@@ -1392,8 +1479,30 @@
     return menu.items.map(function (item) { return item.id; }).join(',');
   }
 
-  function menuItemEls(panel) {
+  // Every item of a panel, including the ones a showWhen rule is hiding.
+  function allMenuItemEls(panel) {
     return Array.prototype.slice.call(panel.querySelectorAll(OWN.menuItemSel));
+  }
+
+  // The items staff can see: keyboard movement and focus only ever use these.
+  function menuItemEls(panel) {
+    return allMenuItemEls(panel).filter(function (el) {
+      return !el.hasAttribute('hidden');
+    });
+  }
+
+  // A menu whose every item is hidden hides its whole wrapper (and closes if
+  // it was open). Writes only when the answer changes.
+  function syncMenuVisibility(wrapper) {
+    var panel = wrapper.querySelector(OWN.menuPanelSel);
+    var any = !!panel && menuItemEls(panel).length > 0;
+    if (any === !wrapper.hasAttribute('hidden')) return;
+    if (any) {
+      wrapper.removeAttribute('hidden');
+      return;
+    }
+    if (state.menu && state.menu.wrapper === wrapper) closeMenu('empty', false);
+    wrapper.setAttribute('hidden', '');
   }
 
   function createMenuEl(menu) {
@@ -1432,6 +1541,7 @@
     wrapper.appendChild(trigger);
     wrapper.appendChild(panel);
     bindMenu(wrapper, menu);
+    syncMenuVisibility(wrapper);
     return wrapper;
   }
 
@@ -1442,7 +1552,13 @@
     var trigger = wrapper.querySelector(OWN.menuTriggerSel);
     var panel = wrapper.querySelector(OWN.menuPanelSel);
     if (!trigger || !panel) return;
-    trigger.addEventListener('click', function () {
+    trigger.addEventListener('click', function (evt) {
+      // Alt-click (Option-click) is the mouse way into the "Why?" view.
+      if (evt && evt.altKey === true) {
+        if (state.why && state.why.wrapper === wrapper) closeWhy(true);
+        else openWhy(wrapper);
+        return;
+      }
       if (state.menu && state.menu.wrapper === wrapper) closeMenu('toggle', true);
       else openMenu(wrapper, menu, 'first');
     });
@@ -1488,6 +1604,25 @@
     var panel = wrapper.querySelector(OWN.menuPanelSel);
     if (!trigger || !panel) return;
     var open = !!state.menu && state.menu.wrapper === wrapper;
+    // While the "Why?" view is open it owns the keys: Escape closes it and
+    // nothing else moves a menu that is not showing.
+    if (state.why && state.why.wrapper === wrapper) {
+      if (key === 'Escape') {
+        consumeKey(evt);
+        closeWhy(true);
+      }
+      return;
+    }
+    // "?" on the trigger or on an item opens the "Why?" view. The listener is
+    // the wrapper's own, so a "?" typed anywhere else on the page never gets here.
+    if (key === '?') {
+      var onItem = target && typeof target.closest === 'function' ? target.closest(OWN.menuItemSel) : null;
+      if (target === trigger || (onItem && panel.contains(onItem))) {
+        consumeKey(evt);
+        openWhy(wrapper);
+      }
+      return;
+    }
     if (target === trigger) {
       if (key === 'ArrowDown') {
         consumeKey(evt);
@@ -1544,10 +1679,11 @@
 
   function openMenu(wrapper, menu, focusWhich) {
     if (state.menu && state.menu.wrapper !== wrapper) closeMenu('switch', false);
+    closeWhy(false);
     var trigger = wrapper.querySelector(OWN.menuTriggerSel);
     var panel = wrapper.querySelector(OWN.menuPanelSel);
     if (!trigger || !panel) return;
-    var items = menuItemEls(panel);
+    var items = allMenuItemEls(panel);
     if (!state.menu) {
       // Unhide before focusing: nothing inside a hidden subtree takes focus.
       panel.removeAttribute('hidden');
@@ -1568,6 +1704,9 @@
     // D-16: an email edit is no mutation, so availability is re-read every
     // time staff open the menu, before the focus target is chosen.
     refreshMenuItems(wrapper, menu);
+    // The refresh may have hidden every item (and closed the menu with it).
+    if (!state.menu || state.menu.wrapper !== wrapper) return;
+    items = menuItemEls(panel);
     if (focusWhich === 'last') {
       if (items.length) items[items.length - 1].focus();
     } else {
@@ -1643,7 +1782,8 @@
   }
 
   // Re-evaluates every item of a surviving or opening menu: the missing
-  // contact fields recovery, then the requires rule in both directions.
+  // contact fields recovery, the requires rule in both directions, then the
+  // showWhen rule. Hidden items are re-read too, or they could never return.
   function refreshMenuItems(wrapper, menu) {
     var panel = wrapper.querySelector(OWN.menuPanelSel);
     if (!panel) return;
@@ -1651,12 +1791,20 @@
     menu.items.forEach(function (item) {
       records[item.id] = item;
     });
-    menuItemEls(panel).forEach(function (itemEl) {
+    allMenuItemEls(panel).forEach(function (itemEl) {
       var record = records[itemEl.getAttribute('data-' + NS + '-button-id')];
       if (!record) return;
       recoverNoContactFields(record, itemEl);
       refreshRequires(record, itemEl);
+      if (record.showWhen !== undefined) applyVisibility(record, itemEl);
     });
+    syncMenuVisibility(wrapper);
+    // Focus never stays on an item that just disappeared from an open menu.
+    var active = document.activeElement;
+    if (state.menu && state.menu.wrapper === wrapper && active && active.nodeType === 1 &&
+        panel.contains(active) && active.hasAttribute('hidden')) {
+      focusFirstEnabled(menuItemEls(panel));
+    }
   }
 
   // D-06: the open menu's wrapper left the document (HighLevel replaced the
@@ -1664,6 +1812,7 @@
   // listener does not outlive it.
   function closeDetachedMenu() {
     if (state.menu && !state.menu.wrapper.isConnected) closeMenu('detached', false);
+    if (state.why && !state.why.wrapper.isConnected) closeWhy(false);
   }
 
   // The first menu wrapper directly inside the group, or null: plain buttons
@@ -1763,6 +1912,7 @@
         surviving[id] = true;
         recoverNoContactFields(wanted[id], el);
         refreshRequires(wanted[id], el);
+        if (wanted[id].showWhen !== undefined) applyVisibility(wanted[id], el);
       }
     });
     renderMenus(group, menus, key);
@@ -1823,6 +1973,7 @@
   var MSG_COOLDOWN_RESTORED = 'Recently sent — wait before sending again';
   var MSG_NOT_CONFIGURED = 'Not configured';
   var MSG_NEEDS_REAL_EMAIL = "Needs the member's own email";
+  var MSG_NOT_FOR_CONTACT = 'Not available for this contact';
 
   function attemptFetch(url, init) {
     try {
@@ -1950,6 +2101,331 @@
     return true;
   }
 
+  // ---- showWhen: contact-kind visibility ----
+  // A UX filter only. The workflow's own guards stay the enforcement; this
+  // just stops the menu offering an item that cannot work for the open contact.
+
+  // The first rule tag the contact carries, or null.
+  function firstTagIn(ruleTags, contactTags) {
+    for (var i = 0; i < ruleTags.length; i++) {
+      var name = ruleTags[i].trim().toLowerCase();
+      if (contactTags.indexOf(name) !== -1) return name;
+    }
+    return null;
+  }
+
+  /**
+   * Decides show or hide for one control from its showWhen rule and the open
+   * contact's tags. `why` is 'no-rule', 'match', 'no-match' (none of tagsAny),
+   * 'excluded' (a tagsNone tag is present; `tag` names it), 'unknown' (tags
+   * unreadable; `read` says how), or 'bad-rule' (fails closed).
+   */
+  function showWhenVerdict(button) {
+    var rule = button ? button.showWhen : undefined;
+    if (rule === undefined) return { show: true, why: 'no-rule' };
+    if (!isShowWhenRule(rule)) return { show: false, why: 'bad-rule' };
+    var read = adapter.readContactTags(adapter.findContactRegion());
+    if (!read.ok) return { show: rule.unknown === 'show', why: 'unknown', read: read };
+    if (hasOwn(rule, 'tagsNone')) {
+      var excluded = firstTagIn(rule.tagsNone, read.tags);
+      if (excluded !== null) return { show: false, why: 'excluded', tag: excluded };
+    }
+    if (hasOwn(rule, 'tagsAny') && firstTagIn(rule.tagsAny, read.tags) === null) {
+      return { show: false, why: 'no-match' };
+    }
+    return { show: true, why: 'match' };
+  }
+
+  /**
+   * Shows or hides a rendered control to match its rule, and returns whether
+   * it is shown. The node is hidden, never removed: a menu keeps its item
+   * list, so it is not rebuilt, an open menu stays open, and a result still
+   * in flight lands on its item. Writing an attribute is invisible to the
+   * childList observers. Logs the id and the verdict only, never a tag.
+   */
+  function applyVisibility(button, el) {
+    var verdict = showWhenVerdict(button);
+    if (verdict.show === !el.hasAttribute('hidden')) return verdict.show;
+    if (verdict.show) el.removeAttribute('hidden');
+    else el.setAttribute('hidden', '');
+    log('show-when', { buttonId: button.id, shown: verdict.show, why: verdict.why });
+    return verdict.show;
+  }
+
+  // Click-time check: a tag removed with no re-render since. True when refused.
+  function refuseHiddenByRule(button, el) {
+    if (button.showWhen === undefined) return false;
+    if (applyVisibility(button, el)) return false;
+    if (isMenuItem(el)) {
+      flashTrigger(el, 'failed', 'Unavailable', MSG_NOT_FOR_CONTACT);
+      var wrapper = el.closest(OWN.menuSel);
+      if (wrapper) syncMenuVisibility(wrapper);
+    }
+    log('show-when-refused', { buttonId: button.id });
+    return true;
+  }
+
+  // ---- "Why?" view: why an item is greyed out, hidden, or missing ----
+  // Read-only troubleshooting. Nothing here changes an item's state or sends
+  // anything. Reports carry ids, states, counts, and tag names taken from the
+  // config rule; never a name, an email, a phone, a URL, or a tag read off the page.
+
+  function contactFieldFacts() {
+    var region = adapter.findContactRegion();
+    var email = region ? adapter.readContactEmail(region) : null;
+    var phone = region ? adapter.readContactPhone(region) : null;
+    return {
+      email: email !== null,
+      emailSynthetic: isSyntheticEmail(email),
+      phone: phone !== null,
+      emailCandidates: adapter.countMatches(region, selectors.contactEmail[0]) + adapter.countMatches(region, selectors.contactEmail[1]),
+      phoneCandidates: adapter.countMatches(region, selectors.contactPhone[0]) + adapter.countMatches(region, selectors.contactPhone[1])
+    };
+  }
+
+  function fieldText(found, candidates) {
+    if (found) return 'found';
+    return candidates > 1 ? 'ambiguous (' + candidates + ' candidates)' : 'not found';
+  }
+
+  function tagsWhyText(read) {
+    if (read && read.why === 'count') return 'Tags header says ' + read.expected + ', ' + read.found + ' found';
+    if (read && read.why === 'header') return 'tags header not recognised';
+    return 'tags row not found';
+  }
+
+  // { code, text } for one rendered control.
+  function explainItem(button, el) {
+    if (el.hasAttribute('hidden')) {
+      var verdict = showWhenVerdict(button);
+      if (verdict.why === 'unknown') {
+        return { code: 'hidden-tags-unreadable', text: "Hidden: could not read this contact's tags (" + tagsWhyText(verdict.read) + ')' };
+      }
+      if (verdict.why === 'excluded') return { code: 'hidden-rule', text: 'Hidden: this contact has the tag ' + verdict.tag };
+      if (verdict.why === 'no-match') {
+        return { code: 'hidden-rule', text: 'Hidden: this contact has none of the tags ' + button.showWhen.tagsAny.join(', ') };
+      }
+      return { code: 'hidden', text: 'Hidden' };
+    }
+    var current = el.getAttribute('data-state');
+    var reason = el.getAttribute('data-' + NS + '-reason');
+    var facts;
+    if (reason === 'no-contact-fields') {
+      facts = contactFieldFacts();
+      return {
+        code: 'no-contact-fields',
+        text: 'Greyed: email ' + fieldText(facts.email, facts.emailCandidates) + ', phone ' + fieldText(facts.phone, facts.phoneCandidates)
+      };
+    }
+    if (reason === 'needs-real-email') {
+      facts = contactFieldFacts();
+      return { code: 'needs-real-email', text: facts.email ? 'Greyed: email is a synthetic address' : 'Greyed: email is empty' };
+    }
+    if (current === 'unavailable') {
+      var action = resolveAction(button);
+      if (action.kind === 'unavailable') {
+        return { code: action.message === MSG_NOT_CONFIGURED ? 'not-configured' : 'action-unavailable', text: 'Greyed: ' + action.message };
+      }
+      return { code: 'unavailable', text: 'Greyed: ' + (el.getAttribute('title') || 'unavailable') };
+    }
+    if (current === 'queued') {
+      var until = state.cooldowns[ctxKey() + '|' + button.id];
+      var seconds = until ? Math.max(0, Math.ceil((until - Date.now()) / 1000)) : 0;
+      return { code: 'cooldown', text: 'Greyed: sent recently, ready again in ' + seconds + ' s' };
+    }
+    if (current === 'submitting') return { code: 'sending', text: 'Sending…' };
+    if (current === 'failed') return { code: 'failed', text: 'Failed: ' + (el.getAttribute('title') || 'retry') };
+    return { code: 'ready', text: 'Ready' };
+  }
+
+  /**
+   * One line per configured contact control (plain contact buttons, then
+   * every menu item), including the ones not on screen, each with the reason.
+   */
+  function diagnose() {
+    var ctx = state.ctx;
+    var read = adapter.readContactTags(adapter.findContactRegion());
+    var report = {
+      version: VERSION,
+      locationId: ctx.locationId,
+      contactId: ctx.contactId,
+      mountVia: adapter.contactMountVia(),
+      tags: read.ok
+        ? { readable: true, count: read.tags.length }
+        : { readable: false, why: read.why, expected: read.expected === undefined ? null : read.expected, found: read.found === undefined ? null : read.found },
+      contactFields: contactFieldFacts(),
+      items: []
+    };
+    var config = state.config;
+    if (!config) return report;
+    var live = Object.create(null);
+    findGroups('contact').forEach(function (group) {
+      Array.prototype.slice.call(group.querySelectorAll(OWN.buttonSel)).forEach(function (el) {
+        live[el.getAttribute('data-' + NS + '-button-id')] = el;
+      });
+    });
+    var resolved = Object.create(null);
+    resolveButtons(config, ctx.locationId).forEach(function (button) {
+      if (button.placement === 'contact') resolved[button.id] = button;
+    });
+    resolveMenus(config, ctx.locationId).forEach(function (menu) {
+      menu.items.forEach(function (item) {
+        resolved[item.id] = item;
+      });
+    });
+    var entry = locationEntry(config, ctx.locationId);
+    var overrides = entry && isPlainObject(entry.buttons) ? entry.buttons : {};
+    var add = function (def, menuId) {
+      var record = hasOwn(resolved, def.id) ? resolved[def.id] : null;
+      var el = hasOwn(live, def.id) ? live[def.id] : null;
+      var line = { id: def.id, menuId: menuId, shown: false, state: null, code: '', text: '' };
+      var why;
+      if (!ctx.contactId) {
+        why = { code: 'no-contact', text: 'No contact record is open' };
+      } else if (!record) {
+        why = hasOwn(overrides, def.id) && overrides[def.id] === false
+          ? { code: 'override-off', text: "Turned off by this location's override" }
+          : { code: 'out-of-scope', text: 'Not in scope for this location' };
+      } else if (!el) {
+        why = { code: 'not-mounted', text: 'Not on the page: the contact panel was not found' };
+      } else {
+        why = explainItem(record, el);
+        line.shown = !el.hasAttribute('hidden');
+        line.state = el.getAttribute('data-state');
+      }
+      line.code = why.code;
+      line.text = why.text;
+      report.items.push(line);
+    };
+    config.buttons.forEach(function (button) {
+      if (button.placement === 'contact') add(button, null);
+    });
+    if (Array.isArray(config.menus)) {
+      config.menus.forEach(function (menu) {
+        menu.items.forEach(function (item) {
+          add(item, menu.id);
+        });
+      });
+    }
+    return report;
+  }
+
+  // Config labels by control id, for the on-screen view and the copied text
+  // (the report object itself carries ids only, so it is safe to log).
+  function controlLabels() {
+    var labels = Object.create(null);
+    var config = state.config;
+    if (!config) return labels;
+    var resolvedLabel = function (def) {
+      labels[def.id] = def.label;
+    };
+    config.buttons.forEach(resolvedLabel);
+    if (Array.isArray(config.menus)) {
+      config.menus.forEach(function (menu) {
+        menu.items.forEach(resolvedLabel);
+      });
+    }
+    resolveMenus(config, state.ctx.locationId).forEach(function (menu) {
+      menu.items.forEach(resolvedLabel);
+    });
+    return labels;
+  }
+
+  // The report as the plain lines staff see and copy.
+  function diagnoseLines(report) {
+    var labels = controlLabels();
+    var facts = report.contactFields;
+    var lines = [
+      'GHL Customizer ' + report.version + ' - why report',
+      'location: ' + (report.locationId || 'none'),
+      'contact: ' + (report.contactId || 'none'),
+      'mount: ' + (report.mountVia || 'none'),
+      'tags: ' + (report.tags.readable ? 'readable (' + report.tags.count + ')' : 'unreadable (' + tagsWhyText(report.tags) + ')'),
+      'email: ' + (facts.email && facts.emailSynthetic ? 'synthetic' : fieldText(facts.email, facts.emailCandidates)) +
+        '; phone: ' + fieldText(facts.phone, facts.phoneCandidates)
+    ];
+    report.items.forEach(function (item) {
+      var label = hasOwn(labels, item.id) ? labels[item.id] : item.id;
+      lines.push('- ' + label + ' [' + item.id + ']: ' + item.text);
+    });
+    return lines;
+  }
+
+  function whyButton(className, text) {
+    var button = document.createElement('button');
+    button.setAttribute('type', 'button');
+    button.setAttribute('class', className);
+    button.textContent = text;
+    return button;
+  }
+
+  /**
+   * Opens the "Why?" view under a menu's trigger: the report lines, a Copy
+   * report button, and a Close button. It lives inside the menu wrapper, so
+   * the observers treat it as the script's own, and a re-render that replaces
+   * the wrapper takes it away (closeDetachedMenu drops its listener).
+   */
+  function openWhy(wrapper) {
+    closeMenu('why', false);
+    closeWhy(false);
+    var trigger = wrapper.querySelector(OWN.menuTriggerSel);
+    var lines = diagnoseLines(diagnose());
+    var el = document.createElement('div');
+    el.setAttribute('class', OWN.whyClass);
+    el.setAttribute('role', 'group');
+    el.setAttribute('aria-label', 'Why items are greyed out or missing');
+    lines.forEach(function (text, index) {
+      var line = document.createElement('div');
+      line.setAttribute('class', OWN.whyClass + (index === 0 ? '__title' : '__line'));
+      line.textContent = text;
+      el.appendChild(line);
+    });
+    var actions = document.createElement('div');
+    actions.setAttribute('class', OWN.whyClass + '__actions');
+    var copy = whyButton(OWN.whyClass + '__copy', 'Copy report');
+    var close = whyButton(OWN.whyClass + '__close', 'Close');
+    copy.addEventListener('click', function () {
+      var clipboard = typeof navigator !== 'undefined' && navigator ? navigator.clipboard : null;
+      if (!clipboard || typeof clipboard.writeText !== 'function') {
+        copy.textContent = 'Clipboard unavailable';
+        return;
+      }
+      Promise.resolve().then(function () {
+        return clipboard.writeText(lines.join('\n'));
+      }).then(function () {
+        copy.textContent = 'Copied';
+      }, function () {
+        copy.textContent = 'Copy failed';
+      });
+    });
+    close.addEventListener('click', function () {
+      closeWhy(true);
+    });
+    actions.appendChild(copy);
+    actions.appendChild(close);
+    el.appendChild(actions);
+    wrapper.appendChild(el);
+    var onDocPointer = function (evt) {
+      var target = evt && evt.target;
+      if (target && typeof target.nodeType === 'number' && wrapper.contains(target)) return;
+      closeWhy(false);
+    };
+    document.addEventListener('pointerdown', onDocPointer, true);
+    state.why = { wrapper: wrapper, el: el, trigger: trigger, onDocPointer: onDocPointer };
+    copy.focus();
+    log('why-open', { menuId: wrapper.getAttribute('data-' + NS + '-menu-id') || 'none' });
+  }
+
+  function closeWhy(focusTrigger) {
+    var open = state.why;
+    if (!open) return;
+    document.removeEventListener('pointerdown', open.onDocPointer, true);
+    state.why = null;
+    if (open.el.parentNode) open.el.parentNode.removeChild(open.el);
+    if (focusTrigger && open.trigger && open.trigger.isConnected) open.trigger.focus();
+    log('why-close', {});
+  }
+
   // Verified live: HighLevel mounts the name row before the stateful email
   // field carries a value, and filling it in is not a DOM mutation. Poll on
   // the mount-wait cadence, bounded by MOUNT_WAIT_MAX_MS, until the fields
@@ -2027,6 +2503,7 @@
 
   function runWebhook(button, action, el) {
     if (refuseStaleClick(button, el)) return Promise.resolve();
+    if (refuseHiddenByRule(button, el)) return Promise.resolve();
     if (refuseUnmetRequires(button, el)) return Promise.resolve();
     var gen = state.generation;
     var region = adapter.findContactRegion();
@@ -2106,6 +2583,7 @@
   // as a webhook; the handler's own result decides ready vs failed.
   function runHandler(button, action, el) {
     if (refuseStaleClick(button, el)) return Promise.resolve();
+    if (refuseHiddenByRule(button, el)) return Promise.resolve();
     if (refuseUnmetRequires(button, el)) return Promise.resolve();
     var gen = state.generation;
     setState(el, 'submitting');
@@ -3010,6 +3488,8 @@
         phoneCandidates: adapter.countMatches(region, selectors.contactPhone[0]) + adapter.countMatches(region, selectors.contactPhone[1])
       },
       buttons: getState().buttons,
+      // Why each contact control is ready, greyed, hidden, or missing.
+      why: diagnose(),
       branding: {
         mount: logoMountName,
         found: !!adapter.findLogoMount(logoMountName),
@@ -3051,7 +3531,7 @@
     warn('duplicate-instance', { existing: String(window.GHLC.version) });
     return;
   }
-  window.GHLC = { version: VERSION, verify: verify, ready: null };
+  window.GHLC = { version: VERSION, verify: verify, diagnose: diagnose, ready: null };
 
   function getState() {
     return {
@@ -3121,6 +3601,10 @@
       resolveMenus: resolveMenus,
       resolveAction: resolveAction,
       isSyntheticEmail: isSyntheticEmail,
+      isShowWhenRule: isShowWhenRule,
+      showWhenVerdict: showWhenVerdict,
+      diagnose: diagnose,
+      diagnoseLines: diagnoseLines,
       resolveBranding: resolveBranding,
       renderBranding: renderBranding,
       resolveTheme: resolveTheme,

@@ -34,6 +34,9 @@
     #record-details-lhs .hx-name-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     #record-details-lhs h2 { margin: 0; font-size: 16px; }
     #record-details-lhs label { display: block; margin-top: 10px; font-size: 12px; color: #667085; }
+    #record-details-lhs .record-tags { margin-top: 8px; font-size: 12px; color: #667085; }
+    #record-details-lhs .record-tags p { margin: 0 0 4px; }
+    #record-details-lhs .record-tag-chip { display: inline-block; margin-right: 4px; padding: 1px 8px; border-radius: 10px; background: #f2f4f7; color: #344054; }
     #record-details-lhs input { width: 100%; box-sizing: border-box; padding: 4px 6px; font: inherit; font-size: 13px; }
     #delete-contact-trigger { cursor: pointer; color: #98a2b3; }
     /* "Tighten name row": a short, tinted name row so the open Actions panel visibly overlays it (D-07). */
@@ -64,7 +67,9 @@
     Location M contacts show the <strong>Actions menu</strong> (click, Enter, Space, or ArrowDown to open;
     arrows, Home, End, Esc, Tab), with a "Not configured" item and a consent item that is unavailable for a
     synthetic email; the <strong>Actions menu</strong> controls flip the email without a DOM mutation and
-    tighten the name row to show the panel is not clipped.
+    tighten the name row to show the panel is not clipped. The consent item only shows while the contact
+    carries the <code>family-member</code> tag (toggle it with the menu open), and pressing <code>?</code>
+    on the open menu, or Alt-clicking the trigger, opens the "Why?" view.
   </div>
 
   <div class="hx-layout">
@@ -127,6 +132,7 @@
           <div class="hx-row">
             <button type="button" id="hx-clip-name-row">Tighten name row</button>
             <button type="button" id="hx-synthetic-email">Toggle synthetic email (no mutation)</button>
+            <button type="button" id="hx-toggle-tag">Toggle family-member tag</button>
           </div>
 
           <h3>Webhook stub</h3>
@@ -236,6 +242,16 @@
         return node;
       }
 
+      // HighLevel's tags row: a "Tags (N)" header and one span#tag-<name> chip per tag.
+      function buildTagsRow(tags) {
+        return el('div', { 'class': 'record-tags' }, [
+          el('div', {}, [el('p', {}, [tags.length ? 'Tags (' + tags.length + ')' : 'Tags '])]),
+          el('div', { 'class': 'hx-tag-chips' }, tags.map(function (t) {
+            return el('span', { id: 'tag-' + t, 'class': 'record-tag-chip' }, [t]);
+          }))
+        ]);
+      }
+
       function buildContactBlock(contactId) {
         var c = CONTACTS[contactId] || { name: 'Unknown contact (' + contactId + ')', email: '', phone: '' };
         var nameRow = el('div', { 'class': 'hx-name-row' }, [el('h2', {}, [c.name]), el('i', { id: 'delete-contact-trigger', title: 'Delete' }, ['\u{1F5D1}'])]);
@@ -243,6 +259,7 @@
         var phoneInput = el('input', { type: 'tel' });
         var block = el('div', { id: 'record-details-lhs' }, [
           nameRow,
+          buildTagsRow(['family-member', 'follow-up']),
           el('label', {}, ['Email (Primary)']), el('div', { id: 'contact.email' }, [emailInput]),
           el('label', {}, ['Phone']), el('div', { id: 'contact.phone' }, [phoneInput])
         ]);
@@ -441,6 +458,19 @@
         if (own === SYNTHETIC_EMAIL) own = 'member@example.test';
         input.value = input.value === SYNTHETIC_EMAIL ? own : SYNTHETIC_EMAIL;
         hxLog({ time: new Date().toISOString(), harness: 'hx-synthetic-email: email is now ' + (input.value === SYNTHETIC_EMAIL ? 'synthetic' : 'the contact\'s own') + ' (no DOM mutation); reopen the Actions menu to re-evaluate the consent item' });
+      });
+      // Adds or removes the family-member chip and keeps the "Tags (N)" header in
+      // step, as HighLevel does: a childList mutation inside the contact region.
+      document.getElementById('hx-toggle-tag').addEventListener('click', function () {
+        var row = document.querySelector('#record-details-lhs .record-tags');
+        if (!row) { hxLog({ time: new Date().toISOString(), harness: 'hx-toggle-tag: no contact block (open a contact first)' }); return; }
+        var chips = row.querySelector('.hx-tag-chips');
+        var chip = document.getElementById('tag-family-member');
+        if (chip) chips.removeChild(chip);
+        else chips.appendChild(el('span', { id: 'tag-family-member', 'class': 'record-tag-chip' }, ['family-member']));
+        var n = chips.children.length;
+        row.querySelector('p').textContent = n ? 'Tags (' + n + ')' : 'Tags ';
+        hxLog({ time: new Date().toISOString(), harness: 'hx-toggle-tag: family-member ' + (chip ? 'removed' : 'added') + '; the consent item follows without a reload' });
       });
       document.getElementById('hx-route-event').addEventListener('click', function () {
         window.dispatchEvent(new CustomEvent('routeChangeEvent'));

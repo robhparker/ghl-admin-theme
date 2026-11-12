@@ -1011,10 +1011,24 @@ export function createShim(options = {}) {
 
   // The contact region and the dashboard placeholder are built by one helper so
   // buildShell and setContact always produce the same class names and anchor shapes.
+  // HighLevel's tags row as verified live: div.record-tags, a header <p>
+  // reading "Tags (N)" (just "Tags " when there are none), and one
+  // span#tag-<name> chip per tag. `count` overrides N to imitate a row whose
+  // header and chips disagree.
+  const buildTagsRow = (tags, { count } = {}) => {
+    const n = count === undefined ? tags.length : count;
+    return el('div', { class: 'record-tags' }, [
+      el('div', {}, [el('p', {}, [n ? `Tags (${n})` : 'Tags '])]),
+      el('div', { class: 'hx-tag-chips' }, tags.map((t) => el('span', { id: `tag-${t}`, class: 'record-tag-chip' }, [el('span', {}, [t])]))),
+    ]);
+  };
+  // A contact with a `tags` array gets the tags row; without one the region
+  // has no tags row at all (the "signal missing" case).
   const buildContactRegion = (contact) => {
     const region = el('div', { class: 'hl_contact-details-header' }, [el('h2', {}, [contact.name || 'Contact'])]);
     if (contact.email) region.appendChild(el('a', { href: `mailto:${contact.email}` }, ['email']));
     if (contact.phone) region.appendChild(el('a', { href: `tel:${contact.phone}` }, ['phone']));
+    if (Array.isArray(contact.tags)) region.appendChild(buildTagsRow(contact.tags, { count: contact.tagCount }));
     return region;
   };
   const buildDashboard = () => el('div', { class: 'hx-dashboard' }, ['Dashboard']);
@@ -1170,6 +1184,7 @@ export function createShim(options = {}) {
     context,
     el,
     buildShell,
+    buildTagsRow,
     setContact,
     setSidebarMode,
     setPath,

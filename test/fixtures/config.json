@@ -135,6 +135,7 @@
           "label": "Send consent (harness)",
           "icon": "mail",
           "requires": { "email": "real" },
+          "showWhen": { "tagsAny": ["family-member"] },
           "action": {
             "type": "webhook",
             "url": "https://services.leadconnectorhq.com/hooks/TEST-CONSENT",

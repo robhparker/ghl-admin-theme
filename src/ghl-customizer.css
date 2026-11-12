@@ -234,3 +234,75 @@
 [data-ghlc-theme~="sidebar-text"]:not(#ghlc-boost):not(#ghlc-boost) a:hover {
   background-color: var(--ghlc-nav-active, transparent);
 }
+
+/* showWhen: a control or a whole menu hidden by its rule. The display rules
+   above would otherwise override the hidden attribute. */
+.ghlc-btn[hidden],
+.ghlc-menu[hidden],
+.ghlc-menu__item[hidden] {
+  display: none;
+}
+
+/* A greyed menu item shows its reason beside the label, not only as a tooltip. */
+.ghlc-menu__item[data-state="unavailable"] .ghlc-btn__msg {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0 0 0 auto;
+  padding-left: 12px;
+  overflow: visible;
+  clip: auto;
+  font-size: 11px;
+}
+
+/* The "Why?" troubleshooting view: positioned like the menu panel. */
+.ghlc-why {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 320px;
+  max-width: 520px;
+  padding: 10px 12px;
+  background: #ffffff;
+  border: 1px solid #eaecf0;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.16);
+  color: #101828;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: left;
+  white-space: normal;
+}
+
+.ghlc-why__title {
+  font-weight: 600;
+}
+
+.ghlc-why__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.ghlc-why__copy,
+.ghlc-why__close {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #101828;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ghlc-why__copy:focus-visible,
+.ghlc-why__close:focus-visible {
+  outline: 2px solid var(--ghlc-focus);
+  outline-offset: 2px;
+}
