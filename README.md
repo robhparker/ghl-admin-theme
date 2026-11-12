@@ -203,7 +203,7 @@ With the shipped rules, the `xcelsiorActions` menu shows:
 
 ### Why is an item greyed out or missing?
 
-With the Actions menu open, or its trigger focused, press `?`. With a mouse, Alt-click (Option-click) the Actions trigger. A small "Why?" view opens under the trigger with one line per configured contact action, including the hidden ones and the ones not in scope:
+Alt-click (Option-click on a Mac) the Actions trigger. From the keyboard, focus the trigger and press Alt+Enter. A small "Why?" view opens under the trigger with one line per configured contact action, including the hidden ones and the ones not in scope:
 
 ```text
 GHL Customizer X.Y.Z - why report
@@ -221,6 +221,8 @@ email: not found; phone: found
 **Copy report** copies those lines so a staff member can paste them to whoever supports the install. `mount` tells which layout the user has: `toolbar-anchor` is the name row with the delete control, `record-panel` is the layout for users without it. Esc, the Close button, or a click elsewhere closes the view.
 
 The report holds IDs, states, counts, and the tag names written in the config rule. It never holds a name, an email, a phone number, a webhook URL, or a tag that is only on the contact. The view is read-only: it changes no item and sends nothing. `GHLC.diagnose()` in the browser console returns the same report as an object.
+
+The view has no key of its own on purpose. HighLevel binds single keys across the whole page (`?` opens its keyboard-shortcuts panel), so any plain key here would also trigger a HighLevel action.
 
 ### Example location entry
 
@@ -267,7 +269,7 @@ It never contains URLs, payloads, email, phone, or color values. If `mounts.side
 
 ## Local development
 
-There are no dependencies. `npm test` runs `node test/run.mjs`, which executes the real script inside a small DOM shim and prints `PASS n/n` on success. `npm run serve` starts a static server; open `http://localhost:5173/test/harness.html?ghlc-debug=1` for an offline imitation of the HighLevel shell with a fake router, location switching, sidebar re-rendering, and webhook stubs. The harness loads `test/fixtures/config.json`, which deliberately exercises fallbacks (a broken logo, an invalid color, a low-contrast sidebar pair); `config/agency-config.json` is the production sample and never does. Location M contacts exercise the Actions menu: a working item, a "Not configured" item, a consent item that turns unavailable for a synthetic email, and controls that flip the email without a DOM mutation and tighten the name row to show the open panel is not clipped. The consent item carries a `showWhen` rule, so "Toggle family-member tag" hides and shows it with the menu open, and `?` or Alt-click on the trigger opens the "Why?" view.
+There are no dependencies. `npm test` runs `node test/run.mjs`, which executes the real script inside a small DOM shim and prints `PASS n/n` on success. `npm run serve` starts a static server; open `http://localhost:5173/test/harness.html?ghlc-debug=1` for an offline imitation of the HighLevel shell with a fake router, location switching, sidebar re-rendering, and webhook stubs. The harness loads `test/fixtures/config.json`, which deliberately exercises fallbacks (a broken logo, an invalid color, a low-contrast sidebar pair); `config/agency-config.json` is the production sample and never does. Location M contacts exercise the Actions menu: a working item, a "Not configured" item, a consent item that turns unavailable for a synthetic email, and controls that flip the email without a DOM mutation and tighten the name row to show the open panel is not clipped. The consent item carries a `showWhen` rule, so "Toggle family-member tag" hides and shows it with the menu open, and Alt-click on the trigger opens the "Why?" view.
 
 ## Selector maintenance
 

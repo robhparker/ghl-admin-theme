@@ -255,17 +255,18 @@
   font-size: 11px;
 }
 
-/* The "Why?" troubleshooting view: positioned like the menu panel. */
+/* The "Why?" troubleshooting view. Fixed, so the narrow contact column cannot
+   clip it; the script sets top and left from the trigger's position. */
 .ghlc-why {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
+  position: fixed;
   z-index: 1000;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 320px;
-  max-width: 520px;
+  box-sizing: border-box;
+  width: 420px;
+  max-width: calc(100vw - 16px);
+  overflow-wrap: anywhere;
   padding: 10px 12px;
   background: #ffffff;
   border: 1px solid #eaecf0;

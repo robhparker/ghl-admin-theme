@@ -1553,7 +1553,11 @@
     var panel = wrapper.querySelector(OWN.menuPanelSel);
     if (!trigger || !panel) return;
     trigger.addEventListener('click', function (evt) {
-      // Alt-click (Option-click) is the mouse way into the "Why?" view.
+      // Alt-click (Option-click) opens the "Why?" view; so does Alt+Enter on
+      // the focused trigger, because the browser's keyboard click carries the
+      // modifier. No key of its own: HighLevel binds single keys page-wide
+      // ("?" opens its shortcuts panel, verified live 2026-11-12), and a
+      // listener here cannot stop a page-level capture handler.
       if (evt && evt.altKey === true) {
         if (state.why && state.why.wrapper === wrapper) closeWhy(true);
         else openWhy(wrapper);
@@ -1610,16 +1614,6 @@
       if (key === 'Escape') {
         consumeKey(evt);
         closeWhy(true);
-      }
-      return;
-    }
-    // "?" on the trigger or on an item opens the "Why?" view. The listener is
-    // the wrapper's own, so a "?" typed anywhere else on the page never gets here.
-    if (key === '?') {
-      var onItem = target && typeof target.closest === 'function' ? target.closest(OWN.menuItemSel) : null;
-      if (target === trigger || (onItem && panel.contains(onItem))) {
-        consumeKey(evt);
-        openWhy(wrapper);
       }
       return;
     }
@@ -2351,6 +2345,10 @@
     return lines;
   }
 
+  // Must match the width in the stylesheet's .ghlc-why rule.
+  var WHY_WIDTH_PX = 420;
+  var WHY_MARGIN_PX = 8;
+
   function whyButton(className, text) {
     var button = document.createElement('button');
     button.setAttribute('type', 'button');
@@ -2404,6 +2402,15 @@
     actions.appendChild(copy);
     actions.appendChild(close);
     el.appendChild(actions);
+    // Placed against the viewport, under the trigger and kept on screen: the
+    // contact column is narrow and clips anything wider than itself
+    // (verified live 2026-11-12).
+    var rect = trigger && typeof trigger.getBoundingClientRect === 'function' ? trigger.getBoundingClientRect() : null;
+    if (rect) {
+      var room = (typeof window.innerWidth === 'number' ? window.innerWidth : 0) - WHY_WIDTH_PX - WHY_MARGIN_PX;
+      el.style.setProperty('top', Math.round(rect.bottom + 4) + 'px');
+      el.style.setProperty('left', Math.max(WHY_MARGIN_PX, Math.min(Math.round(rect.left), room)) + 'px');
+    }
     wrapper.appendChild(el);
     var onDocPointer = function (evt) {
       var target = evt && evt.target;

@@ -5241,7 +5241,7 @@ scenario('showWhen logs: diagnostics never carry a tag read from the page', asyn
   await shim.flush();
   removeTag(shim, 'family-member');
   await shim.flush();
-  shim.pressKey(parts.trigger, '?');
+  altClick(shim, parts.trigger);
   const report = GHLC.verify();
   assert.ok(logCount(shim, 'show-when', 'kIndividual') >= 2, 'the rule changes are logged by id');
   assertNoLeak(shim.console.lines, [...LEAK_STRINGS, PAGE_ONLY, 'Own Forms', 'Hub Link', 'Menu Invite'], 'showWhen logs');
@@ -5262,30 +5262,32 @@ const altClick = (shim, target) => {
   target.dispatchEvent(evt);
 };
 
-scenario('why view: "?" on the open menu or the trigger, and Alt-click, each open it once; Escape, an outside press, and navigation close it', async () => {
+scenario('why view: Alt-click on the trigger opens it once; Escape, an outside press, Close, opening the menu, and navigation close it', async () => {
   const { shim } = await bootMenu(kindMenu(), { contact: tagged([]) });
   const parts = menuParts(shim);
   assert.equal(whyEl(shim), null);
-  // "?" on an item of the open menu.
+  // Alt-click with the menu open: the menu closes and the view opens.
   parts.trigger.click();
-  const result = shim.pressKey(shim.document.activeElement, '?');
-  assert.equal(result.keydownPrevented, true, 'the key is consumed');
+  assert.ok(isOpen(parts));
+  altClick(shim, parts.trigger);
   assert.ok(whyEl(shim), 'the Why view is open');
   same(whyEl(shim).parentNode, parts.wrapper, 'it lives inside the menu wrapper');
   assert.ok(isClosed(parts), 'the menu itself closed');
   assert.equal(shim.document.querySelectorAll('.ghlc-why').length, 1);
   assert.equal(shim.listenerCount(shim.document, 'pointerdown'), 1, 'one document listener while open');
   same(shim.document.activeElement, whyEl(shim).querySelector('.ghlc-why__copy'), 'focus lands on Copy report');
-  // "?" again does nothing; Escape closes and returns focus to the trigger.
-  shim.pressKey(shim.document.activeElement, '?');
-  assert.equal(shim.document.querySelectorAll('.ghlc-why').length, 1);
-  shim.pressKey(shim.document.activeElement, 'Escape');
+  assert.match(whyEl(shim).style.getPropertyValue('top'), /^\d+px$/, 'placed against the viewport');
+  assert.match(whyEl(shim).style.getPropertyValue('left'), /^\d+px$/);
+  // Arrow keys do nothing while it is open; Escape closes and returns focus to the trigger.
+  shim.pressKey(shim.document.activeElement, 'ArrowDown');
+  assert.ok(isClosed(parts) && whyEl(shim));
+  const esc = shim.pressKey(shim.document.activeElement, 'Escape');
+  assert.equal(esc.keydownPrevented, true, 'Escape is consumed');
   assert.equal(whyEl(shim), null);
   same(shim.document.activeElement, parts.trigger);
   assert.equal(shim.listenerCount(shim.document, 'pointerdown'), 0);
-  // "?" on the focused trigger with the menu closed.
-  shim.pressKey(parts.trigger, '?');
-  assert.ok(whyEl(shim));
+  // A press inside keeps it; an outside press closes it.
+  altClick(shim, parts.trigger);
   pointerdown(shim, whyEl(shim));
   assert.ok(whyEl(shim), 'a press inside the view keeps it open');
   pointerdown(shim, shim.document.body);
@@ -5293,7 +5295,6 @@ scenario('why view: "?" on the open menu or the trigger, and Alt-click, each ope
   assert.equal(shim.listenerCount(shim.document, 'pointerdown'), 0);
   // Alt-click toggles; the Close button closes; a plain click opens the menu instead.
   altClick(shim, parts.trigger);
-  assert.ok(whyEl(shim));
   assert.ok(isClosed(parts), 'Alt-click does not open the menu');
   altClick(shim, parts.trigger);
   assert.equal(whyEl(shim), null);
@@ -5312,17 +5313,20 @@ scenario('why view: "?" on the open menu or the trigger, and Alt-click, each ope
   await shim.flush();
   assert.equal(whyEl(shim), null);
   assert.equal(shim.listenerCount(shim.document, 'pointerdown'), 0);
-  // A "?" typed anywhere else on the page does nothing.
-  shim.pressKey(shim.document.body, '?');
-  shim.pressKey(shim.document.querySelector('.hl_header'), '?');
+  // "?" belongs to HighLevel (its shortcuts panel): the script neither acts on it nor consumes it.
+  const fresh = menuParts(shim);
+  fresh.trigger.click();
+  const q = shim.pressKey(shim.document.activeElement, '?');
+  assert.equal(q.keydownPrevented, false, '"?" is left to the page');
   assert.equal(whyEl(shim), null);
+  assert.ok(isOpen(fresh), 'and the menu is unaffected');
   assert.equal(shim.fetchLog.length, 0);
   assert.equal(shim.errors.length, 0);
 });
 
 scenario('why view: a lead sees why each consent item is hidden, by id, with the header facts', async () => {
   const { shim, GHLC } = await bootMenu(kindMenu(), { contact: tagged([]) });
-  shim.pressKey(menuParts(shim).trigger, '?');
+  altClick(shim, menuParts(shim).trigger);
   const lines = whyLines(shim);
   assert.equal(lines[0], `GHL Customizer ${pkgVersion} - why report`);
   assert.deepEqual(lines.slice(1, 6), ['location: locA', 'contact: c1', 'mount: selector', 'tags: readable (0)', 'email: found; phone: found']);
@@ -5439,7 +5443,7 @@ scenario('why view: Copy report puts the same lines on the clipboard, with no em
   const PAGE_ONLY = 'zz-page-only-tag';
   const written = [];
   const { shim, GHLC } = await bootMenu(kindMenu(), { contact: tagged([PAGE_ONLY], { ...JANE, name: 'Jane Private' }), clipboard: { writeText: async (t) => { written.push(t); } } });
-  shim.pressKey(menuParts(shim).trigger, '?');
+  altClick(shim, menuParts(shim).trigger);
   const copy = whyEl(shim).querySelector('.ghlc-why__copy');
   assert.equal(copy.textContent, 'Copy report');
   copy.click();
@@ -5457,7 +5461,7 @@ scenario('why view: Copy report puts the same lines on the clipboard, with no em
   assert.equal(shim.errors.length, 0);
   // No clipboard: the button says so and nothing throws.
   const second = await bootMenu(kindMenu(), { contact: tagged([]) });
-  second.shim.pressKey(menuParts(second.shim).trigger, '?');
+  altClick(second.shim, menuParts(second.shim).trigger);
   const copy2 = whyEl(second.shim).querySelector('.ghlc-why__copy');
   copy2.click();
   await second.shim.flush();
@@ -5471,7 +5475,7 @@ scenario('why view: opening, copying, and closing change no item state and sched
   const snapshotOf = () => parts.items.map((i) => [idOf(i), i.getAttribute('data-state'), i.hasAttribute('hidden'), i.getAttribute('data-ghlc-reason')].join('|'));
   const before = snapshotOf();
   const rerenders = logCount(shim, 'rerender');
-  shim.pressKey(parts.trigger, '?');
+  altClick(shim, parts.trigger);
   whyEl(shim).querySelector('.ghlc-why__copy').click();
   await shim.flush();
   GHLC.diagnose();
@@ -5487,7 +5491,7 @@ scenario('why view: opening, copying, and closing change no item state and sched
 
 scenario('why view: a native re-render of the contact region drops the view and its listener', async () => {
   const { shim } = await bootMenu(kindMenu(), { contact: tagged([]) });
-  shim.pressKey(menuParts(shim).trigger, '?');
+  altClick(shim, menuParts(shim).trigger);
   assert.ok(whyEl(shim));
   shim.setContact(tagged([]));
   await shim.flush();
