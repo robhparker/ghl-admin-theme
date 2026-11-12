@@ -5044,13 +5044,50 @@ scenario('showWhen signal missing: with no tags row the rule hides by default, a
   assert.equal(shim.errors.length, 0);
 });
 
-scenario('showWhen signal incomplete: a header count that disagrees with the chips reads as unknown', async () => {
-  const { shim, GHLC } = await bootMenu(kindMenu(), { contact: tagged(['family-member', 'hint-complete'], JANE, { tagCount: 5 }) });
-  assert.deepEqual(shownIds(shim), ['tInvite', 'tCopy'], 'a possibly partial list never shows a consent item');
+scenario('showWhen collapsed list: a chip that is showing proves its tag; a chip that is not showing proves nothing', async () => {
+  // HighLevel shows the first six chips of a long list and an "N more" button.
+  const six = ['legacy-system', 'website-inquiry', 'form:become-a-member', 'trigger:direct', 'reason:membership', 'consents-needed'];
+  const none = kHub({ id: 'kNotVip', label: 'Not VIP', showWhen: { tagsNone: ['vip'] } });
+  const both = kHub({ id: 'kBoth', label: 'Both', showWhen: { tagsAny: ['consents-needed'], tagsNone: ['vip'] } });
+  const { shim, GHLC } = await bootMenu(kindMenu([tInvite(), kIndividual(), kHub(), none, both, tCopy()]), { contact: tagged(six, JANE, { tagCount: 9 }) });
+  assert.deepEqual(shownIds(shim), ['tInvite', 'kHub', 'tCopy'], 'the visible consents-needed chip shows the hub link; nothing else is settled');
+  assert.deepEqual(plain(GHLC.__test.showWhenVerdict(kHub())), { show: true, why: 'match' });
+  const individual = GHLC.__test.showWhenVerdict(kIndividual());
+  assert.equal(individual.why, 'unknown', 'family-member could be among the three hidden chips');
+  assert.deepEqual([individual.read.ok, individual.read.partial, individual.read.expected, individual.read.found], [true, true, 9, 6]);
+  assert.equal(GHLC.__test.showWhenVerdict(none).why, 'unknown', 'a partial list cannot prove a tag is absent');
+  assert.equal(GHLC.__test.showWhenVerdict(both).why, 'unknown', 'tagsAny matched, but tagsNone is still open');
+  assert.equal(GHLC.verify().mounts.contactTags, true);
+  assert.deepEqual(plain(GHLC.diagnose().tags), { readable: true, partial: true, count: 6, expected: 9 });
+  assert.equal(whyItem(GHLC, 'kIndividual').code, 'hidden-tags-collapsed');
+  assert.equal(whyItem(GHLC, 'kIndividual').text, 'Hidden: only 6 of 9 tags are showing; press "3 more" under Tags');
+  assert.ok(GHLC.__test.diagnoseLines(GHLC.diagnose()).includes('tags: collapsed (6 of 9 showing)'));
+  // Staff press "3 more": HighLevel adds the chips in place and every rule settles.
+  for (const t of ['hint-complete', 'family-member', 'vip']) tagChips(shim).appendChild(shim.el('span', { id: `tag-${t}`, class: 'record-tag-chip' }, [t]));
+  await shim.flush();
+  assert.deepEqual(shownIds(shim), ['tInvite', 'kIndividual', 'kHub', 'tCopy'], 'the whole list: family-member shows the individual item, vip hides the other two');
+  assert.deepEqual(plain(GHLC.__test.showWhenVerdict(none)), { show: false, why: 'excluded', tag: 'vip' });
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('showWhen collapsed list: an excluded tag that is showing hides at once, and unknown "show" applies when nothing is settled', async () => {
+  const none = kHub({ id: 'kNotVip', label: 'Not VIP', showWhen: { tagsNone: ['vip'] } });
+  const loose = kHub({ id: 'kLoose', label: 'Loose', showWhen: { tagsAny: ['family-member'], unknown: 'show' } });
+  const { shim, GHLC } = await bootMenu(kindMenu([tInvite(), kIndividual(), none, loose]), { contact: tagged(['vip', 'a', 'b', 'c', 'd', 'e'], JANE, { tagCount: 8 }) });
+  assert.deepEqual(shownIds(shim), ['tInvite', 'kLoose']);
+  assert.deepEqual(plain(GHLC.__test.showWhenVerdict(none)), { show: false, why: 'excluded', tag: 'vip' });
+  assert.equal(GHLC.__test.showWhenVerdict(loose).why, 'unknown');
+  assert.equal(shim.errors.length, 0);
+});
+
+scenario('showWhen signal unreadable: more chips than the header counts, or a header the script does not recognise, reads as unknown', async () => {
+  const { shim, GHLC } = await bootMenu(kindMenu(), { contact: tagged(['family-member', 'hint-complete', 'x'], JANE, { tagCount: 2 }) });
+  assert.deepEqual(shownIds(shim), ['tInvite', 'tCopy'], 'a row that contradicts itself never shows a consent item');
   const v = GHLC.__test.showWhenVerdict(kHub());
   assert.equal(v.why, 'unknown');
-  assert.deepEqual(plain(v.read), { ok: false, why: 'count', expected: 5, found: 2 });
-  // A header the script does not recognise is unknown too.
+  assert.deepEqual(plain(v.read), { ok: false, why: 'count', expected: 2, found: 3 });
+  assert.equal(whyItem(GHLC, 'kHub').text, "Hidden: could not read this contact's tags (Tags header says 2, 3 found)");
+  assert.deepEqual(plain(GHLC.diagnose().tags), { readable: false, why: 'count', expected: 2, found: 3 });
   shim.document.querySelector('.record-tags p').textContent = 'Labels';
   assert.equal(GHLC.__test.showWhenVerdict(kHub()).read.why, 'header');
   assert.equal(shim.errors.length, 0);
@@ -5350,11 +5387,6 @@ scenario('why view: tags that cannot be read, or a tag the rule excludes, are na
     assert.equal(whyItem(GHLC, 'kHub').code, 'hidden-tags-unreadable');
     assert.deepEqual(plain(GHLC.diagnose().tags), { readable: false, why: 'missing', expected: null, found: null });
     assert.ok(GHLC.__test.diagnoseLines(GHLC.diagnose()).includes('tags: unreadable (tags row not found)'));
-  }
-  {
-    const { GHLC } = await bootMenu(kindMenu(), { contact: tagged(['family-member', 'vip'], JANE, { tagCount: 5 }) });
-    assert.equal(whyItem(GHLC, 'kIndividual').text, "Hidden: could not read this contact's tags (Tags header says 5, 2 found)");
-    assert.deepEqual(plain(GHLC.diagnose().tags), { readable: false, why: 'count', expected: 5, found: 2 });
   }
   {
     const { GHLC } = await bootMenu(kindMenu([tInvite(), kHub({ showWhen: { tagsNone: ['vip'] } })]), { contact: tagged(['VIP']) });

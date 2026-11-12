@@ -243,7 +243,10 @@
     // Verified live 2026-11-11 (365.clinx.net contact record): the tags row
     // is div.record-tags inside #record-details-lhs. Its header <p> reads
     // "Tags (N)", or just "Tags" when the contact has none; each tag is a
-    // span.record-tag-chip whose id is "tag-" + the tag name.
+    // span.record-tag-chip whose id is "tag-" + the tag name. Verified live
+    // 2026-11-12: past six tags HighLevel renders the first six chips (in
+    // the order the tags were added) and an "N more" button that expands the
+    // rest in place, so a long list is partial until staff expand it.
     contactTags: '.record-tags',
     contactTagsHeader: 'p',
     contactTagChip: '[id^="tag-"]',
@@ -415,13 +418,16 @@
 
   /**
    * The open contact's tags, for the showWhen rule. Returns
-   *   { ok: true, tags: string[] }               trimmed, lowercased
-   *   { ok: false, why: 'missing' }              no tags row (or more than one)
-   *   { ok: false, why: 'header' }               header text not recognised
-   *   { ok: false, why: 'count', expected, found } header count and chips disagree
-   * A list that might be partial is never returned as a list: the header
-   * count is the completeness check, so a collapsed or half-rendered row
-   * reads as unknown and the rule's `unknown` setting decides.
+   *   { ok: true, partial: false, tags }           the whole list, trimmed, lowercased
+   *   { ok: true, partial: true, tags, expected, found }
+   *                                                fewer chips than the header counts (a
+   *                                                collapsed long list): the chips shown are
+   *                                                real, the rest are unknown
+   *   { ok: false, why: 'missing' }                no tags row (or more than one)
+   *   { ok: false, why: 'header' }                 header text not recognised
+   *   { ok: false, why: 'count', expected, found } more chips than the header counts
+   * The header count is the completeness check. A partial list can prove a
+   * tag is present; it can never prove one is absent (showWhenVerdict).
    */
   function readContactTags(region) {
     if (!region) return { ok: false, why: 'missing' };
@@ -432,13 +438,14 @@
     if (!match) return { ok: false, why: 'header' };
     var expected = match[1] === undefined ? 0 : parseInt(match[1], 10);
     var chips = rows[0].querySelectorAll(selectors.contactTagChip);
-    if (chips.length !== expected) return { ok: false, why: 'count', expected: expected, found: chips.length };
+    if (chips.length > expected) return { ok: false, why: 'count', expected: expected, found: chips.length };
     var tags = [];
     for (var i = 0; i < chips.length; i++) {
       var name = (chips[i].getAttribute('id') || '').slice(selectors.contactTagIdPrefix.length).trim().toLowerCase();
       if (name) tags.push(name);
     }
-    return { ok: true, tags: tags };
+    if (chips.length < expected) return { ok: true, partial: true, tags: tags, expected: expected, found: chips.length };
+    return { ok: true, partial: false, tags: tags };
   }
 
   /**
@@ -2112,20 +2119,28 @@
    * Decides show or hide for one control from its showWhen rule and the open
    * contact's tags. `why` is 'no-rule', 'match', 'no-match' (none of tagsAny),
    * 'excluded' (a tagsNone tag is present; `tag` names it), 'unknown' (tags
-   * unreadable; `read` says how), or 'bad-rule' (fails closed).
+   * unreadable, or a collapsed list that settles nothing; `read` says how),
+   * or 'bad-rule' (fails closed).
+   *
+   * A collapsed list shows only some chips. A chip that is there proves its
+   * tag, so it can satisfy tagsAny or trip tagsNone. A chip that is not
+   * there proves nothing, so "none of tagsAny" and "none of tagsNone" stay
+   * unknown until the list is whole.
    */
   function showWhenVerdict(button) {
     var rule = button ? button.showWhen : undefined;
     if (rule === undefined) return { show: true, why: 'no-rule' };
     if (!isShowWhenRule(rule)) return { show: false, why: 'bad-rule' };
     var read = adapter.readContactTags(adapter.findContactRegion());
-    if (!read.ok) return { show: rule.unknown === 'show', why: 'unknown', read: read };
+    var unknown = { show: rule.unknown === 'show', why: 'unknown', read: read };
+    if (!read.ok) return unknown;
     if (hasOwn(rule, 'tagsNone')) {
       var excluded = firstTagIn(rule.tagsNone, read.tags);
       if (excluded !== null) return { show: false, why: 'excluded', tag: excluded };
+      if (read.partial) return unknown;
     }
     if (hasOwn(rule, 'tagsAny') && firstTagIn(rule.tagsAny, read.tags) === null) {
-      return { show: false, why: 'no-match' };
+      return read.partial ? unknown : { show: false, why: 'no-match' };
     }
     return { show: true, why: 'match' };
   }
@@ -2183,6 +2198,9 @@
   }
 
   function tagsWhyText(read) {
+    if (read && read.partial) {
+      return 'only ' + read.found + ' of ' + read.expected + ' tags are showing; press "' + (read.expected - read.found) + ' more" under Tags';
+    }
     if (read && read.why === 'count') return 'Tags header says ' + read.expected + ', ' + read.found + ' found';
     if (read && read.why === 'header') return 'tags header not recognised';
     return 'tags row not found';
@@ -2192,6 +2210,9 @@
   function explainItem(button, el) {
     if (el.hasAttribute('hidden')) {
       var verdict = showWhenVerdict(button);
+      if (verdict.why === 'unknown' && verdict.read.partial) {
+        return { code: 'hidden-tags-collapsed', text: 'Hidden: ' + tagsWhyText(verdict.read) };
+      }
       if (verdict.why === 'unknown') {
         return { code: 'hidden-tags-unreadable', text: "Hidden: could not read this contact's tags (" + tagsWhyText(verdict.read) + ')' };
       }
@@ -2245,7 +2266,7 @@
       contactId: ctx.contactId,
       mountVia: adapter.contactMountVia(),
       tags: read.ok
-        ? { readable: true, count: read.tags.length }
+        ? { readable: true, partial: read.partial, count: read.tags.length, expected: read.partial ? read.expected : read.tags.length }
         : { readable: false, why: read.why, expected: read.expected === undefined ? null : read.expected, found: read.found === undefined ? null : read.found },
       contactFields: contactFieldFacts(),
       items: []
@@ -2334,7 +2355,9 @@
       'location: ' + (report.locationId || 'none'),
       'contact: ' + (report.contactId || 'none'),
       'mount: ' + (report.mountVia || 'none'),
-      'tags: ' + (report.tags.readable ? 'readable (' + report.tags.count + ')' : 'unreadable (' + tagsWhyText(report.tags) + ')'),
+      'tags: ' + (!report.tags.readable ? 'unreadable (' + tagsWhyText(report.tags) + ')'
+        : report.tags.partial ? 'collapsed (' + report.tags.count + ' of ' + report.tags.expected + ' showing)'
+          : 'readable (' + report.tags.count + ')'),
       'email: ' + (facts.email && facts.emailSynthetic ? 'synthetic' : fieldText(facts.email, facts.emailCandidates)) +
         '; phone: ' + fieldText(facts.phone, facts.phoneCandidates)
     ];
