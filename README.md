@@ -11,8 +11,8 @@ HighLevel does not support custom JavaScript or CSS and can change its interface
 Open **Agency Settings -> Company** (the whitelabel and company settings area) and find the **Custom JavaScript** field. Paste the script tag below and save. The field takes HTML: HighLevel inserts its contents into every page, and a `<script>` tag is what makes the browser load the pinned release from jsDelivr. The `data-config` attribute tells the script where its config lives. The stylesheet is loaded automatically from the same folder as the script (`src/ghl-customizer.css`); a `data-css` attribute on the script element overrides that location.
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.3.0/src/ghl-customizer.js"
-        data-config="https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.3.0/config/agency-config.json"
+<script src="https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.3.1/src/ghl-customizer.js"
+        data-config="https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.3.1/config/agency-config.json"
         defer></script>
 ```
 
@@ -21,8 +21,8 @@ Do not paste raw JavaScript into this field. Verified on 2026-09-25: HighLevel r
 ```js
 (function () {
   var s = document.createElement('script');
-  s.src = 'https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.3.0/src/ghl-customizer.js';
-  s.setAttribute('data-config', 'https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.3.0/config/agency-config.json');
+  s.src = 'https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.3.1/src/ghl-customizer.js';
+  s.setAttribute('data-config', 'https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.3.1/config/agency-config.json');
   s.defer = true;
   document.head.appendChild(s);
 })();
@@ -32,7 +32,7 @@ Then save, reload HighLevel, open a location that has an entry in the config, an
 
 ## Hosting on jsDelivr
 
-jsDelivr serves files straight from a public GitHub repository. Each URL has four parts after the `/gh/` prefix on the `cdn.jsdelivr.net` host: the repository owner, the repository name, an `@` followed by a git tag, and the file path. The install URLs above are that pattern filled in with this repository and the `v0.3.0` tag.
+jsDelivr serves files straight from a public GitHub repository. Each URL has four parts after the `/gh/` prefix on the `cdn.jsdelivr.net` host: the repository owner, the repository name, an `@` followed by a git tag, and the file path. The install URLs above are that pattern filled in with this repository and the `v0.3.1` tag.
 
 Rules that make this safe:
 
@@ -156,7 +156,7 @@ The shipped `xcelsiorActions` menu, scoped to Xcelsior Health only:
       { "id": "send-individual-consent", "label": "Email this member their own consent forms", "icon": "mail", "requires": { "email": "real" },
         "showWhen": { "tagsAny": ["family-member"] },
         "action": { "type": "webhook", "url": "https://services.leadconnectorhq.com/hooks/...", "cooldownMs": 60000, "extraFields": { "source": "ghl-customizer" } } },
-      { "id": "resend-consent-hub", "label": "Resend Consent Hub link", "icon": "mail",
+      { "id": "resend-consent-hub", "label": "Resend consent link", "icon": "mail",
         "showWhen": { "tagsAny": ["family-member", "hint-complete", "consents-needed", "all-consents-complete"] },
         "action": { "type": "webhook", "url": "https://services.leadconnectorhq.com/hooks/...", "cooldownMs": 60000, "extraFields": { "source": "ghl-customizer" } } },
       { "id": "copyContactId", "label": "Copy contact ID", "icon": "copy",
@@ -171,7 +171,7 @@ Consent item IDs. These are the `buttonId` values the consent Inbound Webhook wo
 | Item `id` (`buttonId`) | Label |
 |---|---|
 | `send-individual-consent` | Email this member their own consent forms |
-| `resend-consent-hub` | Resend Consent Hub link |
+| `resend-consent-hub` | Resend consent link |
 
 Both items share one URL, the consent workflow's Inbound Webhook trigger. They post the standard payload above with no new fields; only `buttonId` tells them apart. The shipped config carries that URL in both items. Setting an item's `url` back to `""` makes it "Not configured" again: it never sends, and nothing changes in ClinX.
 
@@ -188,7 +188,7 @@ The script reads the tags row of the open contact record (the "Tags (N)" header 
 
 With the shipped rules, the `xcelsiorActions` menu shows:
 
-| Contact | Tags it carries | Send Invite | Email this member their own consent forms | Resend Consent Hub link | Copy contact ID |
+| Contact | Tags it carries | Send Invite | Email this member their own consent forms | Resend consent link | Copy contact ID |
 |---|---|---|---|---|---|
 | Lead | none of the tags below | shown | hidden | hidden | shown |
 | Owner or solo member | `hint-complete`, `consents-needed`, or `all-consents-complete` | shown | hidden | shown | shown |
@@ -215,7 +215,7 @@ tags: readable (2)
 email: not found; phone: found
 - Send Invite [sendInvite]: Ready
 - Email this member their own consent forms [send-individual-consent]: Hidden: this contact has none of the tags family-member
-- Resend Consent Hub link [resend-consent-hub]: Greyed: sent recently, ready again in 42 s
+- Resend consent link [resend-consent-hub]: Greyed: sent recently, ready again in 42 s
 - Copy contact ID [copyContactId]: Ready
 ```
 
@@ -230,7 +230,7 @@ The view has no key of its own on purpose. HighLevel binds single keys across th
 ```json
 "iDPNGKoFsjvf9wUCrk3V": {
   "name": "Dummy Clinic",
-  "logoUrl": "https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.3.0/test/fixtures/logos/loc-a.svg",
+  "logoUrl": "https://cdn.jsdelivr.net/gh/robhparker/ghl-admin-theme@v0.3.1/test/fixtures/logos/loc-a.svg",
   "logoAlt": "Dummy Clinic",
   "theme": {
     "primary": "#0f766e",
@@ -244,7 +244,7 @@ The view has no key of its own on purpose. HighLevel binds single keys across th
 }
 ```
 
-The shipped sample, `config/agency-config.json`, demonstrates agency defaults, two location entries (Dummy Clinic with a full theme and a repository-fixture logo, and Xcelsior Health with the logo HighLevel already hosts for it and a `primary` accent only, which leaves the native sidebar untouched), the `helpCenter` header link, and the Xcelsior Health `xcelsiorActions` menu (Send Invite, Send individual consent, Resend Consent Hub link, Copy contact ID), scoped to Xcelsior Health only. No other location shows a contact action.
+The shipped sample, `config/agency-config.json`, demonstrates agency defaults, two location entries (Dummy Clinic with a full theme and a repository-fixture logo, and Xcelsior Health with the logo HighLevel already hosts for it and a `primary` accent only, which leaves the native sidebar untouched), the `helpCenter` header link, and the Xcelsior Health `xcelsiorActions` menu (Send Invite, Send individual consent, Resend consent link, Copy contact ID), scoped to Xcelsior Health only. No other location shows a contact action.
 
 ## Security notes
 

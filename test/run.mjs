@@ -341,7 +341,7 @@ check('config: both JSON files parse, validate, use HTTPS webhooks, and carry no
   assert.equal(menu.placement, 'contact');
   assert.deepEqual(menu.scope, ['Cp2XxBsRoyKS2CUf1Hwi'], 'the menu is scoped to Xcelsior Health only (D-13)');
   assert.deepEqual(menu.items.map((i) => i.id), ['sendInvite', 'send-individual-consent', 'resend-consent-hub', 'copyContactId'], 'D-12 item order');
-  assert.deepEqual(menu.items.map((i) => i.label), ['Send Invite', 'Email this member their own consent forms', 'Resend Consent Hub link', 'Copy contact ID']);
+  assert.deepEqual(menu.items.map((i) => i.label), ['Send Invite', 'Email this member their own consent forms', 'Resend consent link', 'Copy contact ID']);
   const [invite, consent, hub, copy] = menu.items;
   assert.equal(invite.action.type, 'webhook');
   assert.equal(invite.action.url, 'https://services.leadconnectorhq.com/hooks/Cp2XxBsRoyKS2CUf1Hwi/webhook-trigger/bde416ab-a074-4946-bf99-7266eb1b0f4e', 'the Send Invite trigger URL is unchanged');
@@ -356,7 +356,7 @@ check('config: both JSON files parse, validate, use HTTPS webhooks, and carry no
   const consentTriggerId = consent.action.url.split('/').pop();
   assert.ok(!fs.readFileSync(path.join(root, 'README.md'), 'utf8').includes(consentTriggerId), 'README never carries the consent trigger id (D-01)');
   assert.deepEqual(consent.requires, { email: 'real' }, 'Send individual consent needs a real email (D-16)');
-  assert.equal(hub.requires, undefined, 'Resend Consent Hub link has no requires rule');
+  assert.equal(hub.requires, undefined, 'Resend consent link has no requires rule');
   // Contact-kind visibility: the individual item is for tagged family members only;
   // the hub link is for family members and members; the other two are always shown.
   assert.deepEqual(consent.showWhen, { tagsAny: ['family-member'] });
@@ -3346,7 +3346,7 @@ const SAMPLE_XCELSIOR_PRIMARY = '#2d3e50';
 const SAMPLE_XCELSIOR_CONTACT_PATH = `/v2/location/${SAMPLE_XCELSIOR}/contacts/detail/c1`;
 const SAMPLE_INVITE_URL = 'https://services.leadconnectorhq.com/hooks/Cp2XxBsRoyKS2CUf1Hwi/webhook-trigger/bde416ab-a074-4946-bf99-7266eb1b0f4e';
 const SAMPLE_ITEM_IDS = ['sendInvite', 'send-individual-consent', 'resend-consent-hub', 'copyContactId'];
-const SAMPLE_ITEM_LABELS = ['Send Invite', 'Email this member their own consent forms', 'Resend Consent Hub link', 'Copy contact ID'];
+const SAMPLE_ITEM_LABELS = ['Send Invite', 'Email this member their own consent forms', 'Resend consent link', 'Copy contact ID'];
 // A tagged family member: the one contact kind that sees all four shipped items.
 const SAMPLE_DEPENDENT_TAGS = ['family-member', 'consent-pending'];
 const PAYLOAD_KEYS = ['buttonId', 'contactId', 'email', 'locationId', 'phone', 'requestId', 'sentAt', 'source'];
@@ -3472,9 +3472,9 @@ scenario('sample: an Xcelsior contact record shows one Actions menu with the fou
   if (!isOpen(parts)) parts.trigger.click();
   hub.click();
   await shim.flush();
-  assert.equal(shim.fetchLog.length, 2, 'Resend Consent Hub link posts once');
+  assert.equal(shim.fetchLog.length, 2, 'Resend consent link posts once');
   const hubCall = shim.fetchLog[1];
-  assert.equal(hubCall.url, consentUrl, 'Resend Consent Hub link posts to the consent webhook');
+  assert.equal(hubCall.url, consentUrl, 'Resend consent link posts to the consent webhook');
   assert.equal(hubCall.method, 'POST');
   assert.deepEqual(Object.keys(hubCall.bodyJson).sort(), PAYLOAD_KEYS, 'the standard payload (D-14)');
   assert.equal(hubCall.bodyJson.buttonId, 'resend-consent-hub');
@@ -3525,7 +3525,7 @@ scenario('sample: with the consent URL filled in, both consent items post the st
     parts.trigger.click();
     hub.click();
     await shim.flush();
-    assert.equal(shim.fetchLog.length, 1, 'Resend Consent Hub link posts once');
+    assert.equal(shim.fetchLog.length, 1, 'Resend consent link posts once');
     assert.equal(shim.fetchLog[0].url, MENU_CONSENT_HOOK);
     assert.deepEqual(Object.keys(shim.fetchLog[0].bodyJson).sort(), PAYLOAD_KEYS);
     assert.equal(shim.fetchLog[0].bodyJson.buttonId, 'resend-consent-hub', 'ITEM-04');
