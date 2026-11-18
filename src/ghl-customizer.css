@@ -134,7 +134,12 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  box-sizing: border-box;
+  /* Long labels wrap rather than widen the panel: it grows leftward from the
+     trigger, and the narrow contact column clips whatever passes its edge. */
+  width: max-content;
   min-width: 220px;
+  max-width: min(260px, calc(100vw - 16px));
   padding: 4px;
   background: #ffffff;
   border: 1px solid #eaecf0;
@@ -149,21 +154,35 @@
 .ghlc-menu__item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  column-gap: 8px;
+  row-gap: 2px;
   width: 100%;
-  height: 32px;
-  padding: 0 10px;
+  min-height: 32px;
+  padding: 6px 10px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: #101828;
   font: inherit;
   font-size: 13px;
+  line-height: 1.35;
   text-align: left;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
   cursor: pointer;
   text-decoration: none;
   position: relative;
+}
+
+/* Icon keeps its size; the label takes the rest of the row and wraps in it. */
+.ghlc-menu__item .ghlc-btn__icon {
+  flex: none;
+}
+
+.ghlc-menu__item .ghlc-btn__label {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .ghlc-menu__item:hover,
@@ -243,13 +262,16 @@
   display: none;
 }
 
-/* A greyed menu item shows its reason beside the label, not only as a tooltip. */
+/* A greyed menu item shows its reason on its own line under the label (indented
+   past the 16px icon and 8px gap), not only as a tooltip. */
 .ghlc-menu__item[data-state="unavailable"] .ghlc-btn__msg {
   position: static;
+  flex: 0 0 100%;
   width: auto;
   height: auto;
-  margin: 0 0 0 auto;
-  padding-left: 12px;
+  margin: 0;
+  padding-left: 24px;
+  white-space: normal;
   overflow: visible;
   clip: auto;
   font-size: 11px;
